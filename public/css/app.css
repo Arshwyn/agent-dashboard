@@ -355,13 +355,59 @@ button.link {
   padding-top: var(--space-1);
 }
 
-.pipe-wrap {
+.pipe-panel-body {
   box-shadow: 4px 4px 0 var(--shadow);
   background: var(--panel);
   border: 3px solid var(--border);
   padding: var(--space-2) var(--space-3);
   display: grid;
   gap: var(--space-2);
+}
+.pipe-panel-body[hidden] {
+  display: none;
+}
+/* One panel per run, stacked full width with a visible gap between them. */
+#pipeline {
+  display: grid;
+  gap: var(--space-4);
+}
+.pipe-panel {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.pipe-panel-head {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.pipe-panel-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+  width: 100%;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  background: none;
+  border: 3px solid transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.pipe-panel-toggle::before {
+  content: '▾' / '';
+}
+.pipe-panel-toggle[aria-expanded='false']::before {
+  content: '▸' / '';
+}
+.pipe-panel-run,
+.pipe-panel-status {
+  font-weight: 400;
 }
 .stepper {
   list-style: none;
