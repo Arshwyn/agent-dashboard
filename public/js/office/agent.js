@@ -19,10 +19,12 @@ import { createSpotRegistry } from './spots.js';
 import { spawnOf } from './layout.js';
 import { WANDER, HERD_FACTOR, RECENT_KINDS, chooseNext, resolveSteps, weightedPick } from './behaviours.js';
 
-export const STATUSES = ['idle', 'working', 'blocked', 'done'];
+export const STATUSES = ['idle', 'working', 'blocked', 'done', 'resting'];
 export const normalizeStatus = (s) => (STATUSES.includes(s) ? s : 'idle');
 
 const DESK_RETRY_SECS = 1;
+const REST_SIT_SECS = 3; // sit on the bean bag this long, then sleep until the rest ends
+export const HANDOFF_STAND_SECS = 2; // the giver of a handoff stands beside the receiver this long
 
 export function createSim({
   layout,
@@ -124,6 +126,27 @@ export function createSim({
       case 'wait':
         a.state = 'idle';
         a.act = null;
+        break;
+      case 'rest':
+        a.act = {
+          kind: 'rest',
+          steps: [
+            { state: 'sit', secs: REST_SIT_SECS },
+            { state: 'sleep', secs: Infinity },
+          ],
+          stepIndex: reduced ? 1 : 0,
+          timer: reduced ? Infinity : REST_SIT_SECS,
+        };
+        a.state = a.act.steps[a.act.stepIndex].state;
+        break;
+      case 'handoff':
+        a.act = {
+          kind: 'handoff',
+          steps: [{ state: 'idle', secs: HANDOFF_STAND_SECS }],
+          stepIndex: 0,
+          timer: HANDOFF_STAND_SECS,
+        };
+        a.state = 'idle';
         break;
       default:
         startAct(a);
@@ -241,10 +264,14 @@ export function createSim({
     wakeWaiting();
   }
 
-  function addAgent(id) {
+  // `look` is the atlas look key (a person look, a role look or `fallback`), `name` the tag shown on
+  // the sprite (null for none). The sim key stays `id`; both are display data only.
+  function addAgent(id, look = null, name = null) {
     if (agents.has(id)) return agents.get(id);
     const a = {
       id,
+      look,
+      name,
       status: 'idle',
       state: 'idle',
       arrive: 'dwell',
@@ -278,11 +305,77 @@ export function createSim({
     const next = normalizeStatus(status);
     if (a.status === next) return a;
     a.status = next;
-    if (next === 'idle') {
+    if (next === 'resting') rest(a);
+    else if (next === 'idle') {
       if (!a.wandering) schedule(a);
     } else if (next === 'done') celebrate(a);
     else seekDesk(a);
     return a;
+  }
+
+  // A cooling person takes a free bean bag (the existing seat kind) and sits, then sleeps. With no
+  // bean bag free they stand where they are. The seat is released when the status changes again.
+  function rest(a) {
+    a.wandering = false;
+    a.waiting = false;
+    a.act = null;
+    const seat = spots.reserve({ kind: 'beanbag' }, a.id, rng);
+    if (seat) return goTo(a, { x: seat.x, y: seat.y }, 'rest');
+    spots.release(a.id);
+    if (a.state === 'walking') {
+      a.path = a.path.slice(0, 1); // finish the current step, then stand there
+      a.arrive = 'wait';
+    } else {
+      a.arrive = 'wait';
+      a.state = 'idle';
+    }
+    wakeWaiting();
+  }
+
+  // Back to what the status says, after a short detour (a handoff).
+  function resume(a) {
+    if (a.status === 'resting') rest(a);
+    else if (a.status === 'working' || a.status === 'blocked') seekDesk(a);
+    else schedule(a);
+  }
+
+  // A free walkable tile beside `tile`, not a spot tile and not under another agent. Deterministic.
+  function besideTile(tile, giver) {
+    const taken = [];
+    for (const b of agents.values()) if (b !== giver) taken.push(b.tile, b.dest || b.tile);
+    for (const [dx, dy] of [
+      [-1, 0],
+      [1, 0],
+      [0, 1],
+      [0, -1],
+      [-1, 1],
+      [1, 1],
+      [-1, -1],
+      [1, -1],
+    ]) {
+      const x = tile.x + dx;
+      const y = tile.y + dy;
+      if (!grid.isWalkable(x, y) || spotTiles.has(`${x},${y}`)) continue;
+      if (taken.some((t) => t.x === x && t.y === y)) continue;
+      return { x, y };
+    }
+    return null;
+  }
+
+  // The giver of an inferred handoff walks beside the receiver, stands for HANDOFF_STAND_SECS, then
+  // returns to what its status says. Under reduced motion nothing moves (the card text carries it).
+  // Returns true when the walk was started.
+  function handoff(giverId, receiverId) {
+    const g = agents.get(giverId);
+    const r = agents.get(receiverId);
+    if (!g || !r || g === r || reduced) return false;
+    const dest = besideTile(r.dest || r.tile, g);
+    if (!dest) return false;
+    g.wandering = false;
+    g.waiting = false;
+    g.act = null;
+    goTo(g, dest, 'handoff');
+    return true;
   }
 
   function setTeleport(on) {
@@ -323,7 +416,8 @@ export function createSim({
         while (a.act && a.act.timer <= 0) {
           const next = a.act.stepIndex + 1;
           if (next >= a.act.steps.length) {
-            schedule(a);
+            if (a.act.kind === 'handoff') resume(a);
+            else schedule(a);
             break;
           }
           const carry = a.act.timer; // negative: time already spent in the next step
@@ -399,6 +493,7 @@ export function createSim({
     addAgent,
     removeAgent,
     setStatus,
+    handoff,
     setTeleport,
     update,
     advance,

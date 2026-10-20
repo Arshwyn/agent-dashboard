@@ -668,3 +668,120 @@ test('a prop taller than its footprint is drawn in front of what stands behind i
     );
   }
 });
+
+// ---- named people: looks, name tags, resting seats, handoffs --------------------------------------
+
+test('a sprite uses its own look, not its id: a person look, a role look, or the fallback', async () => {
+  const { frameNameFor } = await rendererMod();
+  const at = (agent) => frameNameFor({ state: 'idle', facing: 'down', ...agent }, 0, true).name;
+  assert.equal(at({ id: 'Carl', look: 'person-3' }), 'char.person-3.idle.down.0');
+  assert.equal(at({ id: 'code:2', look: 'code' }), 'char.code.idle.down.0');
+  assert.equal(at({ id: 'Dax', look: 'person-99' }), 'char.fallback.idle.down.0');
+  assert.equal(at({ id: 'ask' }), 'char.ask.idle.down.0', 'no look: the id decides, as before');
+});
+
+test('addAgent keeps the id as the sim key and stores the look and the name tag text', async () => {
+  const s = await sim();
+  const a = s.addAgent('Carl', 'person-3', 'Carl');
+  assert.deepEqual([a.id, a.look, a.name], ['Carl', 'person-3', 'Carl']);
+  assert.equal(s.addAgent('Carl', 'person-9', 'Other'), a, 'idempotent');
+  assert.equal(s.addAgent('orchestrator', 'fallback').name, null);
+});
+
+test('tagLayout: centred under the feet, readable at zoom 1 and 3, kept inside the canvas', async () => {
+  const { tagLayout, TAG_MIN_PX } = await rendererMod();
+  const measure = (text, px) => text.length * px * 0.6;
+  const base = { text: 'Carl', footX: 100, footY: 80, canvasW: 1600, canvasH: 900, measure };
+  for (const scale of [1, 3, 6]) {
+    const t = tagLayout({ ...base, scale });
+    assert.ok(t.px >= TAG_MIN_PX, `font ${t.px}px at scale ${scale}`);
+    assert.ok(t.y >= (base.footY + 2) * scale, 'below the feet, clear of the bubble and the step icon');
+    assert.ok(t.x >= 0 && t.x + t.w <= base.canvasW && t.y + t.h <= base.canvasH);
+    assert.ok(Math.abs(t.x + t.w / 2 - base.footX * scale) <= 1);
+  }
+  const edge = tagLayout({ ...base, footX: 0, scale: 3 });
+  assert.equal(edge.x, 0);
+  const bottom = tagLayout({ ...base, footY: 900, scale: 3 });
+  assert.equal(bottom.y + bottom.h, 900);
+});
+
+test('resting: a cooling person takes a free bean bag, sits, sleeps, and leaves it when the status changes', async () => {
+  const s = await sim();
+  const a = s.addAgent('Ada', 'person-1', 'Ada');
+  s.setStatus('Ada', 'resting');
+  for (let i = 0; i < 400 && a.state === 'walking'; i++) s.update(0.1);
+  const seat = s.spots.spotOf('Ada');
+  assert.equal(seat.kind, 'beanbag');
+  assert.deepEqual(a.tile, { x: seat.x, y: seat.y });
+  assert.equal(a.state, 'sit');
+  s.update(3.5);
+  assert.equal(a.state, 'sleep');
+  s.update(600);
+  assert.equal(a.state, 'sleep', 'sleeps until the rest ends');
+  assert.equal(s.spots.spotOf('Ada').id, seat.id);
+  s.setStatus('Ada', 'idle');
+  assert.notEqual(a.status, 'resting');
+  s.setStatus('Ada', 'resting');
+  s.setStatus('Ada', 'working');
+  assert.equal(s.spots.spotOf('Ada').kind, 'desk');
+});
+
+test('resting: nine people fill the nine bean bags; the tenth stands idle and takes no seat', async () => {
+  const s = await sim();
+  const beanbags = bundled().spots.filter((sp) => sp.kind === 'beanbag').length;
+  for (let i = 0; i < beanbags + 1; i++) {
+    s.addAgent(`p${i}`);
+    s.setStatus(`p${i}`, 'resting');
+  }
+  for (let i = 0; i < 400; i++) s.update(0.1);
+  const seated = [...s.agents.values()].filter((a) => s.spots.spotOf(a.id)?.kind === 'beanbag');
+  assert.equal(seated.length, beanbags);
+  const standing = [...s.agents.values()].filter((a) => !s.spots.spotOf(a.id));
+  assert.equal(standing.length, 1);
+  assert.equal(standing[0].state, 'idle');
+});
+
+test('resting under reduced motion: placed on the seat at once, asleep', async () => {
+  const s = await sim({ teleport: true });
+  const a = s.addAgent('Ada');
+  s.setStatus('Ada', 'resting');
+  const seat = s.spots.spotOf('Ada');
+  assert.equal(seat.kind, 'beanbag');
+  assert.deepEqual(a.tile, { x: seat.x, y: seat.y });
+  assert.equal(a.state, 'sleep');
+});
+
+test('handoff: the giver walks beside the receiver, stands 2 s, then returns to its own status', async () => {
+  const { HANDOFF_STAND_SECS } = await agentMod();
+  const s = await sim();
+  const giver = s.addAgent('Ada');
+  const receiver = s.addAgent('Bram');
+  s.setStatus('Bram', 'working');
+  s.setStatus('Ada', 'resting');
+  for (let i = 0; i < 400; i++) s.update(0.1);
+  assert.equal(s.handoff('Ada', 'Bram'), true);
+  assert.equal(giver.state, 'walking');
+  for (let i = 0; i < 400 && giver.state === 'walking'; i++) s.update(0.05);
+  const gap = Math.max(Math.abs(giver.tile.x - receiver.tile.x), Math.abs(giver.tile.y - receiver.tile.y));
+  assert.equal(gap, 1, 'beside the receiver');
+  assert.equal(giver.state, 'idle');
+  s.update(HANDOFF_STAND_SECS - 0.5);
+  assert.equal(giver.state, 'idle');
+  s.update(1);
+  assert.notEqual(giver.state, 'idle', 'moves on after standing');
+  for (let i = 0; i < 400; i++) s.update(0.1);
+  assert.equal(s.spots.spotOf('Ada').kind, 'beanbag', 'still resting afterwards');
+});
+
+test('handoff: unknown agents, the same agent and reduced motion do nothing', async () => {
+  const s = await sim();
+  s.addAgent('Ada');
+  s.addAgent('Bram');
+  assert.equal(s.handoff('Ada', 'Ada'), false);
+  assert.equal(s.handoff('Ada', 'Nobody'), false);
+  assert.equal(s.handoff('Nobody', 'Ada'), false);
+  const r = await sim({ teleport: true });
+  r.addAgent('Ada');
+  r.addAgent('Bram');
+  assert.equal(r.handoff('Ada', 'Bram'), false);
+});
