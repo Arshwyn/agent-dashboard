@@ -977,6 +977,26 @@ test('abandoned: /api/pipeline and the SSE connect frame use the server clock; r
   assert.equal(s.store.count(), n + 1, 'events are only added, never rewritten');
 });
 
+test('abandoned: /api/pipeline runs drops an abandoned run after the window and revival restores it', async (t) => {
+  let clock = Date.now();
+  const s = await startApp({}, { now: () => clock });
+  t.after(() => s.stop());
+  const h = authed();
+  await post(s.base, pev(clock, { step: 'code', state: 'active' }));
+  clock += 90 * 60000;
+  let p = await (await fetch(`${s.base}/api/pipeline`, h)).json();
+  assert.equal(p.runs.length, 1);
+  assert.equal(p.runs[0].status, 'abandoned');
+  clock += 31 * 60000;
+  p = await (await fetch(`${s.base}/api/pipeline`, h)).json();
+  assert.deepEqual(p.runs, []);
+  assert.equal(p.recent_runs[0].status, 'abandoned');
+  await post(s.base, pev(clock, { step: 'code', state: 'active' }));
+  p = await (await fetch(`${s.base}/api/pipeline`, h)).json();
+  assert.equal(p.runs.length, 1);
+  assert.equal(p.runs[0].status, 'running');
+});
+
 test('abandoned: a timer push sends the pipeline event with no ingest', async (t) => {
   let clock = Date.now();
   const s = await startApp({}, { now: () => clock });
