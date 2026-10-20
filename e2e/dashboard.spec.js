@@ -8,6 +8,7 @@ const ROLES = ['spec', 'code', 'cleanup', 'server-ops', 'ask', 'verify', 'review
 const SHOTS = path.join(__dirname, '..', 'e2e-artifacts');
 fs.mkdirSync(SHOTS, { recursive: true });
 
+const POOL = ['Ada', 'Bram', 'Carl', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo'];
 const card = (page, id) => page.getByRole('article', { name: `Agent ${id}`, exact: true });
 const feed = (page) => page.locator('#feed li');
 const toggle = (page, id) => page.locator(`button.sec-toggle[data-section="${id}"]`);
@@ -44,10 +45,16 @@ test.describe('authentication', () => {
 });
 
 test.describe('dashboard', () => {
-  test('renders one card per role with a text status badge and live connection', async ({
+  test('renders one card per role card and per pool person, all idle, with a live connection', async ({
     authedPage: page,
   }) => {
-    await expect(page.locator('#agents article.card')).toHaveCount(ROLES.length);
+    // the 7 configured role cards plus the 8 people of the default pool
+    await expect(page.locator('#agents article.card')).toHaveCount(ROLES.length + POOL.length);
+    for (const name of POOL) {
+      const c = card(page, name);
+      await expect(c).toBeVisible();
+      await expect(c.locator('.badge')).toHaveText(/IDLE/);
+    }
     for (const role of ROLES) {
       const c = card(page, role);
       await expect(c).toBeVisible();
@@ -184,7 +191,9 @@ test.describe('canvas office', () => {
     expect(ch).toBeLessThanOrEqual(414);
     expect(ch).toBe(Math.round((w * 640) / 1024));
     expect(Number(await canvas(page).getAttribute('data-scale'))).toBeGreaterThan(0.5);
-    await expect.poll(() => canvas(page).getAttribute('data-agents')).toBe(String(ROLES.length));
+    await expect
+      .poll(() => canvas(page).getAttribute('data-agents'))
+      .toBe(String(ROLES.length + POOL.length));
     // the atlas is loaded and drawn: a positive frame count and far more colours than flat tiles
     await expect.poll(async () => Number(await canvas(page).getAttribute('data-atlas'))).toBeGreaterThan(300);
     const px = await distinctColours(page);
@@ -223,7 +232,9 @@ test.describe('canvas office', () => {
 
     // An agent id that is not a role gets the fallback look and its own character.
     await server.emit({ agent: 'orchestrator', type: 'status', task: 'route', summary: 'hi' });
-    await expect.poll(() => canvas(page).getAttribute('data-agents')).toBe(String(ROLES.length + 1));
+    await expect
+      .poll(() => canvas(page).getAttribute('data-agents'))
+      .toBe(String(ROLES.length + POOL.length + 1));
     // `problems` (auto fixture) fails the test on any console error or CSP violation.
   });
 
@@ -1084,7 +1095,8 @@ test.describe('cost sections', () => {
     const sessions = page.locator('#sessions');
     await expect(sessions.getByRole('row', { name: /costsess/ })).toContainText('$0.0320');
     await expect(sessions.getByRole('row', { name: /oldsess/ })).toContainText('unpriced');
-    await expect(card(page, 'code')).toContainText('$0.0320');
+    // the subagent is done by a pool person: the cost shows on that person's card, not on a role card
+    await expect(page.locator('#agents article.card', { hasText: '$0.0320' })).toHaveCount(1);
 
     // a later event updates the section without a reload
     await server.emit({
@@ -1941,4 +1953,127 @@ test.describe('panels (agent cards, feed, cost and session summaries)', () => {
       await toggle(page, 'sessions').click();
     });
   }
+});
+
+test.describe('named people', () => {
+  const canvas = (page) => page.locator('#office canvas.office-canvas');
+  const work = (peopleServer, n, role, over = {}) =>
+    peopleServer.emit({
+      agent: role,
+      session_id: `pipe:agent${n}`,
+      type: 'tool_start',
+      tool: 'Bash',
+      summary: `work ${n}`,
+      ...over,
+    });
+  const stopAgent = (peopleServer, n, role) => work(peopleServer, n, role, { type: 'subagent_stop' });
+  const roleOf = (page, name) => card(page, name).locator('.card-role');
+  const looks = async (page) =>
+    Object.fromEntries(
+      ((await canvas(page).getAttribute('data-looks')) || '').split(',').map((e) => e.split(':')),
+    );
+
+  test('the whole pool is on the board from the start, idle, with a name tag and a look each', async ({
+    peoplePage: page,
+  }) => {
+    for (const name of POOL) {
+      await expect(card(page, name)).toBeVisible();
+      await expect(card(page, name).locator('.badge')).toHaveText(/IDLE/);
+    }
+    await expect(card(page, 'orchestrator')).toBeVisible();
+    await expect(page.locator('#agents article.card')).toHaveCount(POOL.length + 1);
+    await expect.poll(() => canvas(page).getAttribute('data-agents')).toBe(String(POOL.length + 1));
+    const names = (await canvas(page).getAttribute('data-names')) || '';
+    for (const name of POOL) expect(names).toContain(`${name}:${name}`);
+    const l = await looks(page);
+    expect(new Set(POOL.map((n) => l[n])).size).toBe(POOL.length);
+    expect(l.orchestrator).toBe('fallback');
+  });
+
+  test('five parallel agents of mixed roles show five named people with distinct sprites', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    const roles = ['spec', 'code', 'verify', 'review', 'code'];
+    for (const [i, role] of roles.entries()) await work(peopleServer, i + 1, role);
+    const who = POOL.slice(0, 5);
+    for (const [i, name] of who.entries()) {
+      await expect(card(page, name).locator('.badge')).toHaveText(/WORKING/);
+      await expect(roleOf(page, name)).toHaveText(roles[i]);
+    }
+    await expect(card(page, 'Finn').locator('.badge')).toHaveText(/IDLE/);
+    const l = await looks(page);
+    expect(new Set(who.map((n) => l[n])).size).toBe(5);
+    await expect
+      .poll(
+        async () =>
+          ((await canvas(page).getAttribute('data-states')) || '')
+            .split(',')
+            .filter((e) => /^(Ada|Bram|Carl|Dax|Ena):typing/.test(e)).length,
+        { timeout: 30_000 },
+      )
+      .toBe(5);
+    // the name tags are drawn on the canvas at the default zoom and at zoom 3
+    await page.locator('#office').scrollIntoViewIfNeeded();
+    await canvas(page).screenshot({ path: path.join(SHOTS, 'people-five-parallel.png') });
+    await page.getByRole('button', { name: 'Zoom in' }).click();
+    await page.getByRole('button', { name: 'Zoom in' }).click();
+    await expect(canvas(page)).toHaveAttribute('data-zoom', '3');
+    await canvas(page).screenshot({ path: path.join(SHOTS, 'people-five-parallel-zoom3.png') });
+  });
+
+  test('a person who stops rests; the next spawn skips them; after the rest they are used again', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    await work(peopleServer, 1, 'spec');
+    await work(peopleServer, 2, 'code');
+    await stopAgent(peopleServer, 1, 'spec');
+    await expect(card(page, 'Ada').locator('.badge')).toHaveText(/RESTING/);
+    await expect(card(page, 'Ada').locator('.badge')).toHaveText(/\d+ s/);
+    await expect(card(page, 'Ada')).toHaveClass(/s-resting/);
+    await expect(roleOf(page, 'Ada')).toHaveText('spec'); // the last role stays
+    await expect.poll(async () => (await canvas(page).getAttribute('data-spots')) || '').toMatch(/Ada:bean-/);
+    await work(peopleServer, 3, 'review'); // inside the rest: not Ada
+    await expect(card(page, 'Carl').locator('.badge')).toHaveText(/WORKING/);
+    await expect(card(page, 'Ada').locator('.badge')).not.toHaveText(/WORKING/);
+    // once the 8 s rest is over, Ada is the lowest free person again
+    await expect(card(page, 'Ada').locator('.badge')).toHaveText(/IDLE|DONE/, { timeout: 25_000 });
+    await work(peopleServer, 4, 'code');
+    await expect(card(page, 'Ada').locator('.badge')).toHaveText(/WORKING/);
+    await expect(roleOf(page, 'Ada')).toHaveText('code');
+    await canvas(page).screenshot({ path: path.join(SHOTS, 'people-resting.png') });
+  });
+
+  test('a stopped agent that continues returns to its person and ends the rest', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    await work(peopleServer, 1, 'spec');
+    await stopAgent(peopleServer, 1, 'spec');
+    await expect(card(page, 'Ada').locator('.badge')).toHaveText(/RESTING/);
+    await work(peopleServer, 1, 'spec');
+    await expect(card(page, 'Ada').locator('.badge')).toHaveText(/WORKING/);
+  });
+
+  test('a different person starting the next role right after a stop shows an inferred handoff', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    await work(peopleServer, 1, 'spec');
+    await stopAgent(peopleServer, 1, 'spec');
+    await work(peopleServer, 2, 'code');
+    await expect(card(page, 'Bram')).toContainText('from Ada (inferred handoff)');
+    await expect(card(page, 'Ada')).toContainText('to Bram (inferred handoff)');
+    await expect(card(page, 'Carl').locator('.card-handoff')).toBeHidden();
+  });
+
+  test('every pool member busy: the next agent is Extra 1, and nobody is missing from the board', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    for (let i = 1; i <= 9; i++) await work(peopleServer, i, 'code');
+    await expect(card(page, 'Extra 1').locator('.badge')).toHaveText(/WORKING/);
+    await expect(page.locator('#agents article.card')).toHaveCount(POOL.length + 2);
+  });
 });

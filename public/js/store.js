@@ -3,7 +3,9 @@
 //
 // state = {
 //   connection: 'connecting' | 'live' | 'reconnecting',
-//   agents:   [{ id, status: 'idle'|'working'|'blocked'|'done', task, since, tokens:{in,out}, ...raw }],
+//   agents:   [{ id, status: 'idle'|'working'|'blocked'|'done'|'resting', task, since, tokens:{in,out}, ...raw }],
+//             id is a person id (a pool name, `extra-<n>`) or a role card; `agent`/`role` is the role they do now (null
+//             for a person who never worked), `name`, `label`, `slot` (null for a role card), `cooldown_until`, `handoff`
 //   events:   [{ id, ts, agent, type, tool, summary, ... }]   // newest first, bounded
 //   pipeline: { run, runs, recent_runs, activity_runs, active_steps }   // runs: one entry per panel (default [run] / []);
 //             run is the last-emitting run (header summary); activity_runs: non-feature runs, newest first;
