@@ -5,7 +5,7 @@ const { UNTRACKED_AGENTS } = require('./state');
 
 const DEFAULT_AGENTS = ['spec', 'code', 'cleanup', 'server-ops', 'ask', 'verify', 'review'];
 // Display names for parallel instances of one role (generic given names, not identities).
-const DEFAULT_AGENT_NAMES = ['Ada', 'Bram', 'Cleo', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo'];
+const DEFAULT_AGENT_NAMES = ['Ada', 'Bram', 'Carl', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo'];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/;
 const MAX_NAMES = 99;
 
@@ -45,7 +45,7 @@ function int(env, key, def, { min = 0 } = {}) {
   return n;
 }
 
-function parseNames(raw) {
+function parseNames(raw, reserved = []) {
   if (raw === undefined || raw.trim() === '') return [...DEFAULT_AGENT_NAMES];
   const names = raw
     .split(',')
@@ -59,6 +59,10 @@ function parseNames(raw) {
   if (new Set(names.map((x) => x.toLowerCase())).size !== names.length) {
     throw new Error('AGENT_NAMES must not repeat a name');
   }
+  // A person must never shadow a role card (a configured AGENTS entry or an untracked name).
+  const taken = new Set([...reserved, ...UNTRACKED_AGENTS].map((x) => x.toLowerCase()));
+  const clash = names.find((x) => taken.has(x.toLowerCase()));
+  if (clash !== undefined) throw new Error(`AGENT_NAMES entry "${clash}" clashes with an agent or role name`);
   return names;
 }
 
@@ -97,7 +101,7 @@ function loadConfig(env = process.env) {
     host: env.HOST || '0.0.0.0',
     dbPath: env.DB_PATH || './data/dashboard.db',
     agents: agents.filter((n) => !UNTRACKED_AGENTS.includes(n)),
-    agentNames: parseNames(env.AGENT_NAMES),
+    agentNames: parseNames(env.AGENT_NAMES, agents),
     instanceRetireMinutes: int(env, 'INSTANCE_RETIRE_MINUTES', 30, { min: 1 }),
     retentionDays: int(env, 'RETENTION_DAYS', 30, { min: 1 }),
     maxRows: int(env, 'MAX_ROWS', 200000, { min: 1000 }),
