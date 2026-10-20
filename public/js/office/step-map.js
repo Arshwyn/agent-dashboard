@@ -83,3 +83,23 @@ export function iconFrames(prev, cur, elapsed, reduced = false) {
   const k = (t - 0.5) * 2;
   return cur ? [{ icon: cur, alpha: k, dy: Math.round((1 - k) * 3) }] : [];
 }
+
+// Which card shows the step icon of each merged role. Several people can do the same role at once
+// (two verify agents); with no run link there is no way to tell their steps apart, so only the newest
+// busy person of a role shows the icon. `agents` are agent views ({ id, role, status, stale,
+// run_started_ts, last_event_ts }). Returns Map role -> id. Pure; ties go to the lowest id.
+export function indicatorOwners(agents) {
+  const owners = new Map();
+  const rank = new Map();
+  for (const a of Array.isArray(agents) ? agents : []) {
+    if (!a || typeof a.role !== 'string' || !has(INDICATORS, a.role)) continue;
+    if (a.stale || (a.status !== 'working' && a.status !== 'blocked')) continue;
+    const t = Number.isFinite(a.run_started_ts) ? a.run_started_ts : (a.last_event_ts ?? 0);
+    const best = rank.get(a.role);
+    if (best === undefined || t > best.t || (t === best.t && a.id < best.id)) {
+      rank.set(a.role, { t, id: a.id });
+      owners.set(a.role, a.id);
+    }
+  }
+  return owners;
+}

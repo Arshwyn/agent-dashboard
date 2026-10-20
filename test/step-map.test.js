@@ -129,3 +129,59 @@ test('abandoned entries never produce an indicator', async () => {
   assert.equal(indicatorFor('verify', [e], NOW), null);
   assert.deepEqual(stepsFor('verify', [e], NOW), []);
 });
+
+// ---- named people: role-based indicators, newest busy person only -----------------------------------
+
+test('indicatorOwners: the newest busy person of a merged role owns the icon', async () => {
+  const { indicatorOwners } = await mod();
+  const view = (id, role, over = {}) => ({
+    id,
+    role,
+    status: 'working',
+    stale: false,
+    run_started_ts: 100,
+    ...over,
+  });
+  const owners = indicatorOwners([
+    view('Ada', 'verify', { run_started_ts: 100 }),
+    view('Bram', 'verify', { run_started_ts: 300 }),
+    view('Carl', 'review', { run_started_ts: 200 }),
+    view('Dax', 'code', { run_started_ts: 400 }),
+  ]);
+  assert.equal(owners.get('verify'), 'Bram');
+  assert.equal(owners.get('review'), 'Carl');
+  assert.equal(owners.has('code'), false, 'only merged roles have indicators');
+});
+
+test('indicatorOwners: idle, resting, done and stale people never own it; ties go to the lowest id', async () => {
+  const { indicatorOwners } = await mod();
+  const v = (id, over = {}) => ({
+    id,
+    role: 'verify',
+    status: 'working',
+    stale: false,
+    run_started_ts: 5,
+    ...over,
+  });
+  assert.equal(
+    indicatorOwners([
+      v('Ada', { status: 'resting' }),
+      v('Bram', { status: 'done' }),
+      v('Carl', { status: 'idle' }),
+      v('Dax', { stale: true }),
+    ]).size,
+    0,
+  );
+  assert.equal(indicatorOwners([v('Bram'), v('Ada')]).get('verify'), 'Ada');
+  assert.equal(indicatorOwners([v('Bram', { status: 'blocked' })]).get('verify'), 'Bram');
+  assert.equal(indicatorOwners(null).size, 0);
+  assert.equal(indicatorOwners([null, { id: 'x' }, { id: 'y', role: 5 }]).size, 0);
+});
+
+test('a person is matched by the role they do now: stepsFor takes the role, not the card id', async () => {
+  const { stepsFor, indicatorFor } = await mod();
+  const active = [{ run_id: 'r', step: 'review', substep: 'security', ts: 1000, repo: 'x' }];
+  assert.equal(stepsFor('review', active, 1000).length, 1);
+  assert.equal(stepsFor('Carl', active, 1000).length, 0, 'a person name is not a character');
+  assert.equal(indicatorFor('review', active, 1000).icon, 'shield');
+});
