@@ -48,6 +48,12 @@ test('AGENT_NAMES and INSTANCE_RETIRE_MINUTES have defaults and are validated', 
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,Code', AGENTS: 'code' }), /clashes/);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,TEST' }), /clashes/, 'untracked names too');
   assert.deepEqual(loadConfig({ ...base, AGENT_NAMES: 'Ok,Code', AGENTS: 'ask' }).agentNames, ['Ok', 'Code']);
+  assert.equal(c.agentCooldownSeconds, 60);
+  assert.equal(c.handoffWindowSeconds, 120);
+  assert.equal(loadConfig({ ...base, AGENT_COOLDOWN_SECONDS: '0' }).agentCooldownSeconds, 0, '0 disables');
+  assert.equal(loadConfig({ ...base, HANDOFF_WINDOW_SECONDS: '30' }).handoffWindowSeconds, 30);
+  assert.throws(() => loadConfig({ ...base, AGENT_COOLDOWN_SECONDS: '-1' }), /AGENT_COOLDOWN_SECONDS/);
+  assert.throws(() => loadConfig({ ...base, HANDOFF_WINDOW_SECONDS: 'x' }), /HANDOFF_WINDOW_SECONDS/);
   assert.throws(() => loadConfig({ ...base, INSTANCE_RETIRE_MINUTES: '0' }), /INSTANCE_RETIRE_MINUTES/);
 });
 

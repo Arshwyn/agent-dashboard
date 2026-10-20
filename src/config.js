@@ -103,6 +103,8 @@ function loadConfig(env = process.env) {
     agents: agents.filter((n) => !UNTRACKED_AGENTS.includes(n)),
     agentNames: parseNames(env.AGENT_NAMES, agents),
     instanceRetireMinutes: int(env, 'INSTANCE_RETIRE_MINUTES', 30, { min: 1 }),
+    agentCooldownSeconds: int(env, 'AGENT_COOLDOWN_SECONDS', 60, { min: 0 }),
+    handoffWindowSeconds: int(env, 'HANDOFF_WINDOW_SECONDS', 120, { min: 0 }),
     retentionDays: int(env, 'RETENTION_DAYS', 30, { min: 1 }),
     maxRows: int(env, 'MAX_ROWS', 200000, { min: 1000 }),
     doneToIdleSeconds: int(env, 'DONE_TO_IDLE_SECONDS', 60, { min: 1 }),
