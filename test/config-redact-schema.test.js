@@ -22,7 +22,7 @@ test('config refuses to start with missing, short, default or identical tokens',
     /variety/,
   );
   const c = loadConfig({ INGEST_TOKEN: GOOD_A, DASHBOARD_TOKEN: GOOD_B });
-  assert.deepEqual(c.agents, ['spec', 'code', 'cleanup', 'server-ops', 'ask', 'verify', 'review']);
+  assert.deepEqual(c.agents, ['orchestrator']);
   assert.equal(c.port, 8787);
 });
 

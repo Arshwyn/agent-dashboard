@@ -17,7 +17,7 @@ services:
       DONE_TO_IDLE_SECONDS: ${DONE_TO_IDLE_SECONDS:-60}
       STALE_MINUTES: ${STALE_MINUTES:-10}
       PIPELINE_STALE_MINUTES: ${PIPELINE_STALE_MINUTES:-60}
-      AGENTS: ${AGENTS:-spec,code,cleanup,server-ops,ask,verify,review}
+      AGENTS: ${AGENTS:-orchestrator}
       AGENT_NAMES: ${AGENT_NAMES:-Ada,Bram,Carl,Dax,Ena,Finn,Gia,Hugo}
       AGENT_COOLDOWN_SECONDS: ${AGENT_COOLDOWN_SECONDS:-60}
       HANDOFF_WINDOW_SECONDS: ${HANDOFF_WINDOW_SECONDS:-120}

@@ -3,7 +3,7 @@
 const { loadPricing } = require('./pricing');
 const { UNTRACKED_AGENTS } = require('./state');
 
-const DEFAULT_AGENTS = ['spec', 'code', 'cleanup', 'server-ops', 'ask', 'verify', 'review'];
+const DEFAULT_AGENTS = ['orchestrator'];
 // Display names for parallel instances of one role (generic given names, not identities).
 const DEFAULT_AGENT_NAMES = ['Ada', 'Bram', 'Carl', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo'];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/;
