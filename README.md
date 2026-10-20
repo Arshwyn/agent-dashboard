@@ -6,7 +6,7 @@ SQLite, derives per-agent state and pipeline progress, and pushes everything liv
 - Node 20, plain `http` server, `better-sqlite3` (pinned to 11.10.0, which has prebuilt binaries for Node 20), no frontend framework, no CDN.
 - Default port: **8787**.
 - Pixel-art skin: retro theme plus a canvas virtual office where each agent walks between desks, lounge, kitchen and more (see [Adding a skin](#adding-a-skin)).
-- Layout ("command centre"): a sticky header (title, connection state, run summary, Sign out), then the pipeline as one panel per active feature run (stacked, each collapsible, with its own compact one-row stepper and inline substep chips), the office (box capped at 420 px, zoom and pan kept), the agents grid beside the live feed on desktop, then cost summary, sessions and other requests. Every section has a collapse button in its heading; cost summary and sessions start collapsed. Content is at most 1440 px wide; breakpoints are 768 px (agents in two columns, stepper 4 + 4) and 1200 px (desktop grid, stepper in one row); phones get one column and a 2x4 stepper.
+- Layout ("command centre"): a sticky header (title, connection state, run summary, Sign out), then the pipeline as one panel per active feature run (abandoned runs leave after a window; stacked, each collapsible, with its own compact one-row stepper and inline substep chips), the office (box capped at 420 px, zoom and pan kept), the agents grid beside the live feed on desktop, then cost summary, sessions and other requests. Every section has a collapse button in its heading; cost summary and sessions start collapsed. Content is at most 1440 px wide; breakpoints are 768 px (agents in two columns, stepper 4 + 4) and 1200 px (desktop grid, stepper in one row); phones get one column and a 2x4 stepper.
 
 ## Quick start
 
@@ -315,7 +315,9 @@ Non-feature runs show as generic activity rows ("Other requests"), never as the 
                                                        // pending|active|passed|failed|skipped)
   runs: [{...feature run}],                            // one entry per pipeline panel, same shape as run:
                                                        // feature runs that are running, waiting_approval or
-                                                       // abandoned, plus complete or failed runs for 10 minutes
+                                                       // abandoned (for 120 minutes after their last event,
+                                                       // PANEL_ABANDONED_MINUTES, a code constant, applied on
+                                                       // read), plus complete or failed runs for 10 minutes
                                                        // after their last event (PANEL_GRACE_MINUTES, a code
                                                        // constant, applied on read); max 8 (the most recently
                                                        // updated); ordered by started_ts, then run_id, so panels
@@ -340,6 +342,7 @@ Non-feature runs show as generic activity rows ("Other requests"), never as the 
 - A non-feature row (`question`, `server_task`, `single_role`) still `active` and silent past the threshold reports `state: 'abandoned'`, `abandoned: true` and `stale_since_ts` (its last event). A `question` with no answer is covered.
 - A feature run that would be `running` reports `status: 'abandoned'` and `abandoned: true`. A step that is `active` and whose newest `ts` (step and substeps) is older than the threshold gets `abandoned: true` (as do its active substeps), even if other steps keep emitting; its `state` stays `active`. Abandoned items are left out of `active_steps`.
 - `waiting_approval` (the `user-approval` step) is never abandoned by age: it is a human gate. `complete` and `failed` runs are never changed.
+- An abandoned feature run leaves `runs[]` after `PANEL_ABANDONED_MINUTES` (120) of silence, measured from its last event, and stays in `recent_runs` with `status: 'abandoned'`; a new event brings it back.
 - Any later event for the run revives it (status, `abandoned` and the step return to normal). Abandoned items are not counted as running anywhere.
 - The UI greys them with a dashed border, the glyph `⊘` and the text `ABANDONED / no updates for N min`, with no animation (also under reduced motion), and hides the office indicator. Old clients ignore `abandoned` and still show `ACTIVE` for activity rows.
 
