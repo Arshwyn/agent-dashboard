@@ -190,6 +190,9 @@ const STEP_STATES = ['pending', 'active', 'passed', 'failed'];
 const KINDS = ['feature', 'question', 'server_task', 'single_role'];
 const ROLES = ['spec', 'code', 'test', 'security', 'styling', 'code-review', 'cleanup', 'verify', 'review'];
 const MAX_ACTIVE_STEPS = 50;
+// Panel list (`runs` in the snapshot): at most MAX_PANELS feature runs; finished runs stay for the grace period.
+const MAX_PANELS = 8;
+const PANEL_GRACE_MINUTES = 10;
 const ACTIVITY_STATES = ['active', 'passed', 'failed'];
 const MAX_ACTIVITY = 20;
 const DEPLOY_RESULTS = ['success', 'failure_rolled_back', 'failure_rollback_failed'];
@@ -252,6 +255,8 @@ class PipelineTracker {
       while (this.runs.size > this.maxRuns) {
         let oldest = null;
         for (const r of this.runs.values()) {
+          // Only the new run and the current run are protected. The default cap (50) is far above
+          // the panel cap (8), so with the default a panel is only evicted after 42 newer-updated runs.
           if (
             r.run_id !== id &&
             r.run_id !== this.currentId &&
@@ -523,6 +528,26 @@ class PipelineTracker {
     return out.sort((a, b) => b.ts - a.ts || (a.run_id < b.run_id ? -1 : 1)).slice(0, MAX_ACTIVE_STEPS);
   }
 
+  /**
+   * Feature runs shown as panels: running, waiting or abandoned runs, plus finished (complete / failed)
+   * runs inside the grace window. Capped at MAX_PANELS (most recently updated kept), ordered by
+   * started_ts then run_id so panels do not reorder between updates. Applied on read; nothing is rewritten.
+   */
+  panelRuns(now = Date.now()) {
+    const graceMs = PANEL_GRACE_MINUTES * 60 * 1000;
+    const eligible = [...this.runs.values()].filter((r) => {
+      if (r.kind !== 'feature') return false;
+      const status = this._status(r, now);
+      return status === 'complete' || status === 'failed' ? now - r.updated_ts <= graceMs : true;
+    });
+    return eligible
+      .sort((a, b) => b.updated_ts - a.updated_ts || (a.run_id < b.run_id ? -1 : 1))
+      .slice(0, MAX_PANELS)
+      .sort(
+        (a, b) => a.started_ts - b.started_ts || (a.run_id < b.run_id ? -1 : a.run_id > b.run_id ? 1 : 0),
+      );
+  }
+
   snapshot(now = Date.now()) {
     const run = this.currentId ? this.runs.get(this.currentId) : null;
     const all = [...this.runs.values()].sort((a, b) => b.updated_ts - a.updated_ts);
@@ -539,6 +564,7 @@ class PipelineTracker {
       .map((r) => this.activityView(r, now));
     return {
       run: run ? this.view(run, now) : null,
+      runs: this.panelRuns(now).map((r) => this.view(r, now)),
       recent_runs: recent,
       activity_runs: activity,
       active_steps: this.activeSteps(now),
@@ -551,6 +577,8 @@ module.exports = {
   UNTRACKED_AGENTS,
   AgentTracker,
   PipelineTracker,
+  PANEL_GRACE_MINUTES,
+  MAX_PANELS,
   STATUSES,
   STEPS,
   SUBSTEPS,
