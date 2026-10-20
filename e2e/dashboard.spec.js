@@ -1540,15 +1540,16 @@ test.describe('abandoned runs', () => {
     isolatedServer: server,
   }) => {
     const old = Date.now() - 2 * HOUR;
+    const mid = Date.now() - 1.5 * HOUR;
     await server.emit(ev('ab-q', { kind: 'question', state: 'active', target: 'example-app' }, old));
-    await server.emit(ev('ab-f', { step: 'verify', substep: 'test', state: 'active' }, old));
+    await server.emit(ev('ab-f', { step: 'verify', substep: 'test', state: 'active' }, mid));
     const row = page.locator('#activity .act.s-abandoned');
     await expect(row).toContainText('⊘ ABANDONED / no updates for 120 min');
     await expect(row).not.toContainText('ACTIVE');
     const abPanel = page.locator('#pipeline [data-run-id="ab-f"]');
     const step = abPanel.locator('.stepper > li[data-step="verify"]');
     await expect(step).toHaveClass(/abandoned/);
-    await expect(step.locator('.st')).toContainText('⊘ ABANDONED / no updates for 120 min');
+    await expect(step.locator('.st')).toContainText('⊘ ABANDONED / no updates for 90 min');
     await expect(abPanel).toContainText('status: abandoned');
     await expect(step.locator('.substep[data-substep="test"]')).toContainText('ABANDONED');
     for (const el of [row, step, step.locator('.substep.abandoned')]) {
@@ -1565,6 +1566,17 @@ test.describe('abandoned runs', () => {
     await expect(abPanel).toContainText('status: running');
     await server.emit(ev('ab-q', { kind: 'question', state: 'active' }, Date.now()));
     await expect(page.locator('#activity .act.s-abandoned')).toHaveCount(0);
+  });
+
+  test('an abandoned run silent past the window has no panel but its activity row stays', async ({
+    isolatedPage: page,
+    isolatedServer: server,
+  }) => {
+    const old = Date.now() - 3 * HOUR;
+    await server.emit(ev('ab-q', { kind: 'question', state: 'active', target: 'example-app' }, old));
+    await server.emit(ev('ab-old', { step: 'verify', substep: 'test', state: 'active' }, old));
+    await expect(page.locator('#activity .act.s-abandoned')).toContainText('ABANDONED');
+    await expect(page.locator('#pipeline [data-run-id]')).toHaveCount(0);
   });
 
   test.describe('phone', () => {
