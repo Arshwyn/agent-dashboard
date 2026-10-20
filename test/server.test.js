@@ -688,7 +688,7 @@ test('assets: the office atlas and layout are served with the right types and se
   assert.equal(atlas.headers.get('cache-control'), 'private, max-age=31536000, immutable');
   assert.equal(atlas.headers.get('x-frame-options'), 'DENY');
   assert.equal(atlas.headers.get('cross-origin-resource-policy'), 'same-origin');
-  assert.equal((await atlas.json()).version, 1);
+  assert.equal((await atlas.json()).version, 2);
   assert.equal((await fetch(`${s.base}/v/${v}/office/${['tiles', 'png'].join('.')}`, authed())).status, 404);
 });
 
