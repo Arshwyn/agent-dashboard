@@ -442,3 +442,13 @@ test('person looks are visually distinct in the atlas and the PNG stays small', 
   }
   assert.ok(fs.statSync(ATLAS_PNG).size < 100 * 1024);
 });
+
+test('agentLook: a person gets the look of its pool position, a role card its role look, others the fallback', async () => {
+  const { agentLook } = await rolesMod();
+  assert.equal(agentLook({ id: 'Carl', slot: 3, role: 'spec' }), 'person-3');
+  assert.equal(agentLook({ id: 'Extra 9', slot: 17, role: 'code' }), 'person-1', 'larger pools cycle');
+  assert.equal(agentLook({ id: 'review', slot: null, role: 'review' }), 'review');
+  assert.equal(agentLook({ id: 'orchestrator', slot: null, role: 'orchestrator' }), 'fallback');
+  assert.equal(agentLook({ id: 'Ada', slot: 1, role: null }), 'person-1');
+  assert.equal(agentLook(null), 'fallback');
+});

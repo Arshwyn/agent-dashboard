@@ -4,11 +4,14 @@ import { createOffice } from '../office/index.js';
 import { createAvatar, createIcon } from '../avatar.js';
 import {
   indicatorFor,
+  indicatorOwners,
   stepsFor,
   INDICATORS,
   STEP_LABEL_UPPER,
   PARENT_LABEL_UPPER,
 } from '../office/step-map.js';
+import { agentLook } from '../office/roles.js';
+import { freshHandoff, handoffText } from '../office/handoff.js';
 import { h, emptyState, fmtElapsed, fmtTokens, fmtCost, fmtClock, fmtAgo } from '../util.js';
 
 const BADGE = {
@@ -16,6 +19,7 @@ const BADGE = {
   working: ['▶', 'WORKING'],
   blocked: ['!', 'BLOCKED'],
   done: ['✓', 'DONE'],
+  resting: ['☾', 'RESTING'],
 };
 const STEP_LABEL = {
   spec: 'Spec',
@@ -71,10 +75,17 @@ export function mountMissionControl(store, root = document) {
   const connEl = $('conn');
   const cards = new Map();
   const office = createOffice($('office'));
+  const seenHandoffs = new Set();
   let filter = '';
 
-  function makeCard(id) {
-    const name = h('span', { class: 'card-name', title: id, text: id });
+  // One card per person (or per role card such as the orchestrator). The id is the person id; the
+  // look and the name tag are fixed for the card's life, the role and status change.
+  function makeCard(a) {
+    const id = a.id;
+    const look = agentLook(a);
+    const name = h('span', { class: 'card-name' });
+    const role = h('span', { class: 'card-role' });
+    const handoff = h('div', { class: 'card-handoff', hidden: true });
     const badge = h('span', { class: 'badge' });
     const task = h('div', { class: 'task' });
     const stepLine = h('div', { class: 'step-line', hidden: true });
@@ -105,16 +116,20 @@ export function mountMissionControl(store, root = document) {
       detailsBtn.setAttribute('aria-expanded', String(open));
       detailsBody.hidden = !open;
     });
-    office.addAgent(id);
-    const el = h('article', { class: 'card', 'aria-label': `Agent ${id}` }, [
-      h('div', { class: 'card-head' }, [h('div', { class: 'card-id' }, [createAvatar(id), name]), badge]),
+    office.addAgent(id, look, a.name ?? null);
+    const el = h('article', { class: 'card', 'data-agent-id': id }, [
+      h('div', { class: 'card-head' }, [
+        h('div', { class: 'card-id' }, [createAvatar(look), name, role]),
+        badge,
+      ]),
       task,
+      handoff,
       h('div', { class: 'card-steps' }, [stepLine, stepExtra, detailsBtn]),
       kv('Elapsed'),
       kv('Last activity'),
       detailsBody,
     ]);
-    const c = { el, badge, task, rows, stepLine, stepExtra, stepKey: '', agent: null };
+    const c = { el, badge, task, name, role, handoff, rows, stepLine, stepExtra, stepKey: '', agent: null };
     cards.set(id, c);
     agentsEl.append(el);
     return c;
@@ -130,14 +145,28 @@ export function mountMissionControl(store, root = document) {
       cards.delete(id);
     }
     for (const a of store.state.agents) {
-      const c = cards.get(a.id) || makeCard(a.id);
+      const c = cards.get(a.id) || makeCard(a);
       c.agent = a;
-      const [glyph, label] = BADGE[a.status] || BADGE.idle;
+      const label = a.label ?? a.id;
       c.el.className = `card s-${a.status}`;
+      c.el.setAttribute('aria-label', `Agent ${label}`);
+      c.el.dataset.role = a.role ?? '';
+      c.name.textContent = label;
+      c.name.title = label;
+      // a person shows the role they do now (or did last); a role card is its own role
+      c.role.textContent = a.name ? (a.role ?? '') : '';
+      c.role.hidden = !a.name || !a.role;
       c.badge.className = `badge s-${a.status}`;
       office.setState(a.id, a.stale ? 'idle' : a.status);
-      c.badge.textContent = `${glyph} ${label}${a.stale ? ' (stale)' : ''}`;
-      c.task.textContent = a.task || (a.status === 'idle' ? 'Idle' : '');
+      const ht = handoffText(a.handoff, a.id);
+      c.handoff.hidden = !ht;
+      c.handoff.textContent = ht;
+      const key = freshHandoff(a.handoff, seenHandoffs, store.now());
+      if (key && a.handoff.from === a.id) {
+        seenHandoffs.add(key);
+        office.handoff(a.handoff.from, a.handoff.to);
+      }
+      c.task.textContent = a.task || (a.status === 'idle' ? 'Idle' : a.status === 'resting' ? 'Resting' : '');
       c.task.title = a.task || '';
       c.rows['Tokens in/out'].textContent = `${fmtTokens(a.tokens.in)} / ${fmtTokens(a.tokens.out)}`;
       c.rows.Cost.textContent = fmtCost(a.cost_usd) + (a.unpriced_tokens > 0 ? ' + unpriced' : '');
@@ -145,10 +174,14 @@ export function mountMissionControl(store, root = document) {
       tickCard(c);
     }
     renderIndicators();
-    // keep the feed filter in sync with the known agents
+    // the feed filter lists roles (events keep the role in `agent`)
     const known = new Set([...filterEl.options].map((o) => o.value));
-    for (const a of store.state.agents) {
-      if (!known.has(a.id)) filterEl.append(h('option', { value: a.id, text: a.id }));
+    const roles = [...store.state.agents.map((a) => a.role), ...store.state.events.map((e) => e.agent)];
+    for (const r of roles) {
+      if (r && !known.has(r)) {
+        known.add(r);
+        filterEl.append(h('option', { value: r, text: r }));
+      }
     }
   }
 
@@ -157,12 +190,18 @@ export function mountMissionControl(store, root = document) {
   function renderIndicators() {
     const active = (store.state.pipeline && store.state.pipeline.active_steps) || [];
     const now = store.now();
+    // Several people can do the same role; only the newest busy one of a role shows the icon.
+    const owners = indicatorOwners(store.state.agents);
     for (const [id, c] of cards) {
-      if (!Object.hasOwn(INDICATORS, id)) continue;
       const a = c.agent;
-      const busy = a && !a.stale && (a.status === 'working' || a.status === 'blocked');
-      const ind = busy ? indicatorFor(id, active, now) : null;
-      const list = ind ? stepsFor(id, active, now) : [];
+      const role = a && a.role;
+      if (!role || !Object.hasOwn(INDICATORS, role)) {
+        if (c.stepKey) clearIndicator(id, c);
+        continue;
+      }
+      const busy = owners.get(role) === id;
+      const ind = busy ? indicatorFor(role, active, now) : null;
+      const list = ind ? stepsFor(role, active, now) : [];
       const top = list.find((s) => s.substep) || list[0];
       office.setIndicator(id, ind && ind.icon);
       const extra = ind
@@ -188,10 +227,28 @@ export function mountMissionControl(store, root = document) {
     }
   }
 
+  function clearIndicator(id, c) {
+    office.setIndicator(id, null);
+    c.stepKey = '';
+    c.el.dataset.step = '';
+    c.el.dataset.substep = '';
+    c.stepLine.hidden = true;
+    c.stepLine.replaceChildren();
+    c.stepExtra.hidden = true;
+    c.stepExtra.textContent = '';
+  }
+
   function tickCard(c) {
     const a = c.agent;
     if (!a) return;
     const now = store.now();
+    if (a.status === 'resting') {
+      const left = Math.max(0, Math.ceil(((a.cooldown_until ?? now) - now) / 1000));
+      c.badge.textContent = left > 0 ? `☾ RESTING, ${left} s` : '☾ RESTING';
+    } else {
+      const [glyph, label] = BADGE[a.status] || BADGE.idle;
+      c.badge.textContent = `${glyph} ${label}${a.stale ? ' (stale)' : ''}`;
+    }
     let text = '-';
     if ((a.status === 'working' || a.status === 'blocked') && a.run_started_ts)
       text = fmtElapsed(now - a.run_started_ts);
@@ -206,14 +263,17 @@ export function mountMissionControl(store, root = document) {
 
   function renderFeed() {
     const evs = store.state.events.filter((e) => !filter || e.agent === filter).slice(0, 100);
+    const people = new Map(store.state.agents.map((a) => [a.id, a.label ?? a.id]));
+    // `role · name` once the server has put a person on the event (text only)
+    const whoOf = (e) => (e.instance ? `${e.agent} · ${people.get(e.instance) ?? e.instance}` : e.agent);
     feedEl.replaceChildren(
       ...evs.map((e) => {
         const ty = e.tool ? `${e.type}:${e.tool}` : e.type;
         const sum = e.summary || e.task || '';
         // one line per row; the full text is in the title attribute
-        return h('li', { title: `${fmtClock(e.ts)} ${e.agent} ${ty}${sum ? ': ' + sum : ''}` }, [
+        return h('li', { title: `${fmtClock(e.ts)} ${whoOf(e)} ${ty}${sum ? ': ' + sum : ''}` }, [
           h('span', { class: 't', text: fmtClock(e.ts) }),
-          h('span', { class: 'who', text: e.agent }),
+          h('span', { class: 'who', text: whoOf(e) }),
           h('span', { class: 'ty', text: ty }),
           h('span', { class: 'sum', title: sum, text: sum }),
         ]);
