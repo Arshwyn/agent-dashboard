@@ -5,7 +5,8 @@
 //   connection: 'connecting' | 'live' | 'reconnecting',
 //   agents:   [{ id, status: 'idle'|'working'|'blocked'|'done', task, since, tokens:{in,out}, ...raw }],
 //   events:   [{ id, ts, agent, type, tool, summary, ... }]   // newest first, bounded
-//   pipeline: { run, recent_runs, activity_runs, active_steps }   // activity_runs: non-feature runs, newest first;
+//   pipeline: { run, runs, recent_runs, activity_runs, active_steps }   // runs: one entry per panel (default [run] / []);
+//             run is the last-emitting run (header summary); activity_runs: non-feature runs, newest first;
 //             run.steps[].substeps: [{ name, state, ts, summary }] (verify, review)
 //             run.status may be 'abandoned' (run.abandoned); steps/substeps/activity rows may carry abandoned: true
 //             (activity state 'abandoned', stale_since_ts); old servers send neither, so treat a missing flag as false
@@ -26,9 +27,13 @@ function normalizePipeline(p) {
   const q = p && typeof p === 'object' ? p : {};
   const run = q.run ?? null;
   if (run && run.status === 'abandoned') run.abandoned = true;
+  // Older servers send no `runs`: the single run is the only panel.
+  const list = Array.isArray(q.runs) ? q.runs.filter((r) => r && typeof r === 'object') : run ? [run] : [];
+  const runs = list.map((r) => (r.status === 'abandoned' ? { ...r, abandoned: true } : r));
   return {
     ...q,
     run,
+    runs,
     recent_runs: Array.isArray(q.recent_runs) ? q.recent_runs : [],
     activity_runs: Array.isArray(q.activity_runs)
       ? q.activity_runs.map((r) => (r.state === 'abandoned' ? { ...r, abandoned: true } : r))
@@ -47,7 +52,7 @@ export function createStore({
     connection: 'connecting',
     agents: [],
     events: [],
-    pipeline: { run: null, recent_runs: [], activity_runs: [], active_steps: [] },
+    pipeline: { run: null, runs: [], recent_runs: [], activity_runs: [], active_steps: [] },
     costs: { days: 7, summary: null, sessions: [] },
   };
   let costTimer = null;
