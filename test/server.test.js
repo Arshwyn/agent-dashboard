@@ -233,6 +233,12 @@ test('GET /api/pipeline reflects pipeline events', async (t) => {
   const p = await (await fetch(`${s.base}/api/pipeline`, h)).json();
   assert.equal(p.run.status, 'waiting_approval');
   assert.equal(p.run.attempt, 2);
+  assert.ok(Array.isArray(p.runs));
+  assert.deepEqual(
+    p.runs.map((r) => r.run_id),
+    ['r'],
+  );
+  assert.equal(p.runs[0].status, 'waiting_approval');
 });
 
 test('activity runs are ingested, redacted, exposed by /api/pipeline and pushed over SSE', async (t) => {
