@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const state = require('../src/state');
-const { AgentTracker, RETIRED_AGENTS, UNTRACKED_AGENTS } = state;
+const { AgentTracker, RETIRED_AGENTS, UNTRACKED_AGENTS, PANEL_GRACE_MINUTES } = state;
 
 // Older tests read the wall clock via snapshot(); give them an effectively infinite staleness
 // threshold unless a test sets staleMinutes itself (the abandoned tests below do).
@@ -787,4 +787,90 @@ test('abandoned: snapshot() never mutates tracker state', () => {
   const before = JSON.stringify([...p.runs.values()]);
   p.snapshot(T0 + 1000 * MIN);
   assert.equal(JSON.stringify([...p.runs.values()]), before);
+});
+
+// ---- multi-run panels (`runs`)
+const rp = (ts, run_id, meta) =>
+  pe(ts, { run_id, repo: `repo-${run_id}`, branch: `feat/${run_id}`, ...meta });
+const finish = (p, id, ts) => p.apply(rp(ts, id, { step: 'cleanup', state: 'passed' }));
+
+test('runs: two concurrent runs are independent and run stays the last-emitting one', () => {
+  const p = new PipelineTracker({ maxAttempts: 3 });
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active', attempt: 2 }));
+  p.apply(rp(1, 'run-b', { step: 'user-approval', state: 'active' }));
+  p.apply(rp(2, 'run-a', { step: 'verify', state: 'active' }));
+  const s = p.snapshot(T0 + 3);
+  assert.deepEqual(
+    s.runs.map((r) => r.run_id),
+    ['run-a', 'run-b'],
+  );
+  assert.equal(s.runs[0].attempt, 2);
+  assert.equal(s.runs[0].waiting_on_user_approval, false);
+  assert.equal(s.runs[1].waiting_on_user_approval, true);
+  assert.equal(s.runs[1].repo, 'repo-run-b');
+  assert.equal(s.run.run_id, 'run-a');
+});
+
+test('runs: capped at 8, dropping the least recently updated; order is stable by start time', () => {
+  const p = new PipelineTracker();
+  for (let i = 1; i <= 9; i++) p.apply(rp(i, `run-${i}`, { step: 'code', state: 'active' }));
+  // the oldest run is updated again, so run-2 is now the least recently updated
+  p.apply(rp(20, 'run-1', { step: 'verify', state: 'active' }));
+  const s = p.snapshot(T0 + 30);
+  assert.equal(s.runs.length, 8);
+  assert.ok(!s.runs.some((r) => r.run_id === 'run-2'));
+  assert.deepEqual(
+    s.runs.map((r) => r.run_id),
+    ['run-1', 'run-3', 'run-4', 'run-5', 'run-6', 'run-7', 'run-8', 'run-9'],
+  );
+  assert.equal(JSON.stringify(p.snapshot(T0 + 30)), JSON.stringify(s));
+});
+
+test('runs: ties on started_ts are ordered by run_id', () => {
+  const p = new PipelineTracker();
+  p.apply(rp(0, 'run-b', { step: 'code', state: 'active' }));
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
+  assert.deepEqual(
+    p.snapshot(T0 + 1).runs.map((r) => r.run_id),
+    ['run-a', 'run-b'],
+  );
+});
+
+test('runs: complete and failed runs leave after the grace period but stay in run and recent_runs', () => {
+  const p = new PipelineTracker({ maxAttempts: 3 });
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
+  finish(p, 'run-a', 1000);
+  p.apply(rp(2000, 'run-f', { step: 'security', state: 'failed', attempt: 3 }));
+  p.apply(rp(3000, 'run-r', { step: 'code', state: 'active' }));
+  const grace = PANEL_GRACE_MINUTES * 60000;
+  let s = p.snapshot(T0 + 3000 + grace - 10000);
+  assert.deepEqual(s.runs.map((r) => r.run_id).sort(), ['run-a', 'run-f', 'run-r']);
+  s = p.snapshot(T0 + 3000 + grace + 1);
+  assert.ok(!s.runs.some((r) => r.run_id === 'run-a'));
+  assert.ok(!s.runs.some((r) => r.run_id === 'run-f'));
+  assert.ok(s.runs.some((r) => r.run_id === 'run-r'));
+  assert.equal(s.run.run_id, 'run-r');
+  assert.ok(s.recent_runs.some((r) => r.run_id === 'run-a' && r.status === 'complete'));
+  assert.ok(s.recent_runs.some((r) => r.run_id === 'run-f' && r.status === 'failed'));
+});
+
+test('runs: abandoned and waiting runs are never dropped by the grace rule', () => {
+  const p = new PipelineTracker({ staleMinutes: 60 });
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
+  p.apply(rp(1, 'run-w', { step: 'user-approval', state: 'active' }));
+  const s = p.snapshot(T0 + 120 * 60000);
+  assert.equal(s.runs.find((r) => r.run_id === 'run-a').status, 'abandoned');
+  assert.equal(s.runs.find((r) => r.run_id === 'run-w').status, 'waiting_approval');
+});
+
+test('runs: non-feature runs are excluded', () => {
+  const p = new PipelineTracker();
+  p.apply(ae(0, 'q1', 'question', 'active', { target: 'example-app' }));
+  p.apply(rp(1, 'run-a', { step: 'code', state: 'active' }));
+  const s = p.snapshot(T0 + 2);
+  assert.deepEqual(
+    s.runs.map((r) => r.run_id),
+    ['run-a'],
+  );
+  assert.equal(s.activity_runs.length, 1);
 });
