@@ -4,6 +4,10 @@ const { loadPricing } = require('./pricing');
 const { UNTRACKED_AGENTS } = require('./state');
 
 const DEFAULT_AGENTS = ['spec', 'code', 'cleanup', 'server-ops', 'ask', 'verify', 'review'];
+// Display names for parallel instances of one role (generic given names, not identities).
+const DEFAULT_AGENT_NAMES = ['Ada', 'Bram', 'Cleo', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo'];
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/;
+const MAX_NAMES = 99;
 
 const MIN_TOKEN_LENGTH = 20;
 const WEAK_FRAGMENTS = [
@@ -41,6 +45,23 @@ function int(env, key, def, { min = 0 } = {}) {
   return n;
 }
 
+function parseNames(raw) {
+  if (raw === undefined || raw.trim() === '') return [...DEFAULT_AGENT_NAMES];
+  const names = raw
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (!names.length || names.length > MAX_NAMES) {
+    throw new Error(`AGENT_NAMES must list 1-${MAX_NAMES} comma-separated names`);
+  }
+  const bad = names.find((x) => !NAME_RE.test(x));
+  if (bad !== undefined) throw new Error(`AGENT_NAMES entry "${bad}" must match ${NAME_RE}`);
+  if (new Set(names.map((x) => x.toLowerCase())).size !== names.length) {
+    throw new Error('AGENT_NAMES must not repeat a name');
+  }
+  return names;
+}
+
 /** Build config from an env-like object. Throws with a clear message if insecure. */
 function loadConfig(env = process.env) {
   const errors = [];
@@ -76,6 +97,8 @@ function loadConfig(env = process.env) {
     host: env.HOST || '0.0.0.0',
     dbPath: env.DB_PATH || './data/dashboard.db',
     agents: agents.filter((n) => !UNTRACKED_AGENTS.includes(n)),
+    agentNames: parseNames(env.AGENT_NAMES),
+    instanceRetireMinutes: int(env, 'INSTANCE_RETIRE_MINUTES', 30, { min: 1 }),
     retentionDays: int(env, 'RETENTION_DAYS', 30, { min: 1 }),
     maxRows: int(env, 'MAX_ROWS', 200000, { min: 1000 }),
     doneToIdleSeconds: int(env, 'DONE_TO_IDLE_SECONDS', 60, { min: 1 }),
@@ -115,4 +138,4 @@ function startupWarnings(config) {
   return out;
 }
 
-module.exports = { startupWarnings, loadConfig, validateToken, DEFAULT_AGENTS };
+module.exports = { startupWarnings, loadConfig, validateToken, DEFAULT_AGENTS, DEFAULT_AGENT_NAMES };

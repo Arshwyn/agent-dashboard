@@ -18,6 +18,8 @@ services:
       STALE_MINUTES: ${STALE_MINUTES:-10}
       PIPELINE_STALE_MINUTES: ${PIPELINE_STALE_MINUTES:-60}
       AGENTS: ${AGENTS:-spec,code,cleanup,server-ops,ask,verify,review}
+      AGENT_NAMES: ${AGENT_NAMES:-Ada,Bram,Cleo,Dax,Ena,Finn,Gia,Hugo}
+      INSTANCE_RETIRE_MINUTES: ${INSTANCE_RETIRE_MINUTES:-30}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TRUST_PROXY: ${TRUST_PROXY:-false}
     volumes:
