@@ -1184,7 +1184,7 @@ test('overflow people are stored as extra-<n>, removed once idle, and clients ar
   assert.ok(!(await getAgents(s)).some((a) => a.id === 'extra-1'));
 });
 
-test('cost totals are identical with and without pooling on the same events', async (t) => {
+test('cost totals are identical with and without pooling on the same events', async () => {
   const events = [
     sub(1, 'code', { tokens_in: 100, tokens_out: 10, cost_usd: 0.5 }),
     sub(2, 'code', { tokens_in: 50, tokens_out: 5, cost_usd: 0.25 }),
