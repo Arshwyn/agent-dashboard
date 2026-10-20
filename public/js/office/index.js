@@ -1,6 +1,6 @@
 // The canvas office: loads the layout (override first), then wires the simulation, renderer, zoom
 // toolbar and frame loop together. createOffice(root) returns what mission-control.js drives:
-// addAgent(id), setState(id, status), setIndicator(id, iconId|null), removeAgent(id), destroy(). The scene is decorative
+// addAgent(id, look, name), handoff(from, to), setState(id, status), setIndicator(id, iconId|null), removeAgent(id), destroy(). The scene is decorative
 // (aria-hidden); the text badge on each agent card remains the accessible status.
 
 import { parseLayout, chooseLayout } from './layout.js';
@@ -70,16 +70,31 @@ export function createOffice(root) {
   root.before(toolbar);
 
   const wanted = new Map(); // id -> status, until the layout is ready
+  const wantedMeta = new Map(); // id -> { look, name }, until the layout is ready
   let live = null; // { sim, renderer, loop, ... } once ready
   let destroyed = false;
   const wantedIcons = new Map(); // id -> icon id, until the layout is ready
 
-  function addAgent(id) {
+  // `look` is the atlas look key (a person look, a role look or `fallback`; the sim key stays `id`),
+  // `name` the tag drawn on the sprite (null for none).
+  function addAgent(id, look = null, name = null) {
     if (live) {
       live.syncClock();
-      live.sim.addAgent(id);
+      live.sim.addAgent(id, look, name);
       live.changed();
-    } else if (!wanted.has(id)) wanted.set(id, 'idle');
+    } else {
+      if (!wanted.has(id)) wanted.set(id, 'idle');
+      wantedMeta.set(id, { look, name });
+    }
+  }
+
+  // Walks the giver of an inferred handoff beside the receiver (no effect under reduced motion).
+  function handoff(fromId, toId) {
+    if (!live) return false;
+    live.syncClock();
+    const ok = live.sim.handoff(fromId, toId);
+    live.changed();
+    return ok;
   }
 
   function setState(id, status) {
@@ -106,7 +121,10 @@ export function createOffice(root) {
       live.syncClock();
       live.sim.removeAgent(id);
       live.changed();
-    } else wanted.delete(id);
+    } else {
+      wanted.delete(id);
+      wantedMeta.delete(id);
+    }
   }
 
   async function start() {
@@ -134,6 +152,8 @@ export function createOffice(root) {
     let lastInfo = '';
     let lastHeld = null;
     let lastInd = null;
+    let lastNames = null;
+    let lastLooks = null;
 
     const loop = createLoop({
       raf: (cb) => requestAnimationFrame(cb),
@@ -150,6 +170,11 @@ export function createOffice(root) {
     function publish() {
       const all = [...sim.agents.values()];
       const info = all.map((a) => `${a.id}:${a.state}`).join(',');
+      const names = all
+        .filter((a) => a.name)
+        .map((a) => `${a.id}:${a.name}`)
+        .join(',');
+      const looks = all.map((a) => `${a.id}:${a.look ?? ''}`).join(',');
       const held = all
         .map((a) => [a.id, sim.spots.spotOf(a.id)])
         .filter(([, s]) => s)
@@ -162,6 +187,12 @@ export function createOffice(root) {
       if (ind !== lastInd) {
         lastInd = ind;
         canvas.dataset.indicators = ind;
+      }
+      if (names !== lastNames || looks !== lastLooks) {
+        lastNames = names;
+        lastLooks = looks;
+        canvas.dataset.names = names;
+        canvas.dataset.looks = looks;
       }
       if (info !== lastInfo || held !== lastHeld) {
         lastInfo = info;
@@ -361,10 +392,12 @@ export function createOffice(root) {
         loop.setHidden(true);
       },
     };
+    for (const [id, m] of wantedMeta) sim.addAgent(id, m.look, m.name);
     for (const [id, status] of wanted) sim.setStatus(id, status);
     for (const [id, icon] of wantedIcons) icons.set(id, { prev: null, cur: icon, since: time });
     wantedIcons.clear();
     wanted.clear();
+    wantedMeta.clear();
     loop.setContinuous(!reduced);
     loop.setHidden(document.hidden);
     doFit();
@@ -377,6 +410,7 @@ export function createOffice(root) {
     setState,
     setIndicator,
     removeAgent,
+    handoff,
     destroy() {
       destroyed = true;
       if (live) live.stop();

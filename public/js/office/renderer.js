@@ -95,9 +95,29 @@ export function frameNameFor(agent, time, animate) {
   const t = Number.isFinite(time) && time > 0 ? time : 0;
   const n = animate ? Math.floor(t * entry.fps) % entry.frames : 0;
   return {
-    name: charFrameName(lookFor(agent.id), entry.pose, dir, n),
+    name: charFrameName(lookFor(agent.look ?? agent.id), entry.pose, dir, n),
     mirror: !entry.dir && facing === 'left',
   };
+}
+
+// Name tags are drawn after the scene is scaled onto the canvas, in device pixels, so the text stays
+// sharp and readable at every zoom. System monospace stack only (no web fonts, CSP-safe). The tag sits
+// just below the feet: clear of the alert bubble and the step icon, which are beside and above the head.
+export const TAG_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
+export const TAG_MIN_PX = 10;
+
+// Pure layout of one tag in canvas device pixels: { x, y, w, h, px, tx, ty }. `measure(text, px)` is the
+// text width. The tag is centred under the foot point and kept inside the canvas.
+export function tagLayout({ text, footX, footY, scale, canvasW, canvasH, measure }) {
+  const px = Math.max(TAG_MIN_PX, Math.round(scale * 4));
+  const padX = Math.max(2, Math.round(px * 0.35));
+  const padY = Math.max(1, Math.round(px * 0.15));
+  const w = Math.ceil(measure(text, px)) + padX * 2;
+  const h = px + padY * 2;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
+  const x = clamp(Math.round(footX * scale - w / 2), 0, canvasW - w);
+  const y = clamp(Math.round((footY + 3) * scale), 0, canvasH - h);
+  return { x, y, w, h, px, tx: x + padX, ty: y + padY };
 }
 
 // Small canvas drawings that are not atlas frames: the alert bubble, the confetti and the tiny
@@ -291,6 +311,35 @@ export function createRenderer({ canvas, layout, atlas }) {
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(frame, 0, 0, nativeW, nativeH, 0, 0, canvas.width, canvas.height);
+    drawTags(sim);
+  }
+
+  function drawTags(sim) {
+    const scale = canvas.width / nativeW;
+    const measure = (text, px) => {
+      ctx.font = `bold ${px}px ${TAG_FONT}`;
+      return ctx.measureText(text).width;
+    };
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    for (const a of sim.agents.values()) {
+      if (!a.name) continue;
+      const foot = agentFoot(a);
+      const t = tagLayout({
+        text: a.name,
+        footX: foot.x,
+        footY: foot.y + (SEATED.includes(a.state) ? SEAT_DROP : 0),
+        scale,
+        canvasW: canvas.width,
+        canvasH: canvas.height,
+        measure,
+      });
+      ctx.fillStyle = 'rgba(24, 20, 38, 0.85)';
+      ctx.fillRect(t.x, t.y, t.w, t.h);
+      ctx.fillStyle = '#f4f1ff';
+      ctx.font = `bold ${t.px}px ${TAG_FONT}`;
+      ctx.fillText(a.name, t.tx, t.ty);
+    }
   }
 
   // Releases the offscreen canvases (a canvas keeps its pixel memory until it is shrunk).
