@@ -905,3 +905,278 @@ test('runs: non-feature runs are excluded', () => {
   );
   assert.equal(s.activity_runs.length, 1);
 });
+
+// ---------------------------------------------------------------- named people
+
+const NAMES = ['Ada', 'Bram', 'Carl', 'Dax'];
+const crew = (o = {}) =>
+  new AgentTracker({
+    doneToIdleSeconds: 60,
+    staleMinutes: 10,
+    configured: ['orchestrator'],
+    names: NAMES,
+    cooldownSeconds: 60,
+    handoffWindowSeconds: 120,
+    ...o,
+  });
+const PSEC = 1000;
+const PMIN = 60 * PSEC;
+/** A subagent event of agent number `n` with the given role. */
+const agentEv = (n, role, over = {}) => e({ agent: role, session_id: `sess:agent${n}`, ...over });
+/** Assign like the server does (validate, assign), then apply the stored row. */
+const feed = (t, ev, now = ev.ts) => {
+  const row = { ...ev, instance: t.assign(ev, now) };
+  t.apply(row);
+  return row;
+};
+const stop = (n, role, at) => agentEv(n, role, { ts: at, type: 'subagent_stop' });
+const cards = (t, now = T0) => t.snapshot(now).map((a) => a.id);
+
+test('people: concurrent agents of different roles get the lowest free people', () => {
+  const t = crew();
+  assert.equal(feed(t, agentEv(1, 'spec')).instance, 'Ada');
+  assert.equal(feed(t, agentEv(2, 'code')).instance, 'Bram');
+  assert.equal(feed(t, agentEv(1, 'spec', { ts: T0 + PSEC })).instance, 'Ada', 'stable while running');
+  assert.deepEqual(cards(t), ['orchestrator', 'Ada', 'Bram', 'Carl', 'Dax']);
+});
+
+test('people: top-level events and untracked names are never pooled', () => {
+  const t = crew();
+  assert.equal(t.assign(e({ session_id: 'plain' }), T0), null);
+  assert.equal(t.assign(agentEv(1, 'unknown'), T0), null);
+  assert.equal(t.assign(agentEv(1, 'test'), T0), null);
+  assert.equal(t.assign(agentEv(1, 'code', { type: 'pipeline' }), T0), null);
+  assert.equal(t.assign(agentEv(1, 'helper'), T0), 'Ada', 'helper is pooled');
+  t.apply(e({ agent: 'orchestrator', session_id: 'plain' }));
+  assert.equal(t.snapshot(T0)[0].status, 'working');
+  assert.equal(t.snapshot(T0)[1].status, 'idle');
+});
+
+test('people: a released person rests; the next spawn skips them and they return after the cooldown', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'spec'));
+  feed(t, agentEv(2, 'code'));
+  feed(t, stop(1, 'spec', T0 + 10 * PSEC)); // Ada rests until T0 + 70 s
+  const during = T0 + 30 * PSEC;
+  assert.equal(feed(t, agentEv(3, 'review', { ts: during })).instance, 'Carl');
+  const after = T0 + 80 * PSEC;
+  assert.equal(feed(t, agentEv(4, 'review', { ts: after })).instance, 'Ada');
+});
+
+test('people: AGENT_COOLDOWN_SECONDS=0 is pure lowest-free', () => {
+  const t = crew({ cooldownSeconds: 0 });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, stop(1, 'spec', T0 + PSEC));
+  assert.equal(feed(t, agentEv(2, 'code', { ts: T0 + 2 * PSEC })).instance, 'Ada');
+  const [, ada] = t.snapshot(T0 + 2 * PSEC);
+  assert.equal(ada.cooldown_until, null);
+});
+
+test('people: Carl case - inside the cooldown the next person takes the step (handoff), after it Carl does', () => {
+  const t = crew({ names: ['Carl', 'Dax', 'Ena'] });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, stop(1, 'spec', T0 + 5 * PSEC));
+  const next = feed(t, agentEv(2, 'code', { ts: T0 + 10 * PSEC }));
+  assert.equal(next.instance, 'Dax');
+  const dax = t.snapshot(T0 + 10 * PSEC).find((a) => a.id === 'Dax');
+  assert.deepEqual(dax.handoff, { from: 'Carl', to: 'Dax', at: T0 + 10 * PSEC, inferred: true });
+  assert.deepEqual(t.snapshot(T0 + 10 * PSEC).find((a) => a.id === 'Carl').handoff, dax.handoff);
+  // later: Dax stops, rests; once Carl is free and not resting he takes the next step, no handoff
+  feed(t, stop(2, 'code', T0 + 20 * PSEC));
+  const at = T0 + 200 * PSEC;
+  const third = feed(t, agentEv(3, 'review', { ts: at }));
+  assert.equal(third.instance, 'Carl');
+  const carl = t.snapshot(at).find((a) => a.id === 'Carl');
+  assert.equal(carl.role, 'review', 'the role badge changes');
+  assert.equal(carl.handoff, null, 'the handoff is gone after 2 minutes');
+});
+
+test('people: the same person starting another role is a role change, not a handoff', () => {
+  const t = crew({ cooldownSeconds: 0 });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, stop(1, 'spec', T0 + PSEC));
+  feed(t, agentEv(2, 'code', { ts: T0 + 2 * PSEC }));
+  const ada = t.snapshot(T0 + 2 * PSEC).find((a) => a.id === 'Ada');
+  assert.equal(ada.handoff, null);
+  assert.equal(ada.role, 'code');
+});
+
+test('people: a handoff needs a different role and the window', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'code'));
+  feed(t, stop(1, 'code', T0 + PSEC));
+  feed(t, agentEv(2, 'code', { ts: T0 + 2 * PSEC }));
+  assert.equal(t.snapshot(T0 + 2 * PSEC).find((a) => a.id === 'Bram').handoff, null, 'same role');
+  const u = crew();
+  feed(u, agentEv(1, 'spec'));
+  feed(u, stop(1, 'spec', T0 + PSEC));
+  feed(u, agentEv(2, 'code', { ts: T0 + 200 * PSEC }));
+  assert.equal(u.snapshot(T0 + 200 * PSEC).find((a) => a.id === 'Ada').handoff, null, 'outside the window');
+});
+
+test('people: two pipelines never share a busy person; after release anyone takes any role', () => {
+  const t = crew({ cooldownSeconds: 0 });
+  feed(t, agentEv(1, 'code', { session_id: 'p1:a1' }));
+  assert.equal(feed(t, agentEv(2, 'code', { session_id: 'p2:a2' })).instance, 'Bram');
+  feed(t, { ...stop(1, 'code', T0 + PSEC), session_id: 'p1:a1' });
+  assert.equal(feed(t, agentEv(3, 'verify', { session_id: 'p2:a3', ts: T0 + 2 * PSEC })).instance, 'Ada');
+});
+
+test('people: a stale agent frees its person, who then rests', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'code'));
+  const stale = T0 + 11 * PMIN; // released at T0 + 10 min, resting until T0 + 11 min
+  assert.equal(feed(t, agentEv(2, 'code', { ts: stale - 1 }), stale - 1).instance, 'Bram');
+  const rested = T0 + 12 * PMIN;
+  feed(t, stop(2, 'code', rested - 1), rested - 1);
+  assert.equal(feed(t, agentEv(3, 'code', { ts: rested }), rested).instance, 'Ada');
+});
+
+test('people: when every free person is resting the longest rested takes the task', () => {
+  const t = crew({ names: ['Ada', 'Bram'] });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, agentEv(2, 'code'));
+  feed(t, stop(2, 'code', T0 + 5 * PSEC));
+  feed(t, stop(1, 'spec', T0 + 10 * PSEC));
+  const row = feed(t, agentEv(3, 'review', { ts: T0 + 15 * PSEC }));
+  assert.equal(row.instance, 'Bram', 'Bram has rested longest');
+  assert.ok(!cards(t).some((id) => id.startsWith('extra')), 'no overflow while someone is free');
+});
+
+test('people: overflow only when every pool member is busy', () => {
+  const t = crew({ names: ['Ada', 'Bram'] });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, agentEv(2, 'code'));
+  assert.equal(feed(t, agentEv(3, 'review')).instance, 'extra-1');
+  assert.equal(feed(t, agentEv(4, 'review')).instance, 'extra-2');
+  const v = t.snapshot(T0).find((a) => a.id === 'extra-2');
+  assert.deepEqual([v.name, v.label, v.slot], ['Extra 2', 'Extra 2', 4]);
+});
+
+test('people: the pool and extras are capped at 99, then no person and no card', () => {
+  const t = crew({ names: ['Ada'], maxAgents: 500, staleMinutes: 1000 });
+  for (let i = 1; i <= 99; i++) assert.ok(feed(t, agentEv(i, 'code')).instance);
+  assert.equal(feed(t, agentEv(100, 'code')).instance, null);
+  assert.equal(t.snapshot(T0).filter((a) => a.slot !== null).length, 99);
+  assert.equal(t.cardFor({ ...agentEv(100, 'code'), instance: null }), null);
+});
+
+test('people: MAX_AGENTS counts people, not roles', () => {
+  const t = new AgentTracker({ configured: [], maxAgents: 2, names: ['Ada'] });
+  feed(t, agentEv(1, 'code'));
+  feed(t, agentEv(2, 'spec'));
+  const third = t.assign(agentEv(3, 'code'), T0);
+  assert.equal(third, 'extra-2');
+  assert.equal(t.canTrack('code', third), false);
+  assert.equal(t.canTrack('code', 'extra-1'), true, 'known people stay accepted');
+  assert.equal(t.canTrack('unknown'), true);
+});
+
+test('people: a stopped agent that continues returns to its person, ignoring and clearing the rest', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'spec'));
+  feed(t, stop(1, 'spec', T0 + PSEC)); // Ada resting until T0 + 61 s
+  const back = T0 + 5 * PSEC;
+  const row = feed(t, agentEv(1, 'spec', { ts: back }));
+  assert.equal(row.instance, 'Ada');
+  const ada = t.snapshot(back)[1];
+  assert.equal(ada.status, 'working');
+  assert.equal(ada.cooldown_until, null);
+});
+
+test('people: a continued agent whose person is busy with another agent is assigned anew', () => {
+  const t = crew({ cooldownSeconds: 0 });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, stop(1, 'spec', T0 + PSEC));
+  feed(t, agentEv(2, 'code', { ts: T0 + 2 * PSEC })); // Ada again
+  assert.equal(feed(t, agentEv(1, 'spec', { ts: T0 + 3 * PSEC })).instance, 'Bram');
+});
+
+test('people: the agent mapping expires 60 minutes after its last event', () => {
+  const t = crew({ cooldownSeconds: 0, staleMinutes: 1000 });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, agentEv(2, 'code'));
+  feed(t, stop(1, 'spec', T0 + PSEC));
+  const late = T0 + 61 * PMIN;
+  feed(t, agentEv(5, 'code', { ts: late - 1 }), late - 1); // Ada again
+  assert.equal(feed(t, agentEv(1, 'spec', { ts: late }), late).instance, 'Carl');
+});
+
+test('people: replay uses the stored person and never reassigns (determinism)', () => {
+  const live = crew();
+  const rows = [
+    feed(live, agentEv(1, 'spec')),
+    feed(live, agentEv(2, 'code', { ts: T0 + 1 })),
+    feed(live, stop(1, 'spec', T0 + 2)),
+    feed(live, agentEv(3, 'review', { ts: T0 + 3 })),
+  ];
+  const replay = crew();
+  for (const r of rows) replay.apply(r);
+  assert.deepEqual(replay.snapshot(T0 + 3), live.snapshot(T0 + 3));
+  assert.equal(replay.assign(agentEv(9, 'code', { ts: T0 + 4 }), T0 + 4), 'Dax', 'occupancy is rebuilt too');
+});
+
+test('people: legacy subagent rows without a person get no card', () => {
+  const t = crew();
+  t.apply(agentEv(1, 'code'));
+  assert.deepEqual(cards(t), ['orchestrator', 'Ada', 'Bram', 'Carl', 'Dax']);
+  assert.equal(t.snapshot(T0)[1].status, 'idle');
+});
+
+test('people: views carry name, label, role, slot, resting and the last role while free', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'spec', { tokens_in: 7 }));
+  feed(t, stop(1, 'spec', T0 + 10 * PSEC));
+  const v = t.snapshot(T0 + 20 * PSEC)[1];
+  assert.deepEqual(
+    [v.id, v.agent, v.role, v.name, v.label, v.slot],
+    ['Ada', 'spec', 'spec', 'Ada', 'Ada', 1],
+  );
+  assert.equal(v.status, 'resting');
+  assert.equal(v.cooldown_until, T0 + 70 * PSEC);
+  const o = t.snapshot(T0)[0];
+  assert.deepEqual(
+    [o.id, o.name, o.label, o.slot, o.handoff],
+    ['orchestrator', null, 'orchestrator', null, null],
+  );
+  assert.equal(t.snapshot(T0 + 80 * PSEC)[1].status, 'idle');
+});
+
+test('people: card totals reset when a new agent starts on the same person', () => {
+  const t = crew({ cooldownSeconds: 0 });
+  feed(t, agentEv(1, 'spec', { tokens_in: 100, cost_usd: 1 }));
+  feed(t, stop(1, 'spec', T0 + PSEC));
+  feed(t, agentEv(2, 'code', { ts: T0 + 2 * PSEC, tokens_in: 5, cost_usd: 0.5 }));
+  const ada = t.snapshot(T0 + 2 * PSEC)[1];
+  assert.equal(ada.tokens.in, 5);
+  assert.equal(ada.cost_usd, 0.5);
+  assert.equal(ada.today.tokens.in, 105);
+});
+
+test('the whole pool is on the board from the start, idle', () => {
+  const t = crew();
+  const snap = t.snapshot(T0);
+  assert.deepEqual(
+    snap.map((a) => [a.id, a.status, a.role, a.slot]),
+    [
+      ['orchestrator', 'idle', 'orchestrator', null],
+      ['Ada', 'idle', null, 1],
+      ['Bram', 'idle', null, 2],
+      ['Carl', 'idle', null, 3],
+      ['Dax', 'idle', null, 4],
+    ],
+  );
+});
+
+test('housekeeping: pool people and role cards are never removed, idle extras are', () => {
+  const t = crew({ names: ['Ada'] });
+  feed(t, agentEv(1, 'spec'));
+  feed(t, agentEv(2, 'code'));
+  assert.deepEqual(t.retire(T0 + PSEC), [], 'busy extras stay');
+  feed(t, stop(2, 'code', T0 + 5 * PSEC));
+  feed(t, stop(1, 'spec', T0 + 5 * PSEC));
+  assert.deepEqual(t.retire(T0 + 2 * PMIN), ['extra-1']);
+  assert.deepEqual(cards(t, T0 + 2 * PMIN), ['orchestrator', 'Ada']);
+  assert.deepEqual(t.retire(T0 + 999 * PMIN), [], 'Ada stays');
+  assert.equal(t.snapshot(T0 + 999 * PMIN)[1].status, 'idle');
+});

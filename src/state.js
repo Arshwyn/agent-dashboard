@@ -1,5 +1,7 @@
 'use strict';
 
+const { detectHandoff } = require('./handoff');
+
 /**
  * Derived state. Pure in-memory trackers fed one event at a time (and rebuilt from the DB at
  * startup), so the REST API and SSE share one source of truth.
@@ -8,6 +10,8 @@
  */
 
 const STATUSES = ['idle', 'working', 'blocked', 'done'];
+// A person who just finished is shown as `resting` (derived, never stored on events).
+const VIEW_STATUSES = [...STATUSES, 'resting'];
 const ACTIVITY = new Set(['tool_start', 'tool_end', 'status']);
 const DAY_MS = 86400 * 1000;
 
@@ -28,20 +32,58 @@ const RETIRED_AGENTS = ['test', 'styling', 'security', 'code-review'];
 // and stored (cost and the feed keep counting them); they are just not tracked.
 const UNTRACKED_AGENTS = [...RETIRED_AGENTS, 'unknown'];
 
+// Named people. Every subagent event (session_id `<sid>:<agent_id>`) of any tracked role is done by one
+// person from a single global pool (the lowest free one who is not resting). A person is busy from the
+// first event of an agent until its `subagent_stop` (or until it is stale), then rests for the cooldown.
+// The server stores the person's name in `instance` (`extra-<n>` when every pool member is busy), and
+// replay trusts the stored value. Top-level events and untracked names are never pooled.
+const MAX_PEOPLE = 99;
+const RESUME_MS = 60 * 60 * 1000; // an agent keeps its person this long after its last event
+const MAX_MAPPINGS = 2000;
+const HANDOFF_SHOW_MS = 2 * 60 * 1000;
+const EXTRA_RE = /^extra-([1-9]\d?)$/;
+
+/** The agent-id part of a subagent session id (`<sid>:<agent_id>`), or null for a top-level session. */
+function agentPart(sessionId) {
+  if (typeof sessionId !== 'string') return null;
+  const i = sessionId.lastIndexOf(':');
+  return i > 0 && i < sessionId.length - 1 ? sessionId.slice(i + 1) : null;
+}
+
 class AgentTracker {
-  constructor({ doneToIdleSeconds = 60, staleMinutes = 10, configured = [], maxAgents = 100 } = {}) {
+  constructor({
+    doneToIdleSeconds = 60,
+    staleMinutes = 10,
+    configured = [],
+    maxAgents = 100,
+    names = [],
+    cooldownSeconds = 60,
+    handoffWindowSeconds = 120,
+  } = {}) {
     this.maxAgents = maxAgents;
+    this.names = names;
+    this.cooldownMs = cooldownSeconds * 1000;
+    this.handoffMs = handoffWindowSeconds * 1000;
+    this.workers = new Map(); // session_id -> { person, role, last_ts, stopped, stop_ts }
+    this.released = new Map(); // person -> newest release ts of workers already swept
+    this.lastStop = null; // { person, role, ts } of the newest subagent_stop
     this.doneToIdleMs = doneToIdleSeconds * 1000;
     this.staleMs = staleMinutes * 60 * 1000;
     this.configured = configured;
     this.agents = new Map();
+    // The whole pool is always on the board, idle until someone is assigned.
+    for (const name of names) this._get(name, null, true);
   }
 
-  _get(name) {
+  _get(id, role = id, person = false) {
+    const name = id;
     let a = this.agents.get(name);
     if (!a) {
       a = {
-        agent: name,
+        agent: role,
+        id,
+        person,
+        handoff: null,
         raw_status: 'idle',
         current_task: null,
         since: null,
@@ -61,22 +103,135 @@ class AgentTracker {
     return a;
   }
 
-  /** True if an event for this agent name may be accepted (known, or under the distinct-agent cap). */
-  canTrack(name) {
+  /** True if an event for this agent name may be accepted (known, or under the cap on cards). */
+  canTrack(name, instance = null) {
     if (UNTRACKED_AGENTS.includes(name)) return true; // accepted and stored, but never tracked
-    return this.agents.has(name) || this.agents.size < this.maxAgents;
+    return this.agents.has(instance || name) || this.agents.size < this.maxAgents;
+  }
+
+  /** True for a subagent event that is pooled (any tracked role). */
+  isPooled(ev) {
+    return (
+      ev.type !== 'pipeline' && !UNTRACKED_AGENTS.includes(ev.agent) && agentPart(ev.session_id) !== null
+    );
+  }
+
+  _busy(person, now, exceptKey = null) {
+    for (const [key, w] of this.workers) {
+      if (key !== exceptKey && w.person === person && !w.stopped && now - w.last_ts <= this.staleMs)
+        return true;
+    }
+    return false;
+  }
+
+  /** When the person last became free (stop, or stale), or null while busy / never worked. */
+  _releasedAt(person, now) {
+    if (this._busy(person, now)) return null;
+    let r = this.released.get(person) ?? null;
+    for (const w of this.workers.values()) {
+      if (w.person !== person) continue;
+      const at = w.stopped ? w.stop_ts : w.last_ts + this.staleMs;
+      if (r === null || at > r) r = at;
+    }
+    return r;
+  }
+
+  /** Ms timestamp the person's rest ends, or null (busy, never worked, no cooldown, or rested). */
+  _cooldownUntil(person, now) {
+    if (this.cooldownMs <= 0) return null;
+    const r = this._releasedAt(person, now);
+    if (r === null) return null;
+    const until = r + this.cooldownMs;
+    return until > now ? until : null;
+  }
+
+  /**
+   * The person (instance) a new event should be stored with, or null (top-level session, untracked name,
+   * or no person left under the cap of 99). Read-only; apply() records it.
+   *  - A continued agent (already known, stopped or not) returns to its person if that person is not
+   *    busy with another agent, ignoring the rest.
+   *  - Otherwise the lowest free person who is not resting; if every free person is resting, the one
+   *    who has rested longest; if the whole pool is busy, `extra-<n>`.
+   */
+  assign(ev, now = Date.now()) {
+    if (!this.isPooled(ev)) return null;
+    const key = ev.session_id;
+    const w = this.workers.get(key);
+    if (w && now - w.last_ts <= RESUME_MS && !this._busy(w.person, now, key)) return w.person;
+    let rested = null;
+    for (const name of this.names) {
+      if (this._busy(name, now, key)) continue;
+      if (this._cooldownUntil(name, now) === null) return name;
+      const at = this._releasedAt(name, now);
+      if (rested === null || at < rested.at) rested = { name, at };
+    }
+    if (rested) return rested.name;
+    for (let n = 1; this.names.length + n <= MAX_PEOPLE; n++) {
+      if (!this._busy(`extra-${n}`, now, key)) return `extra-${n}`;
+    }
+    return null;
+  }
+
+  _track(ev, person) {
+    let w = this.workers.get(ev.session_id);
+    if (!w) {
+      w = { person, role: ev.agent, last_ts: -Infinity, stopped: false, stop_ts: null };
+      this.workers.set(ev.session_id, w);
+    }
+    if (ev.ts >= w.last_ts) {
+      w.person = person;
+      w.role = ev.agent;
+      w.last_ts = ev.ts;
+      w.stopped = ev.type === 'subagent_stop';
+      w.stop_ts = w.stopped ? ev.ts : null;
+    }
+  }
+
+  /** Forget agents past the resume window, keeping when their person was released. */
+  _sweepWorkers(now) {
+    for (const [key, w] of this.workers) {
+      if (now - w.last_ts <= RESUME_MS) continue;
+      const at = w.stopped ? w.stop_ts : w.last_ts + this.staleMs;
+      if (at > (this.released.get(w.person) ?? -Infinity)) this.released.set(w.person, at);
+      this.workers.delete(key);
+    }
+    if (this.workers.size > MAX_MAPPINGS) {
+      const byAge = [...this.workers].sort((x, y) => x[1].last_ts - y[1].last_ts);
+      for (const [key] of byAge.slice(0, this.workers.size - MAX_MAPPINGS)) this.workers.delete(key);
+    }
+  }
+
+  /** The card an applied event belongs to, or null (a subagent event without a person gets no card). */
+  cardFor(ev) {
+    if (agentPart(ev.session_id) === null) return this._get(ev.agent);
+    return typeof ev.instance === 'string' && ev.instance ? this._get(ev.instance, ev.agent, true) : null;
   }
 
   apply(ev) {
     if (ev.type === 'pipeline') return null; // pipeline events feed PipelineTracker only
     if (UNTRACKED_AGENTS.includes(ev.agent)) return null; // untracked names never get a card
-    const a = this._get(ev.agent);
+    const a = this.cardFor(ev); // replay trusts the stored person and never reassigns
+    if (!a) return null;
+    const person = agentPart(ev.session_id) !== null;
+    const isNewAgent = person && !this.workers.has(ev.session_id);
+    if (isNewAgent) {
+      const h = detectHandoff(this.lastStop, { person: a.id, role: ev.agent, ts: ev.ts }, this.handoffMs);
+      if (h) {
+        a.handoff = h;
+        const giver = this.agents.get(h.from);
+        if (giver) giver.handoff = h;
+      }
+    }
+    if (person) this._track(ev, a.id);
+    if (person && ev.type === 'subagent_stop' && (!this.lastStop || ev.ts >= this.lastStop.ts)) {
+      this.lastStop = { person: a.id, role: ev.agent, ts: ev.ts };
+    }
     const prevTs = a.last_event_ts;
     const inOrder = prevTs === null || ev.ts >= prevTs;
 
     const prevEffective = this._effective(a, ev.ts);
     const startsRun = ACTIVITY.has(ev.type) || ev.type === 'notification';
-    if (inOrder && startsRun && (prevEffective === 'idle' || prevEffective === 'done')) {
+    if (inOrder && startsRun && (isNewAgent || prevEffective === 'idle' || prevEffective === 'done')) {
       a.run = newTotals();
       a.run_started_ts = ev.ts;
       a.current_task = null;
@@ -105,6 +260,7 @@ class AgentTracker {
     }
 
     if (inOrder) {
+      a.agent = ev.agent; // the person's current role
       let next = a.raw_status;
       if (ACTIVITY.has(ev.type)) {
         next = 'working';
@@ -133,18 +289,43 @@ class AgentTracker {
     return a.raw_status;
   }
 
+  /** 1-based pool position of a person (extras follow the pool), or null for a role card. */
+  slotOf(a) {
+    if (!a.person) return null;
+    const i = this.names.indexOf(a.id);
+    if (i >= 0) return i + 1;
+    const m = EXTRA_RE.exec(a.id);
+    return this.names.length + (m ? Number(m[1]) : 1);
+  }
+
+  _isPerson(a) {
+    return a.person;
+  }
+
   view(a, now) {
-    const status = this._effective(a, now);
-    const stale = a.raw_status === 'working' && status === 'idle';
-    const keepRun = status !== 'idle';
+    const base = this._effective(a, now);
+    const stale = a.raw_status === 'working' && base === 'idle';
+    const keepRun = base !== 'idle';
     const sameDay = a.today_day === utcDay(now);
+    const person = this._isPerson(a);
+    const cooldown = person ? this._cooldownUntil(a.id, now) : null;
+    const status = cooldown !== null && base !== 'working' && base !== 'blocked' ? 'resting' : base;
+    const extra = EXTRA_RE.exec(a.id);
+    const name = !person ? null : extra ? `Extra ${extra[1]}` : a.id;
+    const h = a.handoff && now - a.handoff.at <= HANDOFF_SHOW_MS ? a.handoff : null;
     return {
-      id: a.agent,
+      id: a.id,
       agent: a.agent,
+      role: a.agent,
+      name,
+      label: name ?? a.agent,
+      slot: person ? this.slotOf(a) : null,
+      cooldown_until: cooldown,
+      handoff: h,
       status,
       stale,
       current_task: keepRun || stale ? a.current_task : null,
-      since: status === 'idle' && a.last_event_ts ? Math.min(now, this._idleSince(a, stale)) : a.since,
+      since: base === 'idle' && a.last_event_ts ? Math.min(now, this._idleSince(a, stale)) : a.since,
       run_started_ts: keepRun ? a.run_started_ts : null,
       last_event_ts: a.last_event_ts,
       last_summary: a.last_summary,
@@ -166,12 +347,32 @@ class AgentTracker {
     return stale ? a.last_event_ts + this.staleMs : a.last_event_ts + this.doneToIdleMs;
   }
 
-  /** Configured agents first (in order), then any other agents seen. */
+  /**
+   * Housekeeping: forget old agents and remove transient people (`extra-<n>`, or a name no longer in
+   * the pool) once they are idle. Pool people and role cards are never removed. Returns removed ids.
+   */
+  retire(now = Date.now()) {
+    this._sweepWorkers(now);
+    const out = [];
+    for (const [id, a] of this.agents) {
+      if (!a.person || this.names.includes(id) || a.last_event_ts === null) continue;
+      if (this._effective(a, now) !== 'idle' || this._busy(id, now)) continue;
+      this.agents.delete(id);
+      out.push(id);
+    }
+    return out;
+  }
+
+  /** Role cards first (configured ones in order), then people in pool order, extras last. */
   snapshot(now = Date.now()) {
-    const names = this.configured.filter((n) => !UNTRACKED_AGENTS.includes(n));
-    for (const n of this.agents.keys())
-      if (!names.includes(n) && !UNTRACKED_AGENTS.includes(n)) names.push(n);
-    return names.map((n) => this.view(this._get(n), now));
+    const roles = this.configured.filter((n) => !UNTRACKED_AGENTS.includes(n));
+    const people = [];
+    for (const a of this.agents.values()) {
+      if (this._isPerson(a)) people.push(a);
+      else if (!roles.includes(a.id)) roles.push(a.id);
+    }
+    people.sort((x, y) => this.slotOf(x) - this.slotOf(y) || (x.id < y.id ? -1 : 1));
+    return [...roles.map((n) => this.view(this._get(n), now)), ...people.map((a) => this.view(a, now))];
   }
 }
 
@@ -586,6 +787,7 @@ module.exports = {
   PANEL_ABANDONED_MINUTES,
   MAX_PANELS,
   STATUSES,
+  VIEW_STATUSES,
   STEPS,
   SUBSTEPS,
   GATES,
