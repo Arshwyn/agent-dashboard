@@ -44,6 +44,9 @@ function createApp(config, store, opts = {}) {
     staleMinutes: config.staleMinutes,
     configured: config.agents,
     maxAgents: config.maxAgents,
+    names: config.agentNames,
+    cooldownSeconds: config.agentCooldownSeconds,
+    handoffWindowSeconds: config.handoffWindowSeconds,
   });
   const pipeline = new PipelineTracker({
     maxAttempts: config.maxAttempts,
@@ -69,6 +72,7 @@ function createApp(config, store, opts = {}) {
   function rebuild() {
     const t = now();
     for (const ev of store.eventsFromTs(t - 48 * 3600 * 1000)) agents.apply(ev);
+    agents.retire(t);
     for (const ev of store.usageEventsFrom(t - config.retentionDays * 86400 * 1000)) {
       for (const [m, c] of Object.entries(ev.usage || {})) if (c.cost_usd === null) noteUnknownModel(m);
     }
@@ -177,6 +181,11 @@ function createApp(config, store, opts = {}) {
 
   function broadcastAgentChanges() {
     const t = now();
+    const gone = agents.retire(t);
+    if (gone.length) {
+      for (const id of gone) lastSent.delete(id);
+      broadcast('resync', { reason: 'extra worker left' }); // clients reload the card list
+    }
     for (const v of agents.snapshot(t)) {
       const json = JSON.stringify(v);
       if (lastSent.get(v.id) !== json) {
@@ -239,7 +248,11 @@ function createApp(config, store, opts = {}) {
       const result = validateEvent(body, now());
       if (!result.ok) return send(res, 400, { error: 'invalid event', details: result.errors });
       const ev = result.event;
-      if (ev.type !== 'pipeline' && !agents.canTrack(ev.agent)) {
+      // The person is chosen here, never taken from the client (validateEvent drops unknown fields).
+      ev.instance = agents.assign(ev, now());
+      // A subagent event with no person left (past the cap of 99) is stored but gets no card.
+      const noCard = agents.isPooled(ev) && ev.instance === null;
+      if (ev.type !== 'pipeline' && !noCard && !agents.canTrack(ev.agent, ev.instance)) {
         return send(res, 422, { error: 'too many distinct agents' });
       }
       let row;
@@ -257,10 +270,11 @@ function createApp(config, store, opts = {}) {
         const snap = pipeline.snapshot(now());
         lastPipeline = JSON.stringify(snap);
         broadcast('pipeline', snap);
-      } else if (!UNTRACKED_AGENTS.includes(row.agent)) {
-        const v = agents.view(agents._get(row.agent), now());
+      } else if (!UNTRACKED_AGENTS.includes(row.agent) && !noCard) {
+        const v = agents.view(agents.cardFor(row), now());
         lastSent.set(v.id, JSON.stringify(v));
         broadcast('agent', v);
+        broadcastAgentChanges(); // e.g. the giver of a handoff
       }
       send(res, 201, { ok: true, id: row.id });
     });

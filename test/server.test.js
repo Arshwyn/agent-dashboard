@@ -137,7 +137,7 @@ test('GET /api/agents lists configured agents, then derives status from events',
   let body = await (await fetch(`${s.base}/api/agents`, h)).json();
   assert.deepEqual(
     body.agents.map((a) => a.id),
-    s.config.agents,
+    [...s.config.agents, ...s.config.agentNames],
   );
   assert.ok(body.agents.every((a) => a.status === 'idle'));
   await post(s.base, ev({ agent: 'review', task: 'Audit', tokens_in: 10 }));
@@ -242,7 +242,7 @@ test('GET /api/pipeline reflects pipeline events', async (t) => {
 });
 
 test('activity runs are ingested, redacted, exposed by /api/pipeline and pushed over SSE', async (t) => {
-  const s = await startApp();
+  const s = await startApp({ agents: [] });
   t.after(() => s.stop());
   const h = { headers: { Authorization: `Bearer ${DASH}` } };
   const sse = await openSse(s.base);
@@ -457,7 +457,7 @@ test('logout closes open SSE streams for that session', async (t) => {
 });
 
 test('ingest caps distinct agents (422) and in-memory pipeline runs', async (t) => {
-  const s = await startApp({ maxAgents: 10, maxRuns: 3, agents: [] });
+  const s = await startApp({ maxAgents: 10, maxRuns: 3, agents: [], agentNames: [] });
   t.after(() => s.stop());
   for (let i = 0; i < 10; i++) assert.equal((await post(s.base, ev({ agent: `a${i}` }))).status, 201);
   assert.equal((await post(s.base, ev({ agent: 'one-too-many' }))).status, 422);
@@ -1083,4 +1083,123 @@ test('GET /api/events validates the optional instance filter', async (t) => {
   assert.equal((await fetch(`${s.base}/api/events?instance=bad%20one`, authed())).status, 400);
   const all = await (await fetch(`${s.base}/api/events`, authed())).json();
   assert.equal(all.events[0].instance, null);
+});
+
+// ---------------------------------------------------------------- named people
+
+const sub = (n, role, over = {}) => ev({ agent: role, session_id: `sess:agent${n}`, ...over });
+const getAgents = async (s) => (await (await fetch(`${s.base}/api/agents`, authed())).json()).agents;
+
+test('ingest gives each subagent a person, ignores a client-sent instance and stores it', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  await post(s.base, sub(1, 'spec', { instance: 'Hugo', run_id: 'r1' }));
+  await post(s.base, sub(2, 'code'));
+  await post(s.base, ev({ agent: 'orchestrator', session_id: 'top', instance: 'Dax' }));
+  const rows = s.store.listEvents({}).reverse();
+  assert.deepEqual(
+    rows.map((r) => r.instance),
+    ['Ada', 'Bram', null],
+  );
+  const agents = await getAgents(s);
+  assert.deepEqual(
+    agents.map((a) => a.id),
+    ['orchestrator', ...s.config.agentNames],
+  );
+  const ada = agents.find((a) => a.id === 'Ada');
+  assert.deepEqual([ada.role, ada.name, ada.status], ['spec', 'Ada', 'working']);
+  assert.equal(agents.find((a) => a.id === 'Hugo').status, 'idle', 'the full pool is shown idle');
+  const byInstance = await (await fetch(`${s.base}/api/events?instance=Bram`, authed())).json();
+  assert.equal(byInstance.events.length, 1);
+  const byRole = await (await fetch(`${s.base}/api/events?agent=spec`, authed())).json();
+  assert.equal(byRole.events[0].instance, 'Ada');
+});
+
+test('a stop rests the person, pushes the view over SSE and the next spawn skips them', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const sse = await openSse(s.base);
+  t.after(() => sse.close());
+  await post(s.base, sub(1, 'spec'));
+  await post(s.base, sub(1, 'spec', { type: 'subagent_stop' }));
+  const msg = await sse.waitFor(
+    (m) => m.event === 'agent' && m.data.id === 'Ada' && m.data.status === 'resting',
+  );
+  assert.ok(msg.data.cooldown_until > Date.now());
+  await post(s.base, sub(2, 'code'));
+  const agents = await getAgents(s);
+  assert.equal(agents.find((a) => a.id === 'Bram').status, 'working');
+  assert.deepEqual(agents.find((a) => a.id === 'Bram').handoff.from, 'Ada');
+  assert.equal(agents.find((a) => a.id === 'Ada').handoff.inferred, true);
+});
+
+test('a stopped agent that continues returns to its person', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  await post(s.base, sub(1, 'spec'));
+  await post(s.base, sub(1, 'spec', { type: 'subagent_stop' }));
+  await post(s.base, sub(1, 'spec'));
+  assert.deepEqual(
+    s.store
+      .listEvents({})
+      .reverse()
+      .map((r) => r.instance),
+    ['Ada', 'Ada', 'Ada'],
+  );
+});
+
+test('restart replay restores people from stored rows without reassigning', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  await post(s.base, sub(1, 'spec'));
+  await post(s.base, sub(2, 'code'));
+  const { createApp } = require('../src/server');
+  const app2 = createApp(s.config, s.store);
+  t.after(() => app2.close());
+  const ids = app2.agents.snapshot(Date.now()).filter((a) => a.status === 'working');
+  assert.deepEqual(
+    ids.map((a) => [a.id, a.role]),
+    [
+      ['Ada', 'spec'],
+      ['Bram', 'code'],
+    ],
+  );
+  assert.equal(app2.agents.assign(sub(3, 'review'), Date.now()), 'Carl');
+});
+
+test('overflow people are stored as extra-<n>, removed once idle, and clients are told to resync', async (t) => {
+  const clock = { t: Date.now() };
+  const s = await startApp({ agentNames: ['Ada'] }, { now: () => clock.t });
+  t.after(() => s.stop());
+  const sse = await openSse(s.base);
+  t.after(() => sse.close());
+  await post(s.base, sub(1, 'spec', { ts: clock.t }));
+  await post(s.base, sub(2, 'code', { ts: clock.t }));
+  assert.equal(s.store.listEvents({})[0].instance, 'extra-1');
+  assert.ok((await getAgents(s)).some((a) => a.id === 'extra-1' && a.label === 'Extra 1'));
+  await post(s.base, sub(2, 'code', { type: 'subagent_stop', ts: clock.t }));
+  clock.t += 120000;
+  s.app.broadcastAgentChanges();
+  await sse.waitFor((m) => m.event === 'resync');
+  assert.ok(!(await getAgents(s)).some((a) => a.id === 'extra-1'));
+});
+
+test('cost totals are identical with and without pooling on the same events', async (t) => {
+  const events = [
+    sub(1, 'code', { tokens_in: 100, tokens_out: 10, cost_usd: 0.5 }),
+    sub(2, 'code', { tokens_in: 50, tokens_out: 5, cost_usd: 0.25 }),
+    sub(1, 'code', { type: 'subagent_stop', tokens_in: 1, cost_usd: 0.01 }),
+    sub(3, 'review', { tokens_in: 7, cost_usd: 0.1 }),
+  ];
+  const totals = async (names) => {
+    const s = await startApp({ agentNames: names });
+    try {
+      for (const e of events) await post(s.base, e);
+      const c = await (await fetch(`${s.base}/api/costs?days=1`, authed())).json();
+      return { total: c.total, by_agent: c.by_agent };
+    } finally {
+      await s.stop();
+    }
+  };
+  assert.deepEqual(await totals(['Ada', 'Bram', 'Carl']), await totals([]));
 });
