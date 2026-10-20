@@ -240,24 +240,11 @@ export function mountMissionControl(store, root = document) {
     summaryEl.replaceChildren(...parts);
   }
 
-  function renderPipeline() {
-    const p = store.state.pipeline && store.state.pipeline.run;
-    renderSummary(p);
-    // The approval banner sits outside the collapsible pipeline body so it can never be hidden.
-    approvalEl.replaceChildren(
-      ...(p && p.waiting_on_user_approval
-        ? [h('div', { class: 'approval', role: 'alert', text: '⚠ WAITING ON USER APPROVAL' })]
-        : []),
-    );
-    if (!p) {
-      pipeEl.replaceChildren(
-        emptyState(
-          'No pipeline run yet.',
-          'A run appears here when the orchestrator reports its first step.',
-        ),
-      );
-      return;
-    }
+  // Panel collapse state, kept in memory per run_id (not persisted). Panels are open by default.
+  const panelOpen = new Map();
+
+  // The stepper, abandoned banner and meta lines for one run.
+  function renderRun(p) {
     const parts = [];
     const now = store.now();
     if (p.abandoned) {
@@ -355,7 +342,64 @@ export function mountMissionControl(store, root = document) {
       );
     }
     parts.push(h('div', { class: 'pipe-meta' }, meta));
-    pipeEl.replaceChildren(h('div', { class: 'pipe-wrap' }, parts));
+    return parts;
+  }
+
+  function renderPanel(p) {
+    const open = panelOpen.get(p.run_id) !== false;
+    const bodyId = `pipe-body-${p.run_id.replace(/[^\w-]/g, '-')}`;
+    const tail = p.run_id.slice(-6);
+    const label = [p.repo, p.branch].filter(Boolean).join(' / ');
+    const btn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'pipe-panel-toggle',
+        'aria-expanded': String(open),
+        'aria-controls': bodyId,
+      },
+      [
+        h('span', { class: 'pipe-panel-where', text: label || 'unknown repo' }),
+        h('span', { class: 'pipe-panel-run muted', text: `run …${tail}` }),
+        h('span', { text: `Attempt ${Math.min(p.attempt, p.max_attempts)} of ${p.max_attempts}` }),
+        h('span', { class: 'pipe-panel-status', text: `status: ${p.status}` }),
+      ],
+    );
+    const bodyEl = h('div', { class: 'pipe-panel-body', id: bodyId, hidden: !open }, renderRun(p));
+    btn.addEventListener('click', () => {
+      const next = btn.getAttribute('aria-expanded') !== 'true';
+      panelOpen.set(p.run_id, next);
+      btn.setAttribute('aria-expanded', String(next));
+      bodyEl.hidden = !next;
+    });
+    return h('section', { class: 'pipe-panel', 'data-run-id': p.run_id, 'aria-label': `Run ${label}` }, [
+      h('h3', { class: 'pipe-panel-head' }, [btn]),
+      bodyEl,
+    ]);
+  }
+
+  function renderPipeline() {
+    const pl = store.state.pipeline || {};
+    renderSummary(pl.run);
+    // The approval banner sits outside the collapsible pipeline body so it can never be hidden.
+    approvalEl.replaceChildren(
+      ...(pl.run && pl.run.waiting_on_user_approval
+        ? [h('div', { class: 'approval', role: 'alert', text: '⚠ WAITING ON USER APPROVAL' })]
+        : []),
+    );
+    const runs = Array.isArray(pl.runs) ? pl.runs : [];
+    if (!runs.length) {
+      pipeEl.replaceChildren(
+        emptyState(
+          'No pipeline run yet.',
+          'A run appears here when the orchestrator reports its first step.',
+        ),
+      );
+      return;
+    }
+    const live = new Set(runs.map((r) => r.run_id));
+    for (const id of panelOpen.keys()) if (!live.has(id)) panelOpen.delete(id);
+    pipeEl.replaceChildren(...runs.map(renderPanel));
   }
 
   function renderActivity() {
