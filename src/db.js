@@ -23,6 +23,7 @@ const COLS = [
   'cost_source',
   'pricing_version',
   'unpriced_tokens',
+  'instance',
 ];
 
 // Columns added after the first release. Added with ALTER TABLE only when missing, so the
@@ -33,6 +34,7 @@ const MIGRATIONS = [
   ['cost_source', 'TEXT'],
   ['pricing_version', 'TEXT'],
   ['unpriced_tokens', 'INTEGER'],
+  ['instance', 'TEXT'],
 ];
 const JSON_COLS = ['meta', 'usage', 'snapshot'];
 
@@ -108,7 +110,7 @@ function openDb(dbPath) {
       return rowToEvent(getStmt.get(info.lastInsertRowid));
     },
     /** Newest first. `before` is an event id cursor. */
-    listEvents({ limit = 50, before = null, agent = null } = {}) {
+    listEvents({ limit = 50, before = null, agent = null, instance = null } = {}) {
       const where = [];
       const params = {};
       if (before) {
@@ -118,6 +120,10 @@ function openDb(dbPath) {
       if (agent) {
         where.push('agent = @agent');
         params.agent = agent;
+      }
+      if (instance) {
+        where.push('instance = @instance');
+        params.instance = instance;
       }
       const sql = `SELECT * FROM events ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT @limit`;
       return db

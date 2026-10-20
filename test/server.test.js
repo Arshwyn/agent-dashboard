@@ -1038,3 +1038,49 @@ test('abandoned: startup replay of old stored rows comes back abandoned; approva
   assert.equal(snap.recent_runs.find((r) => r.run_id === 'old-f').status, 'abandoned');
   assert.equal(store.count(), before);
 });
+
+test('a database created before the instance column opens, migrates and keeps its rows', async (t) => {
+  const Database = require('better-sqlite3');
+  const { openDb } = require('../src/db');
+  const { tempDir } = require('./helpers');
+  const file = require('node:path').join(tempDir(t), 'old.db');
+  const old = new Database(file);
+  old.exec(`CREATE TABLE events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, agent TEXT NOT NULL,
+    session_id TEXT NOT NULL, type TEXT NOT NULL, tool TEXT, summary TEXT, task TEXT, repo TEXT,
+    branch TEXT, tokens_in INTEGER, tokens_out INTEGER, cost_usd REAL, meta TEXT)`);
+  old
+    .prepare("INSERT INTO events (ts, agent, session_id, type) VALUES (1000, 'code', 's', 'tool_start')")
+    .run();
+  old.close();
+  const store = openDb(file);
+  t.after(() => store.close());
+  const rows = store.listEvents({});
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].instance, null);
+  const row = store.insertEvent({
+    ts: 2000,
+    agent: 'code',
+    session_id: 's:a1',
+    type: 'tool_start',
+    instance: 'code:2',
+  });
+  assert.equal(row.instance, 'code:2');
+  assert.deepEqual(
+    store.listEvents({ instance: 'code:2' }).map((r) => r.id),
+    [row.id],
+  );
+  assert.equal(store.listEvents({ agent: 'code' }).length, 2, 'the role filter still matches both');
+});
+
+test('GET /api/events validates the optional instance filter', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  await post(s.base, ev({ summary: 'x' }));
+  const ok = await fetch(`${s.base}/api/events?instance=code:2`, authed());
+  assert.equal(ok.status, 200);
+  assert.deepEqual((await ok.json()).events, []);
+  assert.equal((await fetch(`${s.base}/api/events?instance=bad%20one`, authed())).status, 400);
+  const all = await (await fetch(`${s.base}/api/events`, authed())).json();
+  assert.equal(all.events[0].instance, null);
+});
