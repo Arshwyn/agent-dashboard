@@ -3,7 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const state = require('../src/state');
-const { AgentTracker, RETIRED_AGENTS, UNTRACKED_AGENTS, PANEL_GRACE_MINUTES } = state;
+const { AgentTracker, RETIRED_AGENTS, UNTRACKED_AGENTS, PANEL_GRACE_MINUTES, PANEL_ABANDONED_MINUTES } =
+  state;
 
 // Older tests read the wall clock via snapshot(); give them an effectively infinite staleness
 // threshold unless a test sets staleMinutes itself (the abandoned tests below do).
@@ -854,13 +855,43 @@ test('runs: complete and failed runs leave after the grace period but stay in ru
   assert.ok(s.recent_runs.some((r) => r.run_id === 'run-f' && r.status === 'failed'));
 });
 
-test('runs: abandoned and waiting runs are never dropped by the grace rule', () => {
+test('runs: an abandoned run inside the window and a waiting run at any age are kept', () => {
   const p = new PipelineTracker({ staleMinutes: 60 });
   p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
   p.apply(rp(1, 'run-w', { step: 'user-approval', state: 'active' }));
-  const s = p.snapshot(T0 + 120 * 60000);
+  const s = p.snapshot(T0 + 90 * 60000);
   assert.equal(s.runs.find((r) => r.run_id === 'run-a').status, 'abandoned');
   assert.equal(s.runs.find((r) => r.run_id === 'run-w').status, 'waiting_approval');
+  const late = p.snapshot(T0 + 1364 * 60000);
+  assert.ok(!late.runs.some((r) => r.run_id === 'run-a'));
+  assert.equal(late.runs.find((r) => r.run_id === 'run-w').status, 'waiting_approval');
+});
+
+test('runs: abandoned window boundary is inclusive and measured from the last event', () => {
+  const p = new PipelineTracker({ staleMinutes: 60 });
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
+  const win = PANEL_ABANDONED_MINUTES * 60000;
+  const at = p.snapshot(T0 + win);
+  assert.equal(at.runs.find((r) => r.run_id === 'run-a').status, 'abandoned');
+  assert.ok(!p.snapshot(T0 + win + 1).runs.some((r) => r.run_id === 'run-a'));
+});
+
+test('runs: an aged-out abandoned run returns on a new event', () => {
+  const p = new PipelineTracker({ staleMinutes: 60 });
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
+  const later = PANEL_ABANDONED_MINUTES * 60000 + 5000;
+  assert.ok(!p.snapshot(T0 + later).runs.some((r) => r.run_id === 'run-a'));
+  p.apply(rp(later, 'run-a', { step: 'code', state: 'active' }));
+  const s = p.snapshot(T0 + later + 1000);
+  assert.equal(s.runs.find((r) => r.run_id === 'run-a').status, 'running');
+});
+
+test('runs: a long-silent abandoned run is not a panel but stays in recent_runs', () => {
+  const p = new PipelineTracker({ staleMinutes: 60 });
+  p.apply(rp(0, 'run-a', { step: 'code', state: 'active' }));
+  const s = p.snapshot(T0 + 1364 * 60000);
+  assert.deepEqual(s.runs, []);
+  assert.ok(s.recent_runs.some((r) => r.run_id === 'run-a' && r.status === 'abandoned'));
 });
 
 test('runs: non-feature runs are excluded', () => {

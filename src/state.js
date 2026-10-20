@@ -193,6 +193,8 @@ const MAX_ACTIVE_STEPS = 50;
 // Panel list (`runs` in the snapshot): at most MAX_PANELS feature runs; finished runs stay for the grace period.
 const MAX_PANELS = 8;
 const PANEL_GRACE_MINUTES = 10;
+// Abandoned runs stay in the panel list this long, measured from the last event (not from when flagged).
+const PANEL_ABANDONED_MINUTES = 120;
 const ACTIVITY_STATES = ['active', 'passed', 'failed'];
 const MAX_ACTIVITY = 20;
 const DEPLOY_RESULTS = ['success', 'failure_rolled_back', 'failure_rollback_failed'];
@@ -535,10 +537,13 @@ class PipelineTracker {
    */
   panelRuns(now = Date.now()) {
     const graceMs = PANEL_GRACE_MINUTES * 60 * 1000;
+    const abandonedMs = PANEL_ABANDONED_MINUTES * 60 * 1000;
     const eligible = [...this.runs.values()].filter((r) => {
       if (r.kind !== 'feature') return false;
       const status = this._status(r, now);
-      return status === 'complete' || status === 'failed' ? now - r.updated_ts <= graceMs : true;
+      if (status === 'complete' || status === 'failed') return now - r.updated_ts <= graceMs;
+      if (status === 'abandoned') return now - r.updated_ts <= abandonedMs;
+      return true;
     });
     return eligible
       .sort((a, b) => b.updated_ts - a.updated_ts || (a.run_id < b.run_id ? -1 : 1))
@@ -578,6 +583,7 @@ module.exports = {
   AgentTracker,
   PipelineTracker,
   PANEL_GRACE_MINUTES,
+  PANEL_ABANDONED_MINUTES,
   MAX_PANELS,
   STATUSES,
   STEPS,
