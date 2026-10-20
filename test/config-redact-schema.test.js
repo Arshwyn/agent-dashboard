@@ -35,13 +35,11 @@ test('PIPELINE_STALE_MINUTES defaults to 60, must be an integer >= 1', () => {
   }
 });
 
-test('AGENT_NAMES and INSTANCE_RETIRE_MINUTES have defaults and are validated', () => {
+test('AGENT_NAMES, AGENT_COOLDOWN_SECONDS and HANDOFF_WINDOW_SECONDS have defaults and are validated', () => {
   const base = { INGEST_TOKEN: GOOD_A, DASHBOARD_TOKEN: GOOD_B };
   const c = loadConfig(base);
   assert.deepEqual(c.agentNames, ['Ada', 'Bram', 'Carl', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo']);
-  assert.equal(c.instanceRetireMinutes, 30);
   assert.deepEqual(loadConfig({ ...base, AGENT_NAMES: ' Xi , Yu ' }).agentNames, ['Xi', 'Yu']);
-  assert.equal(loadConfig({ ...base, INSTANCE_RETIRE_MINUTES: '5' }).instanceRetireMinutes, 5);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,bad name' }), /AGENT_NAMES/);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,ok' }), /repeat/);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: ',' }), /AGENT_NAMES/);
@@ -54,7 +52,6 @@ test('AGENT_NAMES and INSTANCE_RETIRE_MINUTES have defaults and are validated', 
   assert.equal(loadConfig({ ...base, HANDOFF_WINDOW_SECONDS: '30' }).handoffWindowSeconds, 30);
   assert.throws(() => loadConfig({ ...base, AGENT_COOLDOWN_SECONDS: '-1' }), /AGENT_COOLDOWN_SECONDS/);
   assert.throws(() => loadConfig({ ...base, HANDOFF_WINDOW_SECONDS: 'x' }), /HANDOFF_WINDOW_SECONDS/);
-  assert.throws(() => loadConfig({ ...base, INSTANCE_RETIRE_MINUTES: '0' }), /INSTANCE_RETIRE_MINUTES/);
 });
 
 test('retired names and unknown in AGENTS are dropped with a startup warning', (t) => {
