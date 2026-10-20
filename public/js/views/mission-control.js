@@ -67,7 +67,6 @@ export function mountMissionControl(store, root = document) {
   const filterEl = $('feed-filter');
   const pipeEl = $('pipeline');
   const activityEl = $('activity');
-  const approvalEl = $('approval');
   const summaryEl = $('run-summary');
   const connEl = $('conn');
   const cards = new Map();
@@ -247,6 +246,9 @@ export function mountMissionControl(store, root = document) {
   function renderRun(p) {
     const parts = [];
     const now = store.now();
+    // Per-run banner: only this run's panel shows it.
+    if (p.waiting_on_user_approval)
+      parts.push(h('div', { class: 'approval', role: 'alert', text: '⚠ WAITING ON USER APPROVAL' }));
     if (p.abandoned) {
       parts.push(
         h('div', {
@@ -381,12 +383,6 @@ export function mountMissionControl(store, root = document) {
   function renderPipeline() {
     const pl = store.state.pipeline || {};
     renderSummary(pl.run);
-    // The approval banner sits outside the collapsible pipeline body so it can never be hidden.
-    approvalEl.replaceChildren(
-      ...(pl.run && pl.run.waiting_on_user_approval
-        ? [h('div', { class: 'approval', role: 'alert', text: '⚠ WAITING ON USER APPROVAL' })]
-        : []),
-    );
     const runs = Array.isArray(pl.runs) ? pl.runs : [];
     if (!runs.length) {
       pipeEl.replaceChildren(
