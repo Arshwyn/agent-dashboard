@@ -143,7 +143,7 @@ function collectFrames(fmt) {
     const { img, ax, ay } = PROPS[name]();
     add(name, img, ax, ay);
   }
-  const looks = [...fmt.ROLES, fmt.FALLBACK_LOOK];
+  const looks = [...fmt.ROLES, fmt.FALLBACK_LOOK, ...fmt.PERSON_LOOKS];
   for (const look of looks) {
     const built = buildLook(look, fmt);
     for (const name of fmt.lookFrameNames(look)) {

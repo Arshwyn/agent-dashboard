@@ -6,6 +6,7 @@ import {
   TILE_NAMES,
   ROLES,
   FALLBACK_LOOK,
+  PERSON_LOOKS,
   INDICATOR_IDS,
   indicatorFrameName,
   propFrameNames,
@@ -29,7 +30,7 @@ export function requiredFrameNames() {
     ...TILE_NAMES,
     ...propFrameNames(),
     ...INDICATOR_IDS.map(indicatorFrameName),
-    ...[...ROLES, FALLBACK_LOOK].flatMap((look) => lookFrameNames(look)),
+    ...[...ROLES, FALLBACK_LOOK, ...PERSON_LOOKS].flatMap((look) => lookFrameNames(look)),
   ];
 }
 
