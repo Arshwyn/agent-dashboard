@@ -705,50 +705,30 @@ test('tagLayout: centred under the feet, readable at zoom 1 and 3, kept inside t
   assert.equal(bottom.y + bottom.h, 900);
 });
 
-test('resting: a cooling person takes a free bean bag, sits, sleeps, and leaves it when the status changes', async () => {
+test('resting: a cooling person wanders like an idle one, holds no seat of their own and can still start work', async () => {
   const s = await sim();
   const a = s.addAgent('Ada', 'person-1', 'Ada');
   s.setStatus('Ada', 'resting');
-  for (let i = 0; i < 400 && a.state === 'walking'; i++) s.update(0.1);
-  const seat = s.spots.spotOf('Ada');
-  assert.equal(seat.kind, 'beanbag');
-  assert.deepEqual(a.tile, { x: seat.x, y: seat.y });
-  assert.equal(a.state, 'sit');
-  s.update(3.5);
-  assert.equal(a.state, 'sleep');
-  s.update(600);
-  assert.equal(a.state, 'sleep', 'sleeps until the rest ends');
-  assert.equal(s.spots.spotOf('Ada').id, seat.id);
+  assert.equal(a.status, 'resting');
+  const kinds = new Set();
+  for (let i = 0; i < 800; i++) {
+    s.update(0.25);
+    kinds.add(s.spots.spotOf('Ada')?.kind ?? 'none');
+    assert.notEqual(s.spots.spotOf('Ada')?.kind, 'desk');
+  }
+  assert.ok(kinds.size > 2, `only ${[...kinds]}`);
   s.setStatus('Ada', 'idle');
-  assert.notEqual(a.status, 'resting');
   s.setStatus('Ada', 'resting');
   s.setStatus('Ada', 'working');
   assert.equal(s.spots.spotOf('Ada').kind, 'desk');
 });
 
-test('resting: nine people fill the nine bean bags; the tenth stands idle and takes no seat', async () => {
-  const s = await sim();
-  const beanbags = bundled().spots.filter((sp) => sp.kind === 'beanbag').length;
-  for (let i = 0; i < beanbags + 1; i++) {
-    s.addAgent(`p${i}`);
-    s.setStatus(`p${i}`, 'resting');
-  }
-  for (let i = 0; i < 400; i++) s.update(0.1);
-  const seated = [...s.agents.values()].filter((a) => s.spots.spotOf(a.id)?.kind === 'beanbag');
-  assert.equal(seated.length, beanbags);
-  const standing = [...s.agents.values()].filter((a) => !s.spots.spotOf(a.id));
-  assert.equal(standing.length, 1);
-  assert.equal(standing[0].state, 'idle');
-});
-
-test('resting under reduced motion: placed on the seat at once, asleep', async () => {
+test('resting under reduced motion behaves like idle: no walking, no seat reserved by the status', async () => {
   const s = await sim({ teleport: true });
   const a = s.addAgent('Ada');
   s.setStatus('Ada', 'resting');
-  const seat = s.spots.spotOf('Ada');
-  assert.equal(seat.kind, 'beanbag');
-  assert.deepEqual(a.tile, { x: seat.x, y: seat.y });
-  assert.equal(a.state, 'sleep');
+  assert.notEqual(a.state, 'walking');
+  assert.notEqual(s.spots.spotOf('Ada')?.kind, 'desk');
 });
 
 test('handoff: the giver walks beside the receiver, stands 2 s, then returns to its own status', async () => {
@@ -769,8 +749,8 @@ test('handoff: the giver walks beside the receiver, stands 2 s, then returns to 
   assert.equal(giver.state, 'idle');
   s.update(1);
   assert.notEqual(giver.state, 'idle', 'moves on after standing');
-  for (let i = 0; i < 400; i++) s.update(0.1);
-  assert.equal(s.spots.spotOf('Ada').kind, 'beanbag', 'still resting afterwards');
+  for (let i = 0; i < 40; i++) s.update(0.25);
+  assert.equal(giver.status, 'resting', 'carries on as before afterwards');
 });
 
 test('handoff: unknown agents, the same agent and reduced motion do nothing', async () => {
