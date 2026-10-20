@@ -1,0 +1,8 @@
+node_modules
+package-lock.json
+data
+coverage
+*-TASK.md
+test-results
+e2e-artifacts
+playwright-report

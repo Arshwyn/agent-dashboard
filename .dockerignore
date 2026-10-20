@@ -1,0 +1,12 @@
+node_modules
+data
+.git
+.env
+.env.*
+*-TASK.md
+test
+docs
+e2e
+e2e-artifacts
+test-results
+playwright.config.js

@@ -1,0 +1,63 @@
+Asset licences for agent-dashboard
+==================================
+
+Every non-code asset and data file in this repository is listed below with its source, author,
+licence and how it was made. Third-party art is CC0 only; the rest is original work released under
+CC0 1.0 (public domain dedication) by the repository owner.
+
+Third-party assets
+------------------
+
+art/kenney-roguelike-indoors/License.txt
+art/kenney-roguelike-indoors/Tilesheets/tilesheetInfo.txt
+art/kenney-roguelike-indoors/Tilesheets/roguelikeIndoor_transparent.png
+art/kenney-roguelike-indoors/SOURCE.txt
+    "Roguelike Indoors" tile pack by Kenney Vleugels (Kenney.nl, https://www.kenney.nl).
+    Page:      https://kenney.nl/assets/roguelike-indoors
+    Download:  https://kenney.nl/media/pages/assets/roguelike-indoors/4d5b520b03-1702169567/kenney_roguelike-indoors.zip
+    Licence:   Creative Commons Zero (CC0 1.0), https://creativecommons.org/publicdomain/zero/1.0/
+    Retrieved: 2026-10-19
+    sha256 of the zip:   578cfdb066c4a9de78a52535adaf953728889b2cf268441bd4d338844f7aa586
+    sha256 of the sheet: ade984d5cbe3f16d9e23e6dc516246649de1a7eec2540cf31d53852b690c446f
+    The three pack files are committed unmodified (SOURCE.txt is ours and records where they came
+    from). The pack's License.txt says: "You may use these assets in personal and commercial
+    projects. Credit (Kenney or www.kenney.nl) would be nice but is not mandatory." We credit it
+    anyway: tiles by Kenney (www.kenney.nl).
+    They live outside public/, so they are neither served nor copied into the Docker image; they are
+    only the input of scripts/build-office-atlas.js.
+
+Derived and original assets
+---------------------------
+
+public/office/atlas.png
+    One RGBA image with every tile, prop and character frame of the office, built by
+    scripts/build-office-atlas.js (no randomness, a unit test pins the committed file to the
+    generator output). Licence: CC0 1.0. It mixes two sources:
+    - From the Kenney sheet above (CC0, slices): tile.rug (recoloured from orange to burgundy),
+      prop.table.3x2, prop.table.4x2 (the table tiles joined into larger tables),
+      prop.counter.11x1 (kitchen units joined into a counter) and prop.frame.1x1.0 to .2
+      (framed pictures).
+    - Original work (drawn by us in scripts/art/): the floors and walls (tile.wood, tile.carpet,
+      tile.kitchen, tile.server, tile.grass, tile.wall-top, tile.wall-face: the Kenney sheet has no
+      floor or wall tiles that fit an office, so these are custom), and the props prop.desk (off and
+      lit), prop.chair, prop.beanbag, prop.coffee, prop.whiteboard, prop.rack, prop.window,
+      prop.plant, prop.table.8x3, prop.shelf, prop.fridge, prop.cooler and prop.bin, all ten chibi
+      looks (seven roles plus the fallback; every char.* frame) and their portraits.
+public/office/atlas.json
+    The frame map of atlas.png, written by the same script. Original data. Licence: CC0 1.0.
+public/office/layout.json
+    Original data (office floor plan, hand edited). Licence: CC0 1.0.
+scripts/art/png.js
+scripts/art/raster.js
+scripts/art/props.js
+scripts/art/characters.js
+    Original code and pixel maps for the custom tiles, props and characters. Licence: CC0 1.0 for
+    the art they draw; the code is under the same terms as the rest of the repository.
+Agent card portraits
+    Frames of atlas.png (char.<look>.portrait), drawn at runtime into a canvas. No separate file.
+
+Attribution
+-----------
+The canvas office design (data-driven layout, pathfinding, reservable zone spots, status-driven
+state machine) is inspired by https://github.com/jaffer1979/openclaw-pixel-agents-dashboard,
+MIT licensed. Engine ideas only: no code or art from that repository is included.

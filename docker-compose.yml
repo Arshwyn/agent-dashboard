@@ -1,0 +1,34 @@
+services:
+  agent-dashboard:
+    build:
+      context: .
+    image: agent-dashboard:latest
+    restart: unless-stopped
+    ports:
+      # Defaults to loopback (for a same-host TLS reverse proxy). For LAN access set BIND_ADDR to the
+      # server's LAN IP; see README "Deployment modes".
+      - '${BIND_ADDR:-127.0.0.1}:${PORT:-8787}:8787'
+    environment:
+      # Required; compose refuses to start if unset. Never put real values in this file.
+      INGEST_TOKEN: ${INGEST_TOKEN:?set INGEST_TOKEN in .env}
+      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?set DASHBOARD_TOKEN in .env}
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      MAX_ROWS: ${MAX_ROWS:-200000}
+      DONE_TO_IDLE_SECONDS: ${DONE_TO_IDLE_SECONDS:-60}
+      STALE_MINUTES: ${STALE_MINUTES:-10}
+      PIPELINE_STALE_MINUTES: ${PIPELINE_STALE_MINUTES:-60}
+      AGENTS: ${AGENTS:-spec,code,cleanup,server-ops,ask,verify,review}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    volumes:
+      - agent-dashboard-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  agent-dashboard-data:

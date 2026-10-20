@@ -1,0 +1,18 @@
+Kenney "Roguelike Indoors" (CC0)
+================================
+
+Author:        Kenney Vleugels (Kenney.nl)
+Page:          https://kenney.nl/assets/roguelike-indoors
+Licence:       Creative Commons Zero (CC0 1.0), https://creativecommons.org/publicdomain/zero/1.0/
+Download URL:  https://kenney.nl/media/pages/assets/roguelike-indoors/4d5b520b03-1702169567/kenney_roguelike-indoors.zip
+Retrieved:     2026-10-19
+
+sha256 of the downloaded zip (112227 bytes):
+  578cfdb066c4a9de78a52535adaf953728889b2cf268441bd4d338844f7aa586
+sha256 of Tilesheets/roguelikeIndoor_transparent.png (458x305, 8-bit RGBA, non-interlaced):
+  ade984d5cbe3f16d9e23e6dc516246649de1a7eec2540cf31d53852b690c446f
+
+Only License.txt, Tilesheets/tilesheetInfo.txt and Tilesheets/roguelikeIndoor_transparent.png were
+extracted from the zip; they are committed here unmodified. Nothing else from the archive is used.
+Tiles are 16x16 with a 1 px margin, so tile (col, row) is at x = col * 17, y = row * 17.
+scripts/build-office-atlas.js slices the tiles it needs from this sheet.

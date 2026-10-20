@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Dashboard - Mission Control</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script type="module" src="/js/main.js"></script>
+  </head>
+  <body>
+    <header class="topbar" id="topbar">
+      <h1>Mission Control</h1>
+      <p id="run-summary" class="run-summary">No active run</p>
+      <span id="conn" class="conn conn-connecting" role="status" aria-live="polite">connecting</span>
+      <form method="post" action="/logout"><button type="submit" class="link">Sign out</button></form>
+    </header>
+    <main class="shell">
+      <section aria-labelledby="pipeline-h" class="sec sec-pipeline" id="sec-pipeline">
+        <div class="section-head">
+          <h2 id="pipeline-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="pipeline"
+              aria-expanded="true"
+              aria-controls="pipeline"
+            >
+              Pipeline
+            </button>
+          </h2>
+        </div>
+        <div id="approval"></div>
+        <div id="pipeline"></div>
+      </section>
+      <section aria-labelledby="agents-h" class="sec sec-agents" id="sec-agents">
+        <div class="section-head">
+          <h2 id="agents-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="agents"
+              aria-expanded="true"
+              aria-controls="agents"
+            >
+              Agents
+            </button>
+          </h2>
+        </div>
+        <div id="agents" class="cards"></div>
+      </section>
+      <section aria-labelledby="office-h" class="sec sec-office office-section" id="sec-office">
+        <div class="section-head">
+          <h2 id="office-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="office"
+              aria-expanded="true"
+              aria-controls="office-body"
+            >
+              Office
+            </button>
+          </h2>
+        </div>
+        <div id="office-body">
+          <div id="office" class="office" aria-hidden="true"></div>
+        </div>
+      </section>
+      <section aria-labelledby="feed-h" class="sec sec-feed" id="sec-feed">
+        <div class="section-head">
+          <h2 id="feed-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="feed"
+              aria-expanded="true"
+              aria-controls="feed-body"
+            >
+              Live feed
+            </button>
+          </h2>
+          <label class="head-control"
+            >Agent
+            <select id="feed-filter">
+              <option value="">all</option>
+            </select>
+          </label>
+        </div>
+        <div id="feed-body">
+          <ul id="feed" class="feed" tabindex="0" aria-label="Live feed events"></ul>
+          <div id="feed-empty" class="empty" hidden>
+            <h3 class="empty-title">No events yet. Waiting for agents to report in.</h3>
+            <p class="empty-line">
+              Tool calls and status changes from the agents show up here as they happen.
+            </p>
+          </div>
+        </div>
+      </section>
+      <section aria-labelledby="costs-h" class="sec sec-costs" id="costs-section">
+        <div class="section-head">
+          <h2 id="costs-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="costs"
+              data-default="closed"
+              aria-expanded="false"
+              aria-controls="costs"
+            >
+              Cost summary
+            </button>
+          </h2>
+          <label class="head-control"
+            >Period
+            <select id="costs-days">
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </label>
+        </div>
+        <div id="costs-summary" class="panel-summary"></div>
+        <div id="costs" hidden></div>
+      </section>
+      <section aria-labelledby="sessions-h" class="sec sec-sessions" id="sec-sessions">
+        <div class="section-head">
+          <h2 id="sessions-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="sessions"
+              data-default="closed"
+              aria-expanded="false"
+              aria-controls="sessions"
+            >
+              Sessions
+            </button>
+          </h2>
+        </div>
+        <div id="sessions-summary" class="panel-summary"></div>
+        <div id="sessions" hidden></div>
+      </section>
+      <section aria-labelledby="runs-h" class="sec sec-runs" id="sec-runs">
+        <div class="section-head">
+          <h2 id="runs-h">
+            <button
+              type="button"
+              class="sec-toggle"
+              data-section="runs"
+              aria-expanded="true"
+              aria-controls="activity"
+            >
+              Other requests
+            </button>
+          </h2>
+        </div>
+        <div id="activity" class="activity"></div>
+      </section>
+    </main>
+    <noscript>This dashboard needs JavaScript.</noscript>
+  </body>
+</html>
