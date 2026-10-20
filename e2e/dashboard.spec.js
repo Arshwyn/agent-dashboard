@@ -1587,8 +1587,9 @@ test.describe('abandoned runs', () => {
     }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       const old = Date.now() - 3 * HOUR;
+      const mid = Date.now() - 1.5 * HOUR;
       await server.emit(ev('ab-pq', { kind: 'server_task', state: 'active', target: 'app-server' }, old));
-      await server.emit(ev('ab-pf', { step: 'review', substep: 'security', state: 'active' }, old));
+      await server.emit(ev('ab-pf', { step: 'review', substep: 'security', state: 'active' }, mid));
       await expect(page.locator('#activity .act.s-abandoned').first()).toContainText('ABANDONED');
       const abPhone = page.locator('#pipeline [data-run-id="ab-pf"] .stepper > li.abandoned');
       await expect(abPhone).toHaveCount(1);
