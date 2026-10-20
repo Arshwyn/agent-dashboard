@@ -40,7 +40,7 @@ async function waitHealthy(base, child, getLog) {
   throw new Error(`app did not become healthy: ${getLog()}`);
 }
 
-async function withServer(use) {
+async function withServer(use, extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-dashboard-e2e-'));
   const port = await freePort();
   const ingestToken = randomSecret();
@@ -56,6 +56,9 @@ async function withServer(use) {
       INGEST_TOKEN: ingestToken,
       DASHBOARD_TOKEN: dashboardToken,
       COOKIE_SECURE: 'false',
+      // role cards for standalone top-level sessions (the pipeline roles are played by people)
+      AGENTS: 'spec,code,cleanup,server-ops,ask,verify,review',
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -106,6 +109,21 @@ const test = base.extend({
   // instance accumulates runs from earlier tests, and the panel list is capped).
   // eslint-disable-next-line no-empty-pattern
   isolatedServer: async ({}, use) => withServer(use),
+
+  // A private app instance with a short rest (8 s) and the default pool, for the named-people tests.
+  // eslint-disable-next-line no-empty-pattern
+  peopleServer: async ({}, use) => withServer(use, { AGENTS: 'orchestrator', AGENT_COOLDOWN_SECONDS: '8' }),
+
+  peoplePage: async ({ browser, peopleServer }, use) => {
+    const context = await browser.newContext({ baseURL: peopleServer.base });
+    const page = await context.newPage();
+    const problems = [];
+    page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+    await login(page, peopleServer.dashboardToken);
+    await use(page);
+    await context.close();
+    expect(problems, 'page errors').toEqual([]);
+  },
 
   // A signed-in page on the isolated instance.
   isolatedPage: async ({ browser, isolatedServer }, use) => {

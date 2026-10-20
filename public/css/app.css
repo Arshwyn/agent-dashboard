@@ -301,7 +301,13 @@ button.link {
 .badge.s-resting {
   color: var(--resting);
 }
+.card-head .badge {
+  flex: none;
+}
 .card-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
   font-size: var(--text-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;

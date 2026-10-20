@@ -15,11 +15,16 @@ if (!token) {
   process.exit(1);
 }
 
+// Pipeline roles are subagents (session `<sid>:<agent_id>`): the server hands each to a named person.
 async function post(ev) {
   const res = await fetch(`${url}/event`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ ts: Date.now(), session_id: `demo-${ev.agent}`, ...ev }),
+    body: JSON.stringify({
+      ts: Date.now(),
+      session_id: ev.agent === 'orchestrator' ? 'demo-orchestrator' : `demo-run:${ev.agent}`,
+      ...ev,
+    }),
   });
   if (!res.ok) throw new Error(`POST /event -> ${res.status} ${await res.text()}`);
 }
