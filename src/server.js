@@ -403,7 +403,11 @@ ${error ? `<p class="error" role="alert">${error}</p>` : ''}
       }
       const agent = q.get('agent') || null;
       if (agent && !/^[A-Za-z0-9._:@/-]{1,40}$/.test(agent)) return send(res, 400, { error: 'bad agent' });
-      const events = store.listEvents({ limit, before, agent });
+      const instance = q.get('instance') || null;
+      if (instance && !/^[A-Za-z0-9._:@/-]{1,43}$/.test(instance)) {
+        return send(res, 400, { error: 'bad instance' });
+      }
+      const events = store.listEvents({ limit, before, agent, instance });
       const next = events.length === limit ? events[events.length - 1].id : null;
       return send(res, 200, { events, next_before: next });
     }
