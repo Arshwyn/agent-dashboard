@@ -40,65 +40,84 @@ async function waitHealthy(base, child, getLog) {
   throw new Error(`app did not become healthy: ${getLog()}`);
 }
 
+async function withServer(use) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-dashboard-e2e-'));
+  const port = await freePort();
+  const ingestToken = randomSecret();
+  const dashboardToken = randomSecret();
+  let log = '';
+  const child = spawn(process.execPath, ['src/index.js'], {
+    cwd: ROOT,
+    env: {
+      PATH: process.env.PATH,
+      PORT: String(port),
+      HOST: '127.0.0.1',
+      DB_PATH: path.join(dir, 'e2e.db'),
+      INGEST_TOKEN: ingestToken,
+      DASHBOARD_TOKEN: dashboardToken,
+      COOKIE_SECURE: 'false',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.on('data', (d) => (log += d));
+  child.stderr.on('data', (d) => (log += d));
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await waitHealthy(base, child, () => log.slice(-2000));
+    await use({
+      base,
+      dashboardToken,
+      ingestToken,
+      async emit(event) {
+        const res = await fetch(`${base}/event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ingestToken}` },
+          body: JSON.stringify({ ts: Date.now(), session_id: `e2e-${event.agent}`, ...event }),
+        });
+        if (!res.ok) throw new Error(`POST /event -> ${res.status} ${await res.text()}`);
+      },
+    });
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise((resolve) => {
+      if (child.exitCode !== null) return resolve();
+      const t = setTimeout(() => {
+        child.kill('SIGKILL');
+        resolve();
+      }, 3000);
+      child.once('exit', () => {
+        clearTimeout(t);
+        resolve();
+      });
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const test = base.extend({
   // One app instance per worker, always torn down (success or failure).
   server: [
     // eslint-disable-next-line no-empty-pattern
-    async ({}, use) => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-dashboard-e2e-'));
-      const port = await freePort();
-      const ingestToken = randomSecret();
-      const dashboardToken = randomSecret();
-      let log = '';
-      const child = spawn(process.execPath, ['src/index.js'], {
-        cwd: ROOT,
-        env: {
-          PATH: process.env.PATH,
-          PORT: String(port),
-          HOST: '127.0.0.1',
-          DB_PATH: path.join(dir, 'e2e.db'),
-          INGEST_TOKEN: ingestToken,
-          DASHBOARD_TOKEN: dashboardToken,
-          COOKIE_SECURE: 'false',
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      child.stdout.on('data', (d) => (log += d));
-      child.stderr.on('data', (d) => (log += d));
-      const base = `http://127.0.0.1:${port}`;
-      try {
-        await waitHealthy(base, child, () => log.slice(-2000));
-        await use({
-          base,
-          dashboardToken,
-          ingestToken,
-          async emit(event) {
-            const res = await fetch(`${base}/event`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ingestToken}` },
-              body: JSON.stringify({ ts: Date.now(), session_id: `e2e-${event.agent}`, ...event }),
-            });
-            if (!res.ok) throw new Error(`POST /event -> ${res.status} ${await res.text()}`);
-          },
-        });
-      } finally {
-        child.kill('SIGTERM');
-        await new Promise((resolve) => {
-          if (child.exitCode !== null) return resolve();
-          const t = setTimeout(() => {
-            child.kill('SIGKILL');
-            resolve();
-          }, 3000);
-          child.once('exit', () => {
-            clearTimeout(t);
-            resolve();
-          });
-        });
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-    },
+    async ({}, use) => withServer(use),
     { scope: 'worker' },
   ],
+
+  // A private app instance for one test, for tests that need an empty pipeline (the shared worker
+  // instance accumulates runs from earlier tests, and the panel list is capped).
+  // eslint-disable-next-line no-empty-pattern
+  isolatedServer: async ({}, use) => withServer(use),
+
+  // A signed-in page on the isolated instance.
+  isolatedPage: async ({ browser, isolatedServer }, use) => {
+    const context = await browser.newContext({ baseURL: isolatedServer.base });
+    const page = await context.newPage();
+    const problems = [];
+    page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+    await login(page, isolatedServer.dashboardToken);
+    await use(page);
+    await context.close();
+    expect(problems, 'page errors').toEqual([]);
+  },
 
   baseURL: async ({ server }, use) => use(server.base),
 

@@ -551,12 +551,15 @@ for (const dpr of [1.5, 2]) {
 
 test.describe('pipeline', () => {
   const base = { agent: 'orchestrator', type: 'pipeline' };
-  const pipe = (run_id, meta, summary) => ({
-    ...base,
-    summary,
-    meta: { run_id, repo: 'demo', branch: 'feat/x', ...meta },
-  });
-  const stepOf = (page, label) => page.locator('#pipeline .stepper > li', { hasText: label });
+  // The panel being tested is the run most recently passed to pipe(); earlier tests leave their own
+  // panels on the dashboard, so every selector below is scoped to one panel.
+  let lastRun = null;
+  const panel = (page, run = lastRun) => page.locator(`#pipeline [data-run-id="${run}"]`);
+  const pipe = (run_id, meta, summary) => {
+    lastRun = run_id;
+    return { ...base, summary, meta: { run_id, repo: 'demo', branch: 'feat/x', ...meta } };
+  };
+  const stepOf = (page, label) => panel(page).locator('.stepper > li', { hasText: label });
   const chip = (page, step, sub) => stepOf(page, step).locator(`.substep[data-substep="${sub}"]`);
 
   test('merged agents (legacy step names): one verify card whose indicator follows the active gate', async ({
@@ -623,7 +626,7 @@ test.describe('pipeline', () => {
     await server.emit(pipe(run, { step: 'verify', state: 'active' }));
     await server.emit(pipe(run, { step: 'verify', substep: 'test', state: 'passed' }));
     await server.emit(pipe(run, { step: 'verify', substep: 'styling', state: 'active' }));
-    const items = page.locator('#pipeline .stepper > li');
+    const items = panel(page).locator('.stepper > li');
     await expect(items).toHaveCount(8);
     await expect(items).toHaveText([
       /Spec/,
@@ -649,11 +652,11 @@ test.describe('pipeline', () => {
     await expect(stepOf(page, 'Verify')).toContainText('FAILED at Styling');
     await expect(chip(page, 'Verify', 'styling')).toContainText('FAILED');
     await expect(stepOf(page, 'Verify')).toHaveAttribute('aria-label', 'Verify: FAILED at Styling');
-    await expect(page.locator('#pipeline .pipe-fail')).toContainText('Last failed gate: styling');
+    await expect(panel(page).locator('.pipe-fail')).toContainText('Last failed gate: styling');
     // legacy names for the other agent merge into the same parent
     await server.emit(pipe(run, { step: 'security', state: 'active' }));
     await expect(chip(page, 'Review', 'security')).toContainText('ACTIVE');
-    await expect(page.locator('#pipeline .stepper > li', { hasText: /^Security/ })).toHaveCount(0);
+    await expect(panel(page).locator('.stepper > li', { hasText: /^Security/ })).toHaveCount(0);
   });
 
   test('card label and icon follow the substep; parent alone is text; parallel runs list Also', async ({
@@ -774,7 +777,7 @@ test.describe('pipeline', () => {
       pipe(run, { step: 'test', state: 'failed', attempt: 1, failed_gate: 'test' }, 'npm test: 2 failing'),
     );
 
-    const p = page.locator('#pipeline');
+    const p = panel(page);
     await expect(p).toContainText('Attempt 1 of 3');
     await expect(p.locator('.pipe-fail')).toHaveText('Last failed gate: test - npm test: 2 failing');
     await expect(stepOf(page, 'Verify')).toContainText('FAILED at Test');
@@ -798,17 +801,122 @@ test.describe('pipeline', () => {
         commit_sha: 'abcdef1234567890',
       }),
     );
-    const banner = page.locator('#sec-pipeline').getByRole('alert'); // outside the collapsible body
+    // the banner lives inside this run's panel; there is no global approval element
+    const banner = p.getByRole('alert');
     await expect(banner).toHaveText(/WAITING ON USER APPROVAL/);
     await expect(banner).toBeVisible();
-    // the banner is never collapsed, even with the pipeline body hidden
+    await expect(page.locator('#approval')).toHaveCount(0);
+    // section-level collapse still hides the whole pipeline body
     await toggle(page, 'pipeline').click();
     await expect(page.locator('#pipeline')).toBeHidden();
-    await expect(banner).toBeVisible();
     await toggle(page, 'pipeline').click();
     await expect(p).toContainText('demo / feat/x / abcdef1234');
     await expect(p).toContainText('PR: https://github.com/o/r/pull/1');
     await expect(stepOf(page, 'User approval')).toContainText('ACTIVE');
+  });
+
+  test.describe('multiple panels', () => {
+    const ids = [1, 2, 3, 4, 5].map((i) => `par-aaa00${i}`);
+    const parallel = (page) => page.locator('#pipeline [data-run-id^="par-"]');
+    const emitParallel = async (server) => {
+      for (const [i, id] of ids.entries()) {
+        await server.emit({
+          ...base,
+          meta: {
+            run_id: id,
+            repo: `par-repo-${i + 1}`,
+            branch: `feat/par-${i + 1}`,
+            step: 'code',
+            state: 'active',
+            attempt: (i % 3) + 1,
+          },
+        });
+      }
+    };
+
+    test('five parallel runs show five panels, each with its own repo, branch and attempt', async ({
+      authedPage: page,
+      server,
+    }) => {
+      await emitParallel(server);
+      await expect(parallel(page)).toHaveCount(5);
+      for (const [i, id] of ids.entries()) {
+        const head = panel(page, id).locator('.pipe-panel-head');
+        await expect(head).toContainText(`par-repo-${i + 1} / feat/par-${i + 1}`);
+        await expect(head).toContainText(`run …${id.slice(-6)}`);
+        await expect(head).toContainText(`Attempt ${(i % 3) + 1} of 3`);
+        await expect(head).toContainText('status: running');
+        await expect(panel(page, id).locator('.stepper > li')).toHaveCount(8);
+      }
+      // new panels append in start order
+      await expect(parallel(page)).toHaveText(
+        [/par-repo-1/, /par-repo-2/, /par-repo-3/, /par-repo-4/, /par-repo-5/],
+        {
+          useInnerText: false,
+        },
+      );
+    });
+
+    test('a run waiting on approval shows the banner only in its own panel', async ({
+      authedPage: page,
+      server,
+    }) => {
+      await emitParallel(server);
+      await server.emit({ ...base, meta: { run_id: ids[2], step: 'user-approval', state: 'active' } });
+      await expect(panel(page, ids[2]).getByRole('alert')).toHaveText(/WAITING ON USER APPROVAL/);
+      for (const id of ids.filter((x) => x !== ids[2])) {
+        await expect(panel(page, id).getByRole('alert')).toHaveCount(0);
+      }
+    });
+
+    test('collapsing one panel hides its body and keeps the others open', async ({
+      authedPage: page,
+      server,
+    }) => {
+      await emitParallel(server);
+      const btn = (id) => panel(page, id).locator('.pipe-panel-toggle');
+      const body = (id) => panel(page, id).locator('.pipe-panel-body');
+      await expect(parallel(page)).toHaveCount(5);
+      for (const id of ids) await expect(btn(id)).toHaveAttribute('aria-expanded', 'true');
+      await btn(ids[0]).click();
+      await expect(btn(ids[0])).toHaveAttribute('aria-expanded', 'false');
+      await expect(body(ids[0])).toBeHidden();
+      await expect(btn(ids[0])).toBeVisible();
+      for (const id of ids.slice(1)) {
+        await expect(btn(id)).toHaveAttribute('aria-expanded', 'true');
+        await expect(body(id)).toBeVisible();
+      }
+      expect(await btn(ids[0]).getAttribute('aria-controls')).toBe(await body(ids[0]).getAttribute('id'));
+      // the state survives a re-render from a new event, and nothing is persisted
+      await server.emit({ ...base, meta: { run_id: ids[0], step: 'verify', state: 'active' } });
+      await expect(panel(page, ids[0]).locator('.pipe-panel-head')).toContainText('status: running');
+      await expect(btn(ids[0])).toHaveAttribute('aria-expanded', 'false');
+      expect(
+        await page.evaluate(() => Object.keys(localStorage).filter((k) => /pipe|panel|run/i.test(k))),
+      ).toEqual([]);
+      await btn(ids[0]).click();
+      await expect(body(ids[0])).toBeVisible();
+    });
+
+    for (const [w, h] of [
+      [375, 800],
+      [768, 900],
+      [1280, 900],
+      [1920, 1000],
+    ]) {
+      test(`${w}px with five panels has no horizontal scroll`, async ({ authedPage: page, server }) => {
+        await page.setViewportSize({ width: w, height: h });
+        await emitParallel(server);
+        await expect(parallel(page)).toHaveCount(5);
+        const m = await page.evaluate(() => ({
+          s: document.documentElement.scrollWidth,
+          c: document.documentElement.clientWidth,
+        }));
+        expect(m.s).toBeLessThanOrEqual(m.c);
+        if (w === 375)
+          await page.screenshot({ path: path.join(SHOTS, 'multi-panels-375.png'), fullPage: true });
+      });
+    }
   });
 
   const outcomes = [
@@ -821,11 +929,11 @@ test.describe('pipeline', () => {
       const run = `run-${result}`;
       await server.emit(pipe(run, { step: 'merge', state: 'passed' }));
       await server.emit(pipe(run, { step: 'deploy', deploy_result: result }, 'deploy finished'));
-      const el = page.locator('#pipeline .pipe-meta').getByText(text, { exact: true });
+      const el = panel(page).locator('.pipe-meta').getByText(text, { exact: true });
       await expect(el).toBeVisible();
       await expect(el).toHaveClass(new RegExp(cls));
       await expect(stepOf(page, 'Deploy')).toContainText(result === 'success' ? 'PASSED' : 'FAILED');
-      await expect(page.locator('#pipeline').getByRole('alert')).toHaveCount(0);
+      await expect(panel(page).getByRole('alert')).toHaveCount(0);
     });
   }
 });
@@ -850,7 +958,7 @@ test.describe('xss', () => {
 
     await expect(card(page, 'cleanup').locator('.task')).toHaveText(img);
     await expect(page.locator('#feed')).toContainText(script);
-    await expect(page.locator('#pipeline .pipe-fail')).toContainText(img);
+    await expect(page.locator('#pipeline [data-run-id="run-xss"] .pipe-fail')).toContainText(img);
     await page.waitForTimeout(500);
     expect(await page.evaluate(() => window.__pwned)).toBe(0);
     await expect(page.locator('main img, main script')).toHaveCount(0);
@@ -904,8 +1012,9 @@ test.describe('activity rows (non-feature runs)', () => {
     await expect(page.locator('#activity .act', { hasText: 'Single role: test' })).toBeVisible();
 
     // the feature stepper is not replaced by any of this
-    await expect(page.locator('#pipeline .stepper')).toBeVisible();
-    await expect(page.locator('#pipeline .stepper li', { hasText: 'Spec' })).toContainText('PASSED');
+    const feat = page.locator('#pipeline [data-run-id="feat-1"]');
+    await expect(feat.locator('.stepper')).toBeVisible();
+    await expect(feat.locator('.stepper li', { hasText: 'Spec' })).toContainText('PASSED');
     await page.waitForTimeout(300);
     expect(await page.evaluate(() => window.__pwned)).toBe(0);
     await expect(page.locator('main img')).toHaveCount(0);
@@ -1027,7 +1136,7 @@ test.describe('phone viewport', () => {
       task: 'x'.repeat(150),
     });
     await expect(page.locator('#feed')).toContainText('a-very-long-unbroken');
-    await expect(page.locator('#pipeline .stepper')).toBeVisible();
+    await expect(page.locator('#pipeline .stepper').first()).toBeVisible();
     const m = await page.evaluate(() => ({
       scrollW: document.documentElement.scrollWidth,
       clientW: document.documentElement.clientWidth,
@@ -1427,8 +1536,8 @@ test.describe('abandoned runs', () => {
     });
 
   test('a silent run and request show greyed with text and glyph; a new event revives them', async ({
-    authedPage: page,
-    server,
+    isolatedPage: page,
+    isolatedServer: server,
   }) => {
     const old = Date.now() - 2 * HOUR;
     await server.emit(ev('ab-q', { kind: 'question', state: 'active', target: 'example-app' }, old));
@@ -1436,10 +1545,11 @@ test.describe('abandoned runs', () => {
     const row = page.locator('#activity .act.s-abandoned');
     await expect(row).toContainText('⊘ ABANDONED / no updates for 120 min');
     await expect(row).not.toContainText('ACTIVE');
-    const step = page.locator('#pipeline .stepper > li[data-step="verify"]');
+    const abPanel = page.locator('#pipeline [data-run-id="ab-f"]');
+    const step = abPanel.locator('.stepper > li[data-step="verify"]');
     await expect(step).toHaveClass(/abandoned/);
     await expect(step.locator('.st')).toContainText('⊘ ABANDONED / no updates for 120 min');
-    await expect(page.locator('#pipeline')).toContainText('status: abandoned');
+    await expect(abPanel).toContainText('status: abandoned');
     await expect(step.locator('.substep[data-substep="test"]')).toContainText('ABANDONED');
     for (const el of [row, step, step.locator('.substep.abandoned')]) {
       const m = await noMotion(el);
@@ -1452,7 +1562,7 @@ test.describe('abandoned runs', () => {
     await server.emit(ev('ab-f', { step: 'verify', substep: 'test', state: 'active' }, Date.now()));
     await expect(step).not.toHaveClass(/abandoned/);
     await expect(step.locator('.st')).toContainText('ACTIVE');
-    await expect(page.locator('#pipeline')).toContainText('status: running');
+    await expect(abPanel).toContainText('status: running');
     await server.emit(ev('ab-q', { kind: 'question', state: 'active' }, Date.now()));
     await expect(page.locator('#activity .act.s-abandoned')).toHaveCount(0);
   });
@@ -1460,21 +1570,22 @@ test.describe('abandoned runs', () => {
   test.describe('phone', () => {
     test.use({ viewport: { width: 375, height: 812 } });
     test('abandoned items do not scroll horizontally and stay static under reduced motion', async ({
-      authedPage: page,
-      server,
+      isolatedPage: page,
+      isolatedServer: server,
     }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       const old = Date.now() - 3 * HOUR;
       await server.emit(ev('ab-pq', { kind: 'server_task', state: 'active', target: 'app-server' }, old));
       await server.emit(ev('ab-pf', { step: 'review', substep: 'security', state: 'active' }, old));
       await expect(page.locator('#activity .act.s-abandoned').first()).toContainText('ABANDONED');
-      await expect(page.locator('#pipeline .stepper > li.abandoned')).toHaveCount(1);
+      const abPhone = page.locator('#pipeline [data-run-id="ab-pf"] .stepper > li.abandoned');
+      await expect(abPhone).toHaveCount(1);
       const m = await page.evaluate(() => ({
         s: document.documentElement.scrollWidth,
         c: document.documentElement.clientWidth,
       }));
       expect(m.s).toBeLessThanOrEqual(m.c);
-      expect((await noMotion(page.locator('#pipeline .stepper > li.abandoned'))).pseudo).toBe('none');
+      expect((await noMotion(abPhone)).pseudo).toBe('none');
     });
   });
 });
@@ -1490,7 +1601,7 @@ test.describe('layout shell', () => {
       officeH: document.querySelector('#office').getBoundingClientRect().height,
       pipelineH: document.querySelector('#sec-pipeline').getBoundingClientRect().height,
       stepperH: document.querySelector('#pipeline .stepper').getBoundingClientRect().height,
-      tops: [...document.querySelectorAll('#pipeline .stepper > li')].map((l) =>
+      tops: [...document.querySelectorAll('#pipeline [data-run-id="shell-steps"] .stepper > li')].map((l) =>
         Math.round(l.getBoundingClientRect().top),
       ),
     }));
@@ -1519,9 +1630,10 @@ test.describe('layout shell', () => {
     [768, 900],
     [375, 800],
   ]) {
+    // Isolated instance: the height limits below describe a single-run pipeline section.
     test(`${w}px: no horizontal page scroll, header and width limits`, async ({
-      authedPage: page,
-      server,
+      isolatedPage: page,
+      isolatedServer: server,
     }) => {
       await server.emit({
         agent: 'orchestrator',
@@ -1557,7 +1669,7 @@ test.describe('layout shell', () => {
       type: 'pipeline',
       meta: { run_id: 'shell-steps', step: 'spec', state: 'passed', repo: 'demo', branch: 'b' },
     });
-    const items = page.locator('#pipeline .stepper > li');
+    const items = page.locator('#pipeline [data-run-id="shell-steps"] .stepper > li');
     await expect(items).toHaveCount(8);
     const labels = ['Spec', 'Code', 'Verify', 'Review', 'User approval', 'Merge', 'Deploy', 'Cleanup'];
     for (const [i, l] of labels.entries()) await expect(items.nth(i)).toContainText(l);
@@ -1577,7 +1689,9 @@ test.describe('layout shell', () => {
       type: 'pipeline',
       meta: { run_id: 'shell-chips', step: 'test', state: 'passed', repo: 'demo', branch: 'b' },
     });
-    const chipEl = page.locator('#pipeline .stepper > li[data-step="verify"] .substep[data-substep="test"]');
+    const chipEl = page.locator(
+      '#pipeline [data-run-id="shell-chips"] .stepper > li[data-step="verify"] .substep[data-substep="test"]',
+    );
     await expect(chipEl).toContainText('PASSED');
     await expect(chipEl).toHaveAttribute('aria-label', /Test: passed/);
   });
