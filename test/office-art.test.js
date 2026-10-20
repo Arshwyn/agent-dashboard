@@ -116,7 +116,7 @@ test('the real atlas.json parses, matches the PNG size, and every frame is insid
 });
 
 const BAD_ATLAS = [
-  ['wrong version', (j) => (j.version = 2), /unsupported version 2/],
+  ['wrong version', (j) => (j.version = 3), /unsupported version 3/],
   ['missing frame', (j) => delete j.frames['tile.wood'], /missing frame 'tile\.wood'/],
   ['frame out of bounds', (j) => (j.frames['tile.wood'].x = j.width - 4), /out of the \d+x\d+ image bounds/],
   ['non-integer coordinates', (j) => (j.frames['tile.wood'].x = 1.5), /needs integer x, y, w, h, ax, ay/],
@@ -375,4 +375,70 @@ test('the four step icons are in the atlas as 8x8 frames with pixels, distinct f
     return px.join('');
   });
   assert.equal(new Set(keys).size, 4);
+});
+
+// ---- named people looks ---------------------------------------------------------------------------
+
+test('there are sixteen person looks; every frame is in the atlas; personLook cycles', async () => {
+  const { parseAtlas } = await atlasMod();
+  const { PERSON_LOOKS, personLook, lookFrameNames, FALLBACK_LOOK } = await fmtMod();
+  const { lookFor, ALL_LOOKS } = await rolesMod();
+  const atlas = parseAtlas(realAtlas());
+  assert.equal(PERSON_LOOKS.length, 16);
+  assert.equal(ALL_LOOKS.length, 8 + 16);
+  for (const look of PERSON_LOOKS) {
+    assert.equal(lookFor(look), look);
+    for (const name of lookFrameNames(look)) assert.ok(atlas.has(name), name);
+  }
+  assert.equal(personLook(1), 'person-1');
+  assert.equal(personLook(16), 'person-16');
+  assert.equal(personLook(17), 'person-1');
+  assert.equal(personLook(0), FALLBACK_LOOK);
+  assert.equal(personLook(null), FALLBACK_LOOK);
+  assert.equal(lookFor('person-17'), FALLBACK_LOOK);
+});
+
+test('the person looks differ pairwise in skin, hair or outfit and in their pixels, and from fallback', () => {
+  const { PERSON_LOOK_SPECS, LOOK_SPECS } = require('../scripts/art/characters');
+  const names = Object.keys(PERSON_LOOK_SPECS);
+  assert.equal(names.length, 16);
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const a = PERSON_LOOK_SPECS[names[i]];
+      const b = PERSON_LOOK_SPECS[names[j]];
+      const same = ['skin', 'hair', 'outfit'].filter((k) => a[k] === b[k]).length;
+      assert.ok(same <= 1, `${names[i]} and ${names[j]} share ${same} of skin/hair/outfit`);
+    }
+    const fb = LOOK_SPECS.fallback;
+    const p = PERSON_LOOK_SPECS[names[i]];
+    assert.ok(['skin', 'hair', 'outfit'].some((k) => p[k] !== fb[k]));
+  }
+});
+
+test('person looks are visually distinct in the atlas and the PNG stays small', async () => {
+  const { charFrameName, portraitFrameName, PERSON_LOOKS } = await fmtMod();
+  const json = realAtlas();
+  const png = decodePng(fs.readFileSync(ATLAS_PNG));
+  const grab = (name) => {
+    const f = json.frames[name];
+    const out = [];
+    for (let y = 0; y < f.h; y++) {
+      for (let x = 0; x < f.w; x++) {
+        const i = ((f.y + y) * png.width + f.x + x) * 4;
+        out.push(png.pixels.subarray(i, i + 4).join(','));
+      }
+    }
+    return out;
+  };
+  const look = [...PERSON_LOOKS, 'fallback'];
+  for (const make of [(l) => charFrameName(l, 'idle', 'down', 0), portraitFrameName]) {
+    const px = Object.fromEntries(look.map((l) => [l, grab(make(l))]));
+    for (let i = 0; i < look.length; i++) {
+      for (let j = i + 1; j < look.length; j++) {
+        const diff = px[look[i]].filter((v, k) => v !== px[look[j]][k]).length;
+        assert.ok(diff >= 12, `${look[i]} and ${look[j]} differ in only ${diff} pixels`);
+      }
+    }
+  }
+  assert.ok(fs.statSync(ATLAS_PNG).size < 100 * 1024);
 });

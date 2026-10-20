@@ -2,11 +2,16 @@
 // renderer, the portraits, the tests and the generator (scripts/build-office-atlas.js, through a
 // dynamic import) all read the same table, so a frame is never named in two places.
 
-export const ATLAS_VERSION = 1;
+export const ATLAS_VERSION = 2;
 
 // The seven roles (one fixed look each) and the id of the look used for any other agent.
 export const ROLES = ['spec', 'code', 'cleanup', 'server-ops', 'ask', 'verify', 'review'];
 export const FALLBACK_LOOK = 'fallback';
+// The named pool: sixteen person looks, pool member i (1-based) uses `person-i`; larger pools cycle.
+export const PERSON_LOOK_COUNT = 16;
+export const PERSON_LOOKS = Array.from({ length: PERSON_LOOK_COUNT }, (_, i) => `person-${i + 1}`);
+export const personLook = (slot) =>
+  Number.isInteger(slot) && slot >= 1 ? PERSON_LOOKS[(slot - 1) % PERSON_LOOK_COUNT] : FALLBACK_LOOK;
 
 // ---- tiles ----------------------------------------------------------------------------------------
 

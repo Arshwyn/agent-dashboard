@@ -306,6 +306,156 @@ const LOOK_SPECS = {
   },
 };
 
+// The sixteen person looks of the named pool (pool member i uses `person-i`; larger pools cycle).
+// Data only: the same body templates, hair styles, accessories and details as the role looks.
+const PERSON_LOOK_SPECS = {
+  'person-1': {
+    skin: '#f3d0b0',
+    hair: '#7b3a22',
+    hairStyle: 'long',
+    outfit: '#c0392b',
+    accent: '#f1c40f',
+    accessory: null,
+    detail: 'scarf',
+  },
+  'person-2': {
+    skin: '#c98d5e',
+    hair: '#1d1b26',
+    hairStyle: 'short',
+    outfit: '#2e86c1',
+    accent: '#2e86c1',
+    accessory: 'cap',
+    detail: 'none',
+  },
+  'person-3': {
+    skin: '#8d5a3b',
+    hair: '#2a1a12',
+    hairStyle: 'bun',
+    outfit: '#27ae60',
+    accent: '#f5e6a8',
+    accessory: null,
+    detail: 'badge',
+  },
+  'person-4': {
+    skin: '#f1c9a5',
+    hair: '#e0b040',
+    hairStyle: 'spiky',
+    outfit: '#8e44ad',
+    accent: '#f39c12',
+    accessory: 'headphones',
+    detail: 'hoodie',
+  },
+  'person-5': {
+    skin: '#e6b48a',
+    hair: '#3b3b4a',
+    hairStyle: 'tuft',
+    outfit: '#16a085',
+    accent: '#ecf0f1',
+    accessory: null,
+    detail: 'tie',
+  },
+  'person-6': {
+    skin: '#a56b46',
+    hair: '#c0504d',
+    hairStyle: 'long',
+    outfit: '#34495e',
+    accent: '#e67e22',
+    accessory: 'bandana',
+    detail: 'none',
+  },
+  'person-7': {
+    skin: '#fbdcc4',
+    hair: '#4b2e83',
+    hairStyle: 'short',
+    outfit: '#d35400',
+    accent: '#2c3e50',
+    accessory: 'goggles',
+    detail: 'apron',
+  },
+  'person-8': {
+    skin: '#6f4630',
+    hair: '#101010',
+    hairStyle: 'spiky',
+    outfit: '#f0e6d2',
+    accent: '#27ae60',
+    accessory: null,
+    detail: 'labcoat',
+  },
+  'person-9': {
+    skin: '#f0c8a0',
+    hair: '#5b8c3a',
+    hairStyle: 'bun',
+    outfit: '#2c3e8f',
+    accent: '#e74c3c',
+    accessory: 'hardhat',
+    detail: 'hivis',
+  },
+  'person-10': {
+    skin: '#d9a066',
+    hair: '#e8e8f0',
+    hairStyle: 'long',
+    outfit: '#7f8c8d',
+    accent: '#9b59b6',
+    accessory: 'wizard',
+    detail: 'robe',
+  },
+  'person-11': {
+    skin: '#e8c4a0',
+    hair: '#8b5a2b',
+    hairStyle: 'short',
+    outfit: '#1abc9c',
+    accent: '#f1c40f',
+    accessory: null,
+    detail: 'badge',
+  },
+  'person-12': {
+    skin: '#b97a56',
+    hair: '#2c2c54',
+    hairStyle: 'tuft',
+    outfit: '#e84393',
+    accent: '#ffffff',
+    accessory: 'cap',
+    detail: 'hoodie',
+  },
+  'person-13': {
+    skin: '#f6d5b8',
+    hair: '#d35400',
+    hairStyle: 'spiky',
+    outfit: '#2d3436',
+    accent: '#fdcb6e',
+    accessory: 'headphones',
+    detail: 'none',
+  },
+  'person-14': {
+    skin: '#7d4e33',
+    hair: '#6c5ce7',
+    hairStyle: 'bun',
+    outfit: '#00b894',
+    accent: '#dfe6e9',
+    accessory: null,
+    detail: 'scarf',
+  },
+  'person-15': {
+    skin: '#eac09a',
+    hair: '#636e72',
+    hairStyle: 'long',
+    outfit: '#0984e3',
+    accent: '#ffeaa7',
+    accessory: 'goggles',
+    detail: 'tie',
+  },
+  'person-16': {
+    skin: '#c58a62',
+    hair: '#fab1a0',
+    hairStyle: 'short',
+    outfit: '#b33771',
+    accent: '#f8efba',
+    accessory: null,
+    detail: 'apron',
+  },
+};
+Object.assign(LOOK_SPECS, PERSON_LOOK_SPECS);
+
 function paletteFor(spec) {
   const blush = (c) => {
     const [r, g, b] = toColour(c);
@@ -689,4 +839,4 @@ function buildLook(look, fmt) {
   return frames;
 }
 
-module.exports = { buildLook, LOOK_SPECS };
+module.exports = { buildLook, LOOK_SPECS, PERSON_LOOK_SPECS };
