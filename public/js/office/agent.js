@@ -23,7 +23,6 @@ export const STATUSES = ['idle', 'working', 'blocked', 'done', 'resting'];
 export const normalizeStatus = (s) => (STATUSES.includes(s) ? s : 'idle');
 
 const DESK_RETRY_SECS = 1;
-const REST_SIT_SECS = 3; // sit on the bean bag this long, then sleep until the rest ends
 export const HANDOFF_STAND_SECS = 2; // the giver of a handoff stands beside the receiver this long
 
 export function createSim({
@@ -126,18 +125,6 @@ export function createSim({
       case 'wait':
         a.state = 'idle';
         a.act = null;
-        break;
-      case 'rest':
-        a.act = {
-          kind: 'rest',
-          steps: [
-            { state: 'sit', secs: REST_SIT_SECS },
-            { state: 'sleep', secs: Infinity },
-          ],
-          stepIndex: reduced ? 1 : 0,
-          timer: reduced ? Infinity : REST_SIT_SECS,
-        };
-        a.state = a.act.steps[a.act.stepIndex].state;
         break;
       case 'handoff':
         a.act = {
@@ -305,37 +292,16 @@ export function createSim({
     const next = normalizeStatus(status);
     if (a.status === next) return a;
     a.status = next;
-    if (next === 'resting') rest(a);
-    else if (next === 'idle') {
+    if (next === 'idle' || next === 'resting') {
       if (!a.wandering) schedule(a);
     } else if (next === 'done') celebrate(a);
     else seekDesk(a);
     return a;
   }
 
-  // A cooling person takes a free bean bag (the existing seat kind) and sits, then sleeps. With no
-  // bean bag free they stand where they are. The seat is released when the status changes again.
-  function rest(a) {
-    a.wandering = false;
-    a.waiting = false;
-    a.act = null;
-    const seat = spots.reserve({ kind: 'beanbag' }, a.id, rng);
-    if (seat) return goTo(a, { x: seat.x, y: seat.y }, 'rest');
-    spots.release(a.id);
-    if (a.state === 'walking') {
-      a.path = a.path.slice(0, 1); // finish the current step, then stand there
-      a.arrive = 'wait';
-    } else {
-      a.arrive = 'wait';
-      a.state = 'idle';
-    }
-    wakeWaiting();
-  }
-
   // Back to what the status says, after a short detour (a handoff).
   function resume(a) {
-    if (a.status === 'resting') rest(a);
-    else if (a.status === 'working' || a.status === 'blocked') seekDesk(a);
+    if (a.status === 'working' || a.status === 'blocked') seekDesk(a);
     else schedule(a);
   }
 

@@ -2033,7 +2033,7 @@ test.describe('named people', () => {
     await expect(card(page, 'Ada').locator('.badge')).toHaveText(/\d+ s/);
     await expect(card(page, 'Ada')).toHaveClass(/s-resting/);
     await expect(roleOf(page, 'Ada')).toHaveText('spec'); // the last role stays
-    await expect.poll(async () => (await canvas(page).getAttribute('data-spots')) || '').toMatch(/Ada:bean-/);
+    // a resting person is not confined to a seat: they wander like an idle one
     await work(peopleServer, 3, 'review'); // inside the rest: not Ada
     await expect(card(page, 'Carl').locator('.badge')).toHaveText(/WORKING/);
     await expect(card(page, 'Ada').locator('.badge')).not.toHaveText(/WORKING/);
