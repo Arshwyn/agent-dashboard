@@ -158,3 +158,31 @@ test('client store defaults active_steps to [] and keeps it from fetch and SSE',
   assert.deepEqual(store.state.pipeline.active_steps, [step]);
   store.stop();
 });
+
+test('client store passes runs through, falls back to [run] or [], and defaults abandoned per entry', async () => {
+  const { createStore } = await import('../public/js/store.js');
+  const a = { run_id: 'run-a', status: 'running', steps: [] };
+  const b = { run_id: 'run-b', status: 'abandoned', steps: [] };
+  let body = { run: a, recent_runs: [] };
+  const fetchFn = (url) => {
+    if (url.startsWith('/api/agents')) return json({ now: Date.now(), agents: [] });
+    if (url.startsWith('/api/events')) return json({ events: [], next_before: null });
+    return json(body);
+  };
+  const store = createStore({ fetchFn, EventSourceCtor: FakeES });
+  assert.deepEqual(store.state.pipeline.runs, []);
+  await store.start();
+  assert.deepEqual(store.state.pipeline.runs, [a], 'old server with a run');
+  FakeES.last.fire('pipeline', { run: null, recent_runs: [] });
+  assert.deepEqual(store.state.pipeline.runs, [], 'old server without a run');
+  FakeES.last.fire('pipeline', { run: b, runs: [a, b], recent_runs: [] });
+  assert.deepEqual(
+    store.state.pipeline.runs.map((r) => r.run_id),
+    ['run-a', 'run-b'],
+  );
+  assert.equal(store.state.pipeline.runs[0].abandoned, undefined);
+  assert.equal(store.state.pipeline.runs[1].abandoned, true);
+  FakeES.last.fire('pipeline', { run: a, runs: 'junk', recent_runs: [] });
+  assert.deepEqual(store.state.pipeline.runs, [a]);
+  store.stop();
+});
