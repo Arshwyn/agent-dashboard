@@ -20,6 +20,8 @@ services:
       AGENTS: ${AGENTS:-spec,code,cleanup,server-ops,ask,verify,review}
       AGENT_NAMES: ${AGENT_NAMES:-Ada,Bram,Carl,Dax,Ena,Finn,Gia,Hugo}
       INSTANCE_RETIRE_MINUTES: ${INSTANCE_RETIRE_MINUTES:-30}
+      AGENT_COOLDOWN_SECONDS: ${AGENT_COOLDOWN_SECONDS:-60}
+      HANDOFF_WINDOW_SECONDS: ${HANDOFF_WINDOW_SECONDS:-120}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TRUST_PROXY: ${TRUST_PROXY:-false}
     volumes:
