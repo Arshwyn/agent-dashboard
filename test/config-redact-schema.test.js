@@ -36,10 +36,13 @@ test('AGENT_DISPLAY_NAMES defaults to empty and is strictly validated', () => {
   assert.deepEqual(load(' orchestrator = Example Bot ', { AGENTS: 'orchestrator,ask' }).agentDisplayNames, {
     orchestrator: 'Example Bot',
   });
-  assert.deepEqual(load('orchestrator=Alice AI,ask=Bob.2', { AGENTS: 'orchestrator,ask' }).agentDisplayNames, {
-    orchestrator: 'Alice AI',
-    ask: 'Bob.2',
-  });
+  assert.deepEqual(
+    load('orchestrator=Alice AI,ask=Bob.2', { AGENTS: 'orchestrator,ask' }).agentDisplayNames,
+    {
+      orchestrator: 'Alice AI',
+      ask: 'Bob.2',
+    },
+  );
   assert.throws(() => load('spec=Example Bot'), /key "spec".*AGENTS/);
   assert.throws(() => load('test=Example Bot', { AGENTS: 'orchestrator,test' }), /key "test"/);
   assert.throws(() => load('Ada=Example Bot'), /key "Ada"/, 'persons are never relabelled');
