@@ -1307,6 +1307,21 @@ test('run link: free or resting people have no run_id and a new session replaces
   assert.equal(person(t, 'Ada', later + 2).run_id, 'beta-2');
 });
 
+test('run link: the first link of a session is kept; another session links independently', () => {
+  const t = crew();
+  feed(t, link(1, 'alpha-1'));
+  feed(t, link(1, 'beta-2', { ts: T0 + 1 }));
+  feed(t, agentEv(1, 'verify', { ts: T0 + 2 }));
+  assert.equal(person(t, 'Ada', T0 + 3).run_id, 'alpha-1', 'a later link before the first event is ignored');
+  feed(t, link(1, 'beta-2', { ts: T0 + 4 }));
+  feed(t, link(1, 'gamma-3', { ts: T0 + 5 }));
+  assert.equal(person(t, 'Ada', T0 + 6).run_id, 'alpha-1', 'later links after the first event are ignored');
+  feed(t, agentEv(2, 'verify', { ts: T0 + 7 }));
+  feed(t, link(2, 'beta-2', { ts: T0 + 8 }));
+  assert.equal(person(t, 'Bram', T0 + 9).run_id, 'beta-2');
+  assert.equal(person(t, 'Ada', T0 + 9).run_id, 'alpha-1');
+});
+
 test('run link: two linked people never share a run link', () => {
   const t = crew();
   feed(t, link(1, 'alpha-1'));

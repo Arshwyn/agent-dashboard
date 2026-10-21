@@ -67,7 +67,7 @@ class AgentTracker {
     this.names = names;
     this.cooldownMs = cooldownSeconds * 1000;
     this.handoffMs = handoffWindowSeconds * 1000;
-    this.workers = new Map(); // session_id -> { person, role, last_ts, stopped, stop_ts, real, run_id, link_ts }
+    this.workers = new Map(); // session_id -> { person, role, last_ts, stopped, stop_ts, real, run_id }
     this.released = new Map(); // person -> newest release ts of workers already swept
     this.lastStop = null; // { person, role, ts } of the newest subagent_stop
     this.doneToIdleMs = doneToIdleSeconds * 1000;
@@ -186,7 +186,6 @@ class AgentTracker {
         stop_ts: null,
         real: false,
         run_id: null,
-        link_ts: -Infinity,
       };
       this.workers.set(ev.session_id, w);
     }
@@ -201,7 +200,7 @@ class AgentTracker {
   }
 
   /**
-   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id: no card
+   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id (the first link of a session wins, later ones are ignored): no card
    * status, timestamps, totals, role or handoff change, and it never reopens a stopped worker. A link that
    * arrives first creates the worker (busy, like any pooled event) and the first real event continues it.
    */
@@ -218,14 +217,10 @@ class AgentTracker {
         stop_ts: null,
         real: false,
         run_id: null,
-        link_ts: -Infinity,
       };
       this.workers.set(ev.session_id, w);
     }
-    if (ev.ts >= w.link_ts) {
-      w.run_id = rid;
-      w.link_ts = ev.ts;
-    }
+    if (w.run_id === null) w.run_id = rid; // the first link of a session is kept
     return a;
   }
 
