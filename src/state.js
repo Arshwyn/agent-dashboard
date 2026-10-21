@@ -43,6 +43,14 @@ const RESUME_MS = 60 * 60 * 1000; // an agent keeps its person this long after i
 const MAX_MAPPINGS = 2000;
 const HANDOFF_SHOW_MS = 2 * 60 * 1000;
 const EXTRA_RE = /^extra-([1-9]\d?)$/;
+// Anything that looks like an overflow id, in any case and with any digits. Pool names must not match,
+// and a top-level agent that matches gets no card.
+const OVERFLOW_ID_RE = /^extra-\d+$/i;
+
+/** An own property of a map, or null (inherited keys such as `constructor` never match). */
+function ownValue(map, key) {
+  return map && typeof map === 'object' && Object.hasOwn(map, key) ? map[key] : null;
+}
 
 /** The agent-id part of a subagent session id (`<sid>:<agent_id>`), or null for a top-level session. */
 function agentPart(sessionId) {
@@ -160,6 +168,8 @@ class AgentTracker {
     if (!this.isPooled(ev)) return null;
     const key = ev.session_id;
     const w = this.workers.get(key);
+    // A link never picks a person: it follows the session's real worker, or has none (no card is created).
+    if (ev.type === 'link') return w && w.real ? w.person : null;
     if (w && w.real && now - w.last_ts <= RESUME_MS && !this._busy(w.person, now, key)) return w.person;
     let rested = null;
     for (const name of this.names) {
@@ -186,12 +196,14 @@ class AgentTracker {
         stop_ts: null,
         real: false,
         run_id: null,
+        relink: false,
       };
       this.workers.set(ev.session_id, w);
     }
     if (!w.real) w.last_ts = -Infinity; // a link-only worker takes its state from its first real event
     w.real = true; // seen a real (non-link) event
     if (ev.ts >= w.last_ts) {
+      if (w.stopped && ev.type !== 'subagent_stop') w.relink = true; // resumed after a stop
       w.person = person;
       w.role = ev.agent;
       w.last_ts = ev.ts;
@@ -201,29 +213,35 @@ class AgentTracker {
   }
 
   /**
-   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id (the first link of a
-   * session wins, later ones are ignored): no card status, timestamps, totals, role or handoff change, and it never reopens a stopped worker. A link that
-   * arrives first creates a link-only worker (`real` false) that holds no person: it is ignored by busy,
-   * rest and run lookups until its first real event, which makes it a normal worker.
+   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id: no card
+   * status, timestamps, totals, role or handoff change, and it never reopens a stopped worker.
+   * The first link of a session is kept while the agent runs; a link may replace it once the worker has
+   * stopped, or has resumed after a stop and not been linked since (a reused session on another run).
+   * A link that arrives first creates a link-only worker (`real` false, no person, no card): it is
+   * ignored by busy, rest and run lookups until its first real event, which makes it a normal worker.
    */
-  _applyLink(ev, a) {
+  _applyLink(ev) {
     const rid = ev.meta && typeof ev.meta.run_id === 'string' ? ev.meta.run_id : null;
     if (!rid || !RUN_ID_RE.test(rid)) return null;
     let w = this.workers.get(ev.session_id);
     if (!w) {
       w = {
-        person: a.id,
+        person: null,
         role: ev.agent,
         last_ts: ev.ts,
         stopped: false,
         stop_ts: null,
         real: false,
         run_id: null,
+        relink: false,
       };
       this.workers.set(ev.session_id, w);
     }
-    if (w.run_id === null) w.run_id = rid; // the first link of a session is kept
-    return a;
+    if (w.run_id === null || w.stopped || w.relink) {
+      w.run_id = rid;
+      w.relink = false;
+    }
+    return w;
   }
 
   /** The run of the newest worker holding a person, only while the person is busy; else null. */
@@ -257,13 +275,15 @@ class AgentTracker {
    * named after a pool person or an overflow id (those cards belong to subagent work). Still stored.
    */
   noCard(ev) {
-    if (agentPart(ev.session_id) === null) return this.names.includes(ev.agent) || EXTRA_RE.test(ev.agent);
+    if (agentPart(ev.session_id) === null)
+      return this.names.includes(ev.agent) || OVERFLOW_ID_RE.test(ev.agent);
     return !(typeof ev.instance === 'string' && ev.instance);
   }
 
   /** The card an applied event belongs to, or null (see noCard). */
   cardFor(ev) {
     if (this.noCard(ev)) return null;
+    if (ev.type === 'link') return this.agents.get(ev.instance) ?? null; // a link never creates a card
     if (agentPart(ev.session_id) === null) return this._get(ev.agent);
     return this._get(ev.instance, ev.agent, true);
   }
@@ -271,10 +291,13 @@ class AgentTracker {
   apply(ev) {
     if (ev.type === 'pipeline') return null; // pipeline events feed PipelineTracker only
     if (UNTRACKED_AGENTS.includes(ev.agent)) return null; // untracked names never get a card
+    const person = agentPart(ev.session_id) !== null;
+    if (ev.type === 'link') {
+      if (person) this._applyLink(ev); // a link touches no card
+      return null;
+    }
     const a = this.cardFor(ev); // replay trusts the stored person and never reassigns
     if (!a) return null;
-    const person = agentPart(ev.session_id) !== null;
-    if (ev.type === 'link') return person ? this._applyLink(ev, a) : null;
     const known = this.workers.get(ev.session_id);
     const isNewAgent = person && !(known && known.real);
     if (isNewAgent) {
@@ -381,7 +404,7 @@ class AgentTracker {
       agent: a.agent,
       role: a.agent,
       name,
-      label: name ?? (Object.hasOwn(this.displayNames, a.id) ? this.displayNames[a.id] : null) ?? a.agent,
+      label: name ?? ownValue(this.displayNames, a.id) ?? a.agent,
       slot: person ? this.slotOf(a) : null,
       cooldown_until: cooldown,
       run_id: person ? this._runIdOf(a.id, now) : null,
@@ -843,6 +866,7 @@ class PipelineTracker {
 }
 
 module.exports = {
+  OVERFLOW_ID_RE,
   RETIRED_AGENTS,
   UNTRACKED_AGENTS,
   AgentTracker,

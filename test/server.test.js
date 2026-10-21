@@ -1281,7 +1281,11 @@ test('link events: stored and returned by /api/events; a top-level session is re
   const rows = (await (await fetch(`${s.base}/api/events`, authed(DASH))).json()).events;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].type, 'link');
-  assert.equal(rows[0].instance, 'Ada', 'the person is assigned at ingest, never taken from the client');
+  assert.equal(
+    rows[0].instance,
+    null,
+    'a link on a fresh session gets no person, never taken from the client',
+  );
   assert.deepEqual(rows[0].meta, { run_id: 'alpha-1000000001-1001' });
 });
 

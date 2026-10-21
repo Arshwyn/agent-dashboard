@@ -273,9 +273,12 @@ function createApp(config, store, opts = {}) {
         lastPipeline = JSON.stringify(snap);
         broadcast('pipeline', snap);
       } else if (!UNTRACKED_AGENTS.includes(row.agent) && !noCard) {
-        const v = agents.view(agents.cardFor(row), now());
-        lastSent.set(v.id, JSON.stringify(v));
-        broadcast('agent', v);
+        const card = agents.cardFor(row);
+        if (card) {
+          const v = agents.view(card, now());
+          lastSent.set(v.id, JSON.stringify(v));
+          broadcast('agent', v);
+        }
         broadcastAgentChanges(); // e.g. the giver of a handoff
       }
       send(res, 201, { ok: true, id: row.id });
