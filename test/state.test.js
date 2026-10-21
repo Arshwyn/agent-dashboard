@@ -1244,7 +1244,7 @@ const person = (t, id, now) => t.snapshot(now).find((a) => a.id === id);
 test('run link: link before the first event gives the same person the run once it works', () => {
   const t = crew();
   assert.equal(feed(t, link(1, 'alpha-1')).instance, 'Ada');
-  assert.equal(person(t, 'Ada', T0).run_id, 'alpha-1');
+  assert.equal(person(t, 'Ada', T0).run_id, null, 'a link alone shows no run');
   const first = feed(t, agentEv(1, 'verify', { ts: T0 + PSEC }));
   assert.equal(first.instance, 'Ada');
   const v = person(t, 'Ada', T0 + PSEC);
@@ -1305,6 +1305,35 @@ test('run link: free or resting people have no run_id and a new session replaces
   assert.equal(person(t, 'Ada', later).run_id, null);
   feed(t, link(5, 'beta-2', { ts: later + 1 }));
   assert.equal(person(t, 'Ada', later + 2).run_id, 'beta-2');
+});
+
+test('run link: a link-only session holds no person, does not rest them and shows no run', () => {
+  const t = crew();
+  feed(t, link(1, 'alpha-1'));
+  const ada = person(t, 'Ada', T0 + PSEC);
+  assert.equal(ada.status, 'idle');
+  assert.equal(ada.run_id, null);
+  assert.equal(ada.cooldown_until, null);
+  assert.equal(
+    feed(t, agentEv(2, 'code', { ts: T0 + PSEC })).instance,
+    'Ada',
+    'the next free person is still the lowest',
+  );
+  assert.equal(person(t, 'Ada', T0 + 2 * PSEC).run_id, null, 'the other session has no link');
+  // the first real event for the linked session makes it a normal worker, with the link applied
+  assert.equal(feed(t, agentEv(1, 'verify', { ts: T0 + 2 * PSEC })).instance, 'Bram');
+  assert.equal(person(t, 'Bram', T0 + 3 * PSEC).run_id, 'alpha-1');
+  assert.equal(person(t, 'Bram', T0 + 3 * PSEC).status, 'working');
+});
+
+test('run link: a stale link-only worker never rests a person and is still pruned', () => {
+  const t = crew();
+  feed(t, link(1, 'alpha-1'));
+  const later = T0 + 2 * 60 * PMIN;
+  t.retire(later);
+  assert.equal(t.workers.size, 0, 'pruned by the resume window');
+  assert.equal(t.released.size, 0, 'no release recorded');
+  assert.equal(person(t, 'Ada', later).cooldown_until, null);
 });
 
 test('run link: the first link of a session is kept; another session links independently', () => {
