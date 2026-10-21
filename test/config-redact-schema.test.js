@@ -82,6 +82,9 @@ test('AGENT_NAMES, AGENT_COOLDOWN_SECONDS and HANDOFF_WINDOW_SECONDS have defaul
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,ok' }), /repeat/);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: ',' }), /AGENT_NAMES/);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,Code', AGENTS: 'code' }), /clashes/);
+  assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'extra-1' }), /extra-1/);
+  assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,EXTRA-2' }), /EXTRA-2/);
+  assert.deepEqual(loadConfig({ ...base, AGENT_NAMES: 'extra,extra1' }).agentNames, ['extra', 'extra1']);
   assert.throws(() => loadConfig({ ...base, AGENT_NAMES: 'Ok,TEST' }), /clashes/, 'untracked names too');
   assert.deepEqual(loadConfig({ ...base, AGENT_NAMES: 'Ok,Code', AGENTS: 'ask' }).agentNames, ['Ok', 'Code']);
   assert.equal(c.agentCooldownSeconds, 60);
