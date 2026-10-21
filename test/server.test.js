@@ -1231,3 +1231,26 @@ test('GET /api/agents without a mapping has empty display_names and raw labels',
   assert.deepEqual(body.display_names, {});
   assert.equal(body.agents.find((a) => a.id === 'orchestrator').label, 'orchestrator');
 });
+
+test('link events: stored and returned by /api/events; a top-level session is rejected and stores nothing', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const link = (over) =>
+    ev({
+      type: 'link',
+      tool: undefined,
+      session_id: 'p1:a1',
+      meta: { run_id: 'alpha-1000000001-1001' },
+      ...over,
+    });
+  assert.equal((await post(s.base, link({ session_id: 'p1' }))).status, 400);
+  assert.equal((await post(s.base, link({ meta: { run_id: 'bad id' } }))).status, 400);
+  assert.equal(s.store.raw.prepare('SELECT COUNT(*) n FROM events').get().n, 0);
+  const r = await post(s.base, link({ instance: 'Zed' }));
+  assert.equal(r.status, 201);
+  const rows = (await (await fetch(`${s.base}/api/events`, authed(DASH))).json()).events;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].type, 'link');
+  assert.equal(rows[0].instance, 'Ada', 'the person is assigned at ingest, never taken from the client');
+  assert.deepEqual(rows[0].meta, { run_id: 'alpha-1000000001-1001' });
+});

@@ -3,7 +3,18 @@
 const { cleanText, sanitizeMeta } = require('./redact');
 const { TOKEN_CLASSES, emptyClasses } = require('./pricing');
 
-const EVENT_TYPES = ['tool_start', 'tool_end', 'subagent_stop', 'stop', 'notification', 'status', 'pipeline'];
+const EVENT_TYPES = [
+  'tool_start',
+  'tool_end',
+  'subagent_stop',
+  'stop',
+  'notification',
+  'status',
+  'pipeline',
+  'link',
+];
+// A run id as sent by the orchestrator in a `run-id:` prompt line and in `link` event meta.
+const RUN_ID_RE = /^[A-Za-z0-9._-]{1,80}$/;
 const SUBSTEP_NAMES = ['test', 'styling', 'security', 'code-review'];
 const ID_RE = /^[A-Za-z0-9._:@/-]+$/;
 const MAX_FUTURE_MS = 24 * 3600 * 1000;
@@ -139,6 +150,15 @@ function validateEvent(body, now = Date.now()) {
     // `substep` is an enum; anything else is dropped (not a 422) and the step is kept as sent.
     if (meta && 'substep' in meta && !SUBSTEP_NAMES.includes(meta.substep)) delete meta.substep;
   }
+  if (type === 'link') {
+    // A link ties a subagent session to a run: only `meta.run_id` is kept, validated before any redaction.
+    const rid = body.meta && typeof body.meta === 'object' ? body.meta.run_id : undefined;
+    if (typeof rid !== 'string' || !RUN_ID_RE.test(rid)) fail(errors, `meta.run_id must match ${RUN_ID_RE}`);
+    else meta = { run_id: rid };
+    const colon = session_id ? session_id.lastIndexOf(':') : -1;
+    if (session_id && !(colon > 0 && colon < session_id.length - 1))
+      fail(errors, 'link events need a subagent session_id');
+  }
   if (errors.length) return { ok: false, errors };
   return {
     ok: true,
@@ -162,4 +182,4 @@ function validateEvent(body, now = Date.now()) {
   };
 }
 
-module.exports = { validateEvent, EVENT_TYPES };
+module.exports = { validateEvent, EVENT_TYPES, RUN_ID_RE };

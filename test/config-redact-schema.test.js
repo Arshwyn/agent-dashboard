@@ -296,3 +296,33 @@ test('pipeline summaries get a 400 char cap, other events stay at 200; secrets a
   assert.ok(!sec.event.meta.target.includes('hunter2'));
   assert.equal(sec.event.meta.kind, 'server_task');
 });
+
+test('validateEvent accepts link events only with a valid run_id on a subagent session', () => {
+  const now = Date.now();
+  const base = {
+    ts: now,
+    agent: 'code',
+    session_id: 'p1:a1',
+    type: 'link',
+    meta: { run_id: 'alpha-1000000001' },
+  };
+  const ok = validateEvent(
+    { ...base, summary: 'x', tool_input: { prompt: 'secret' }, meta: { run_id: 'alpha-1-1b', extra: 'y' } },
+    now,
+  );
+  assert.ok(ok.ok, JSON.stringify(ok));
+  assert.deepEqual(ok.event.meta, { run_id: 'alpha-1-1b' }, 'only run_id is kept');
+  assert.ok(validateEvent({ ...base, meta: { run_id: 'a'.repeat(80) } }, now).ok);
+  for (const bad of [
+    { ...base, meta: undefined },
+    { ...base, meta: { run_id: '' } },
+    { ...base, meta: { run_id: 'a'.repeat(81) } },
+    { ...base, meta: { run_id: 'has space' } },
+    { ...base, meta: { run_id: 'a:b' } },
+    { ...base, meta: { run_id: 5 } },
+    { ...base, session_id: 'p1' },
+    { ...base, session_id: 'p1:' },
+  ]) {
+    assert.equal(validateEvent(bad, now).ok, false, JSON.stringify(bad));
+  }
+});
