@@ -59,7 +59,9 @@ class AgentTracker {
     names = [],
     cooldownSeconds = 60,
     handoffWindowSeconds = 120,
+    displayNames = {},
   } = {}) {
+    this.displayNames = displayNames;
     this.maxAgents = maxAgents;
     this.names = names;
     this.cooldownMs = cooldownSeconds * 1000;
@@ -318,7 +320,7 @@ class AgentTracker {
       agent: a.agent,
       role: a.agent,
       name,
-      label: name ?? a.agent,
+      label: name ?? this.displayNames[a.id] ?? a.agent,
       slot: person ? this.slotOf(a) : null,
       cooldown_until: cooldown,
       handoff: h,

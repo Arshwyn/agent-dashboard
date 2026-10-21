@@ -1203,3 +1203,31 @@ test('cost totals are identical with and without pooling on the same events', as
   };
   assert.deepEqual(await totals(['Ada', 'Bram', 'Carl']), await totals([]));
 });
+
+test('GET /api/agents exposes display_names and the mapped label; ids stay raw', async (t) => {
+  const s = await startApp({ agentDisplayNames: { orchestrator: 'Example Bot' } });
+  t.after(() => s.stop());
+  const h = { headers: { Authorization: `Bearer ${DASH}` } };
+  const sse = await openSse(s.base);
+  t.after(() => sse.close());
+  await post(s.base, ev({ agent: 'orchestrator', session_id: 'o1', summary: 'hello' }));
+  const m = await sse.waitFor((x) => x.event === 'agent' && x.data.id === 'orchestrator');
+  assert.equal(m.data.label, 'Example Bot');
+  const body = await (await fetch(`${s.base}/api/agents`, h)).json();
+  assert.deepEqual(body.display_names, { orchestrator: 'Example Bot' });
+  const card = body.agents.find((a) => a.id === 'orchestrator');
+  assert.equal(card.label, 'Example Bot');
+  assert.equal(card.agent, 'orchestrator');
+  const evs = await (await fetch(`${s.base}/api/events?limit=5`, h)).json();
+  assert.equal(evs.events[0].agent, 'orchestrator');
+});
+
+test('GET /api/agents without a mapping has empty display_names and raw labels', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const body = await (
+    await fetch(`${s.base}/api/agents`, { headers: { Authorization: `Bearer ${DASH}` } })
+  ).json();
+  assert.deepEqual(body.display_names, {});
+  assert.equal(body.agents.find((a) => a.id === 'orchestrator').label, 'orchestrator');
+});

@@ -47,6 +47,7 @@ function createApp(config, store, opts = {}) {
     names: config.agentNames,
     cooldownSeconds: config.agentCooldownSeconds,
     handoffWindowSeconds: config.handoffWindowSeconds,
+    displayNames: config.agentDisplayNames,
   });
   const pipeline = new PipelineTracker({
     maxAttempts: config.maxAttempts,
@@ -403,7 +404,12 @@ ${error ? `<p class="error" role="alert">${error}</p>` : ''}
       });
       return;
     }
-    if (p === '/api/agents') return send(res, 200, { agents: agents.snapshot(now()), now: now() });
+    if (p === '/api/agents')
+      return send(res, 200, {
+        agents: agents.snapshot(now()),
+        display_names: config.agentDisplayNames,
+        now: now(),
+      });
     if (p === '/api/pipeline') return send(res, 200, pipeline.snapshot(now()));
     if (p === '/api/events') {
       const q = url.searchParams;

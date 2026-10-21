@@ -1180,3 +1180,28 @@ test('housekeeping: pool people and role cards are never removed, idle extras ar
   assert.deepEqual(t.retire(T0 + 999 * PMIN), [], 'Ada stays');
   assert.equal(t.snapshot(T0 + 999 * PMIN)[1].status, 'idle');
 });
+
+test('display names relabel mapped role cards only; ids and persons are unchanged', () => {
+  const plain = new AgentTracker({ configured: ['orchestrator', 'ask'], names: ['Ada', 'Bram'] });
+  const t = new AgentTracker({
+    configured: ['orchestrator', 'ask'],
+    names: ['Ada', 'Bram'],
+    displayNames: { orchestrator: 'Example Bot', Ada: 'Alice AI' },
+  });
+  const snap = t.snapshot(T0);
+  const orch = snap.find((a) => a.id === 'orchestrator');
+  assert.equal(orch.label, 'Example Bot');
+  assert.equal(orch.agent, 'orchestrator');
+  assert.equal(orch.role, 'orchestrator');
+  assert.equal(orch.name, null);
+  assert.equal(snap.find((a) => a.id === 'ask').label, 'ask');
+  const ada = snap.find((a) => a.id === 'Ada');
+  assert.equal(ada.label, 'Ada', 'a person keeps its name even if a mapped key matches');
+  assert.equal(ada.name, 'Ada');
+  assert.deepEqual(plain.snapshot(T0).find((a) => a.id === 'orchestrator').label, 'orchestrator');
+});
+
+test('without display names the snapshot is identical to an unmapped tracker', () => {
+  const mk = (extra) => new AgentTracker({ configured: ['orchestrator'], names: ['Ada'], ...extra });
+  assert.equal(JSON.stringify(mk({}).snapshot(T0)), JSON.stringify(mk({ displayNames: {} }).snapshot(T0)));
+});
