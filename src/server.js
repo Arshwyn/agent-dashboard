@@ -251,8 +251,9 @@ function createApp(config, store, opts = {}) {
       const ev = result.event;
       // The person is chosen here, never taken from the client (validateEvent drops unknown fields).
       ev.instance = agents.assign(ev, now());
-      // A subagent event with no person left (past the cap of 99) is stored but gets no card.
-      const noCard = agents.isPooled(ev) && ev.instance === null;
+      // A subagent event with no person left (past the cap of 99), or a top-level event named after a
+      // pool person or overflow id, is stored but gets no card.
+      const noCard = ev.type !== 'pipeline' && agents.noCard(ev);
       if (ev.type !== 'pipeline' && !noCard && !agents.canTrack(ev.agent, ev.instance)) {
         return send(res, 422, { error: 'too many distinct agents' });
       }

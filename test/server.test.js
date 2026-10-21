@@ -1232,6 +1232,36 @@ test('GET /api/agents without a mapping has empty display_names and raw labels',
   assert.equal(body.agents.find((a) => a.id === 'orchestrator').label, 'orchestrator');
 });
 
+test('top-level events named after a pool person or an overflow id are stored but get no card', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const sse = await openSse(s.base);
+  t.after(() => sse.close());
+  await sse.waitFor((m) => m.event === 'pipeline');
+  await post(s.base, ev({ agent: 'verify', session_id: 'p1:a1', summary: 'real work' }));
+  await sse.waitFor((m) => m.event === 'agent' && m.data.id === 'Ada');
+  const agentsBefore = await (await fetch(`${s.base}/api/agents`, authed(DASH))).json();
+  const adaBefore = agentsBefore.agents.find((a) => a.id === 'Ada');
+  const adaMsgs = () => sse.messages.filter((m) => m.event === 'agent' && m.data.id === 'Ada').length;
+  const adaSent = adaMsgs();
+  for (const agent of ['Ada', 'extra-1']) {
+    const r = await post(s.base, ev({ agent, session_id: 'plain', summary: `top-${agent}` }));
+    assert.equal(r.status, 201);
+  }
+  await post(s.base, ev({ agent: 'helper', summary: 'marker' }));
+  await sse.waitFor((m) => m.event === 'agent' && m.data.id === 'helper');
+  assert.equal(sse.messages.filter((m) => m.event === 'agent' && m.data.id === 'extra-1').length, 0);
+  assert.equal(adaMsgs(), adaSent, 'no agent event for the top-level Ada event');
+  const body = await (await fetch(`${s.base}/api/agents`, authed(DASH))).json();
+  assert.deepEqual(
+    body.agents.find((a) => a.id === 'Ada'),
+    adaBefore,
+  );
+  assert.ok(!body.agents.some((a) => a.id === 'extra-1'));
+  const rows = s.store.raw.prepare("SELECT summary FROM events WHERE summary LIKE 'top-%'").all();
+  assert.equal(rows.length, 2);
+});
+
 test('link events: stored and returned by /api/events; a top-level session is rejected and stores nothing', async (t) => {
   const s = await startApp();
   t.after(() => s.stop());

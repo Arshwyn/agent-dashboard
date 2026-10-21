@@ -253,10 +253,20 @@ class AgentTracker {
     }
   }
 
-  /** The card an applied event belongs to, or null (a subagent event without a person gets no card). */
+  /**
+   * True if a (tracked) event gets no card: a subagent event with no person left, or a top-level event
+   * named after a pool person or an overflow id (those cards belong to subagent work). Still stored.
+   */
+  noCard(ev) {
+    if (agentPart(ev.session_id) === null) return this.names.includes(ev.agent) || EXTRA_RE.test(ev.agent);
+    return !(typeof ev.instance === 'string' && ev.instance);
+  }
+
+  /** The card an applied event belongs to, or null (see noCard). */
   cardFor(ev) {
+    if (this.noCard(ev)) return null;
     if (agentPart(ev.session_id) === null) return this._get(ev.agent);
-    return typeof ev.instance === 'string' && ev.instance ? this._get(ev.instance, ev.agent, true) : null;
+    return this._get(ev.instance, ev.agent, true);
   }
 
   apply(ev) {
