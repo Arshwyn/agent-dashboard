@@ -186,3 +186,16 @@ test('client store passes runs through, falls back to [run] or [], and defaults 
   assert.deepEqual(store.state.pipeline.runs, [a]);
   store.stop();
 });
+
+test('labelFrom returns own configured labels only', async () => {
+  const { labelFrom, displayOf, setDisplayNames } = await import('../public/js/util.js');
+  const map = { orchestrator: 'Example Bot' };
+  assert.equal(labelFrom(map, 'orchestrator'), 'Example Bot');
+  for (const id of ['constructor', 'toString', 'valueOf', '__proto__']) {
+    assert.equal(labelFrom(map, id), null, id);
+  }
+  assert.equal(labelFrom(null, 'x'), null);
+  setDisplayNames(map);
+  assert.equal(displayOf('constructor'), 'constructor');
+  setDisplayNames({});
+});

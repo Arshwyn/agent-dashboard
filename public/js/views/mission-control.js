@@ -15,7 +15,17 @@ import {
 } from '../office/step-map.js';
 import { agentLook } from '../office/roles.js';
 import { freshHandoff, handoffText } from '../office/handoff.js';
-import { h, emptyState, displayOf, fmtElapsed, fmtTokens, fmtCost, fmtClock, fmtAgo } from '../util.js';
+import {
+  h,
+  emptyState,
+  displayOf,
+  labelFrom,
+  fmtElapsed,
+  fmtTokens,
+  fmtCost,
+  fmtClock,
+  fmtAgo,
+} from '../util.js';
 
 const BADGE = {
   idle: ['z', 'IDLE'],
@@ -120,7 +130,7 @@ export function mountMissionControl(store, root = document) {
       detailsBtn.setAttribute('aria-expanded', String(open));
       detailsBody.hidden = !open;
     });
-    office.addAgent(id, look, a.name ?? store.state.displayNames[id] ?? null);
+    office.addAgent(id, look, a.name ?? labelFrom(store.state.displayNames, id));
     const el = h('article', { class: 'card', 'data-agent-id': id }, [
       h('div', { class: 'card-head' }, [
         h('div', { class: 'card-id' }, [createAvatar(look), name, role]),

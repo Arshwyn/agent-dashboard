@@ -372,7 +372,7 @@ class AgentTracker {
       agent: a.agent,
       role: a.agent,
       name,
-      label: name ?? this.displayNames[a.id] ?? a.agent,
+      label: name ?? (Object.hasOwn(this.displayNames, a.id) ? this.displayNames[a.id] : null) ?? a.agent,
       slot: person ? this.slotOf(a) : null,
       cooldown_until: cooldown,
       run_id: person ? this._runIdOf(a.id, now) : null,
