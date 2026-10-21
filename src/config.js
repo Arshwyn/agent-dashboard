@@ -60,6 +60,11 @@ function parseNames(raw, reserved = []) {
   if (new Set(names.map((x) => x.toLowerCase())).size !== names.length) {
     throw new Error('AGENT_NAMES must not repeat a name');
   }
+  // `extra-<n>` is reserved for the overflow people, so a pool name must not look like one.
+  const overflow = names.find((x) => /^extra-\d+$/i.test(x));
+  if (overflow !== undefined) {
+    throw new Error(`AGENT_NAMES entry "${overflow}" must not look like an overflow id (extra-<n>)`);
+  }
   // A person must never shadow a role card (a configured AGENTS entry or an untracked name).
   const taken = new Set([...reserved, ...UNTRACKED_AGENTS].map((x) => x.toLowerCase()));
   const clash = names.find((x) => taken.has(x.toLowerCase()));
