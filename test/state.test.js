@@ -952,6 +952,24 @@ test('people: top-level events and untracked names are never pooled', () => {
   assert.equal(t.snapshot(T0)[1].status, 'idle');
 });
 
+test('people: a top-level event named after a pool person or an overflow id gets no card', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'spec', { summary: 'real work' }));
+  t.apply(e({ agent: 'orchestrator', session_id: 'plain', ts: T0 + PSEC }));
+  const before = JSON.stringify(t.snapshot(T0 + 2 * PSEC));
+  for (const agent of ['Ada', 'Bram', 'extra-1']) {
+    const top = e({ agent, session_id: 'plain', ts: T0 + PSEC, type: 'notification', cost_usd: 1 });
+    assert.equal(t.cardFor(top), null, agent);
+    assert.equal(t.apply(top), null, agent);
+  }
+  assert.equal(JSON.stringify(t.snapshot(T0 + 2 * PSEC)), before, 'cards are unchanged');
+  const ada = t.snapshot(T0 + 2 * PSEC).find((a) => a.id === 'Ada');
+  assert.equal(ada.role, 'spec');
+  assert.equal(ada.status, 'working');
+  assert.equal(ada.slot, 1);
+  assert.ok(!cards(t).includes('extra-1'));
+});
+
 test('people: a released person rests; the next spawn skips them and they return after the cooldown', () => {
   const t = crew();
   feed(t, agentEv(1, 'spec'));
