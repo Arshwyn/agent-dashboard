@@ -1367,6 +1367,20 @@ test('run link: a link replaces the run of a stopped or resumed session but not 
   assert.equal(person(t, 'Ada', T0 + 7 * PSEC).run_id, 'gamma-3', 'a link while stopped replaces');
 });
 
+test('run link: a session resumed after going stale without a stop can be relinked', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'verify'));
+  feed(t, link(1, 'alpha-1', { ts: T0 + 1 }));
+  const resumed = T0 + 11 * PMIN; // past STALE_MINUTES (10), within the resume window
+  feed(t, agentEv(1, 'verify', { ts: resumed }));
+  assert.equal(person(t, 'Ada', resumed).run_id, 'alpha-1', 'kept until a new link arrives');
+  feed(t, link(1, 'beta-2', { ts: resumed + 1 }));
+  assert.equal(person(t, 'Ada', resumed + 2).run_id, 'beta-2');
+  feed(t, agentEv(1, 'verify', { ts: resumed + PSEC }));
+  feed(t, link(1, 'gamma-3', { ts: resumed + 2 * PSEC }));
+  assert.equal(person(t, 'Ada', resumed + 3 * PSEC).run_id, 'beta-2', 'a live session keeps its run');
+});
+
 test('people: overflow-looking top-level names get no card in any case or digit count', () => {
   const t = crew({ names: ['Ada'] });
   for (const agent of ['EXTRA-1', 'Extra-7', 'extra-123', 'extra-0']) {
