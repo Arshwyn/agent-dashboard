@@ -2104,3 +2104,103 @@ test.describe('display names', () => {
     await expect(canvas(page)).toHaveAttribute('data-agents', String(POOL.length + 1));
   });
 });
+
+test.describe('run links', () => {
+  const RUN_A = 'alpha-1000000001-1001';
+  const RUN_B = 'beta-1000000002-2002';
+  const runPanel = (page, id) => page.locator(`section.pipe-panel[data-run-id="${id}"]`);
+  const startRun = (server, id, repo, step) =>
+    server.emit({
+      agent: 'orchestrator',
+      type: 'pipeline',
+      session_id: 'orch',
+      meta: { run_id: id, repo, branch: `feat/${repo}`, step, state: 'active' },
+    });
+  const work = (server, n, role) =>
+    server.emit({ agent: role, session_id: `pipe:agent${n}`, type: 'tool_start', tool: 'Bash' });
+  const link = (server, n, runId) =>
+    server.emit({
+      agent: 'helper',
+      session_id: `pipe:agent${n}`,
+      type: 'link',
+      meta: { run_id: runId },
+    });
+
+  test('two parallel runs list their own linked people and cards show their own run chip', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    await startRun(peopleServer, RUN_A, 'alpha-app', 'verify');
+    await startRun(peopleServer, RUN_B, 'beta-app', 'code');
+    await expect(page.locator('section.pipe-panel')).toHaveCount(2);
+
+    // a link may come before or after the person's first event
+    await link(peopleServer, 1, RUN_A);
+    await work(peopleServer, 1, 'verify');
+    await work(peopleServer, 2, 'code');
+    await link(peopleServer, 2, RUN_B);
+    await work(peopleServer, 3, 'review'); // never linked
+
+    await expect(card(page, 'Ada').locator('.card-run')).toHaveText('alpha-app · Verify');
+    await expect(card(page, 'Bram').locator('.card-run')).toHaveText('beta-app · Code');
+    await expect(card(page, 'Carl').locator('.badge')).toHaveText(/WORKING/);
+    await expect(card(page, 'Carl').locator('.card-run')).toBeHidden();
+    await expect(card(page, 'Dax').locator('.card-run')).toBeHidden();
+
+    const a = runPanel(page, RUN_A).locator('.pipe-people');
+    const b = runPanel(page, RUN_B).locator('.pipe-people');
+    await expect(a).toContainText('Ada (verify)');
+    await expect(a).toContainText('Verify: Ada');
+    await expect(a).not.toContainText('Bram');
+    await expect(a).not.toContainText('Carl');
+    await expect(b).toContainText('Bram (code)');
+    await expect(b).toContainText('Code: Bram');
+    await expect(b).not.toContainText('Ada');
+
+    // link rows are stored but never shown in the activity feed
+    await expect(feed(page).filter({ hasText: 'tool_start:Bash' })).toHaveCount(3);
+    await expect(feed(page).filter({ hasText: /\blink\b/ })).toHaveCount(0);
+  });
+
+  test('a linked person with an unknown run shows the plain run label; no people line without links', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    await startRun(peopleServer, RUN_A, 'alpha-app', 'code');
+    await expect(runPanel(page, RUN_A)).toBeVisible();
+    await expect(runPanel(page, RUN_A).locator('.pipe-people')).toBeHidden();
+    await work(peopleServer, 1, 'verify');
+    await link(peopleServer, 1, 'ghost-1000000009-9009');
+    await expect(card(page, 'Ada').locator('.card-run')).toHaveText('run …9-9009');
+    await expect(runPanel(page, RUN_A).locator('.pipe-people')).toBeHidden();
+  });
+
+  test('the office shows each linked verify person the step of its own run', async ({
+    peoplePage: page,
+    peopleServer,
+  }) => {
+    for (const [id, repo] of [
+      [RUN_A, 'alpha-app'],
+      [RUN_B, 'beta-app'],
+    ]) {
+      await peopleServer.emit({
+        agent: 'orchestrator',
+        type: 'pipeline',
+        session_id: 'orch',
+        meta: {
+          run_id: id,
+          repo,
+          step: 'verify',
+          substep: id === RUN_A ? 'test' : 'styling',
+          state: 'active',
+        },
+      });
+    }
+    await link(peopleServer, 1, RUN_A);
+    await work(peopleServer, 1, 'verify');
+    await link(peopleServer, 2, RUN_B);
+    await work(peopleServer, 2, 'verify');
+    await expect(card(page, 'Ada').locator('.step-line')).toHaveText(/TEST/);
+    await expect(card(page, 'Bram').locator('.step-line')).toHaveText(/STYLING/);
+  });
+});
