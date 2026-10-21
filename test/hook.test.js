@@ -8,6 +8,7 @@ const {
   resolveRole,
   describeTool,
   buildEvent,
+  buildLinkEvent,
   sumTranscriptUsage,
   curlConfig,
 } = require('../scripts/lib/hook-lib');
@@ -224,4 +225,126 @@ test('top-level Stop sends a cumulative snapshot; subagent Stop and unreadable t
   );
   assert.equal(sa.usage_scope, undefined);
   assert.ok(validateEvent(sa).ok);
+});
+
+// ---------------------------------------------------------------- run links
+
+const SPAWN_PROMPT = 'Do the thing.\nrun-id: alpha-1000000001-1001\nSECRET-PROMPT-TEXT here';
+const spawnInput = (over = {}, ti = {}) => ({
+  hook_event_name: 'PostToolUse',
+  session_id: 'p1',
+  tool_name: 'Agent',
+  tool_input: { subagent_type: 'verify', description: 'Verify it', prompt: SPAWN_PROMPT, ...ti },
+  tool_response: { isAsync: true, status: 'async_launched', agentId: 'a1b2c3' },
+  ...over,
+});
+
+test('buildLinkEvent: a background spawn with one run-id line links the subagent session', () => {
+  const l = buildLinkEvent(spawnInput(), {}, 5000);
+  assert.deepEqual(l, {
+    ts: 5000,
+    agent: 'verify',
+    session_id: 'p1:a1b2c3',
+    type: 'link',
+    meta: { run_id: 'alpha-1000000001-1001' },
+  });
+  assert.ok(!JSON.stringify(l).includes('SECRET-PROMPT-TEXT'), 'the prompt is never sent');
+  assert.ok(validateEvent(l, 5000).ok, 'the server accepts it');
+  assert.deepEqual(validateEvent(l, 5000).event.meta, { run_id: 'alpha-1000000001-1001' });
+});
+
+test('buildLinkEvent: Task, status-only and agent_id responses link; old and new run id formats work', () => {
+  const task = buildLinkEvent(spawnInput({ tool_name: 'Task' }), {}, 1);
+  assert.equal(task.session_id, 'p1:a1b2c3');
+  const statusOnly = buildLinkEvent(
+    spawnInput({ tool_response: { status: 'async_launched', agent_id: 'x9' } }),
+    {},
+    1,
+  );
+  assert.equal(statusOnly.session_id, 'p1:x9');
+  for (const id of ['example-app-1000000001', 'example-app-1000000001-ab12']) {
+    const l = buildLinkEvent(spawnInput({}, { prompt: `run-id: ${id}\r\nmore` }), {}, 1);
+    assert.equal(l.meta.run_id, id);
+  }
+  assert.equal(buildLinkEvent(spawnInput({}, { prompt: 'run-id: r1\nrun-id: r1' }), {}, 1).meta.run_id, 'r1');
+  assert.equal(buildLinkEvent(spawnInput({}, { subagent_type: 'general-purpose' }), {}, 1).agent, 'helper');
+  assert.equal(buildLinkEvent(spawnInput({}, { subagent_type: undefined }), {}, 1).agent, 'helper');
+});
+
+test('buildLinkEvent: no link for foreground spawns, missing or ambiguous run ids, bad ids or no agent id', () => {
+  const no = (input) => assert.equal(buildLinkEvent(input, {}, 1), null, JSON.stringify(input).slice(0, 120));
+  no(spawnInput({ tool_response: { status: 'completed', content: 'done' } }));
+  no(spawnInput({ tool_response: { isAsync: false, agentId: 'a1' } }));
+  no(spawnInput({ tool_response: 'text' }));
+  no(spawnInput({ tool_response: undefined }));
+  no(spawnInput({ tool_response: { isAsync: true } }));
+  no(spawnInput({ tool_response: { isAsync: true, agentId: 'bad id!' } }));
+  no(spawnInput({ tool_response: { isAsync: true, agentId: 'a'.repeat(65) } }));
+  no(spawnInput({}, { prompt: 'no id here' }));
+  no(spawnInput({}, { prompt: 'see run-id: x in text' }));
+  no(spawnInput({}, { prompt: 'run-id: a\nrun-id: b' }));
+  no(spawnInput({}, { prompt: 'run-id: ok-1\nrun-id: bad id' }));
+  no(spawnInput({}, { prompt: 'run-id: ' + 'a'.repeat(81) }));
+  no(spawnInput({}, { prompt: 'run-id: a/b' }));
+  no(spawnInput({}, { prompt: 5 }));
+  no(spawnInput({ tool_input: undefined }));
+  no(spawnInput({ tool_name: 'Bash' }));
+  no(spawnInput({ hook_event_name: 'PreToolUse' }));
+  no(null);
+});
+
+test('buildEvent output for a spawn is unchanged by the link support', () => {
+  const ev = buildEvent(spawnInput(), {}, 7);
+  assert.deepEqual(ev, {
+    ts: 7,
+    agent: 'unknown',
+    session_id: 'p1',
+    type: 'tool_end',
+    tool: 'Agent',
+    summary: 'Agent: verify: Verify it',
+  });
+});
+
+test('hook.js sends the main event and the link as two requests and exits 0; fails open', async () => {
+  const http = require('node:http');
+  const { spawn } = require('node:child_process');
+  const bodies = [];
+  const srv = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => (b += c));
+    req.on('end', () => {
+      bodies.push(JSON.parse(b));
+      res.end('ok');
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const run = (url, payload) =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(__dirname, '..', 'scripts', 'hook.js')], {
+        env: {
+          PATH: process.env.PATH,
+          AGENT_DASHBOARD_ENV_FILE: '/nonexistent/hook.env',
+          AGENT_DASHBOARD_URL: url,
+          AGENT_DASHBOARD_INGEST_TOKEN: 'tok-not-a-real-secret-0000',
+        },
+        stdio: ['pipe', 'ignore', 'ignore'],
+      });
+      child.on('close', (code) => resolve(code));
+      child.stdin.end(JSON.stringify(payload));
+    });
+  try {
+    assert.equal(await run(`http://127.0.0.1:${srv.address().port}`, spawnInput()), 0);
+    for (let i = 0; i < 100 && bodies.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(bodies.map((b) => b.type).sort(), ['link', 'tool_end']);
+    const l = bodies.find((b) => b.type === 'link');
+    assert.deepEqual(l.meta, { run_id: 'alpha-1000000001-1001' });
+    assert.ok(!JSON.stringify(bodies).includes('SECRET-PROMPT-TEXT'));
+    // Nothing is listening: still exit 0.
+    const port = srv.address().port;
+    await new Promise((r) => srv.close(r));
+    assert.equal(await run(`http://127.0.0.1:${port}`, spawnInput()), 0);
+    assert.equal(await run('http://127.0.0.1:1', { hook_event_name: 'Stop' }), 0);
+  } finally {
+    srv.close();
+  }
 });
