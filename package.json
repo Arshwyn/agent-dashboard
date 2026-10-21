@@ -15,7 +15,7 @@
     "demo": "node scripts/demo.js",
     "test:e2e": "playwright test"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "dependencies": {
     "better-sqlite3": "11.10.0"
   },
