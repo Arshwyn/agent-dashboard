@@ -114,6 +114,22 @@ const test = base.extend({
   // eslint-disable-next-line no-empty-pattern
   peopleServer: async ({}, use) => withServer(use, { AGENTS: 'orchestrator', AGENT_COOLDOWN_SECONDS: '8' }),
 
+  // A private app instance whose orchestrator card carries a configured display label.
+  labelServer: async ({}, use) =>
+    // eslint-disable-line no-empty-pattern
+    withServer(use, { AGENTS: 'orchestrator', AGENT_DISPLAY_NAMES: 'orchestrator=Example Bot' }),
+
+  labelPage: async ({ browser, labelServer }, use) => {
+    const context = await browser.newContext({ baseURL: labelServer.base });
+    const page = await context.newPage();
+    const problems = [];
+    page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+    await login(page, labelServer.dashboardToken);
+    await use(page);
+    await context.close();
+    expect(problems, 'page errors').toEqual([]);
+  },
+
   peoplePage: async ({ browser, peopleServer }, use) => {
     const context = await browser.newContext({ baseURL: peopleServer.base });
     const page = await context.newPage();

@@ -2077,3 +2077,30 @@ test.describe('named people', () => {
     await expect(page.locator('#agents article.card')).toHaveCount(POOL.length + 2);
   });
 });
+
+test.describe('display names', () => {
+  const canvas = (page) => page.locator('#office canvas.office-canvas');
+
+  test('a configured label replaces the role id in cards, feed, filter and office tag only', async ({
+    labelPage: page,
+    labelServer,
+  }) => {
+    await labelServer.emit({
+      agent: 'orchestrator',
+      session_id: 'orch1',
+      type: 'tool_start',
+      tool: 'Bash',
+      summary: 'label check',
+    });
+    const raw = page.locator('#agents article.card[data-agent-id="orchestrator"]');
+    await expect(raw).toHaveCount(1);
+    await expect(raw).toContainText('Example Bot');
+    await expect(raw).toHaveAttribute('aria-label', 'Agent Example Bot');
+    await expect(feed(page).first()).toContainText('Example Bot');
+    await expect(page.locator('#feed-filter option[value="orchestrator"]')).toHaveText('Example Bot');
+    await page.locator('#feed-filter').selectOption('orchestrator');
+    await expect(feed(page)).toHaveCount(1);
+    await expect.poll(() => canvas(page).getAttribute('data-names')).toContain('orchestrator:Example Bot');
+    await expect(canvas(page)).toHaveAttribute('data-agents', String(POOL.length + 1));
+  });
+});

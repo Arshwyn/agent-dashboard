@@ -16,6 +16,8 @@
 //   costs:    { days, summary: /api/costs body | null, sessions: /api/sessions list }
 // }
 
+import { setDisplayNames } from './util.js';
+
 // How many sessions the store asks for; the sessions summary shows "N+" when the list is this long.
 export const SESSIONS_LIMIT = 50;
 export const STATUSES = ['idle', 'working', 'blocked', 'done'];
@@ -53,6 +55,7 @@ export function createStore({
   const state = {
     connection: 'connecting',
     agents: [],
+    displayNames: {},
     events: [],
     pipeline: { run: null, runs: [], recent_runs: [], activity_runs: [], active_steps: [] },
     costs: { days: 7, summary: null, sessions: [] },
@@ -97,6 +100,8 @@ export function createStore({
     ]);
     skew = a.now - Date.now();
     state.agents = a.agents.map(normalizeAgent);
+    state.displayNames = a.display_names && typeof a.display_names === 'object' ? a.display_names : {};
+    setDisplayNames(state.displayNames);
     state.events = e.events;
     state.pipeline = normalizePipeline(p);
     emit('all');

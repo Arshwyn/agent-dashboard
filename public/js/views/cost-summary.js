@@ -1,5 +1,5 @@
 // Overall cost summary section. Pure rendering over store.state.costs.summary (GET /api/costs).
-import { h, emptyState, fmtTokens, fmtCost } from '../util.js';
+import { h, emptyState, displayOf, fmtTokens, fmtCost } from '../util.js';
 
 const CLASS_LABEL = {
   input: 'Input',
@@ -108,7 +108,7 @@ export function mountCostSummary(store, root = document) {
         table(
           'Cost by agent',
           ['Agent', 'Tokens', 'Cost'],
-          c.by_agent.map((a) => [a.agent, fmtTokens(a.tokens), fmtCost(a.cost_usd)]),
+          c.by_agent.map((a) => [displayOf(a.agent), fmtTokens(a.tokens), fmtCost(a.cost_usd)]),
         ),
         table(
           'Cost by day (UTC)',
