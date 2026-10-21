@@ -1254,3 +1254,34 @@ test('link events: stored and returned by /api/events; a top-level session is re
   assert.equal(rows[0].instance, 'Ada', 'the person is assigned at ingest, never taken from the client');
   assert.deepEqual(rows[0].meta, { run_id: 'alpha-1000000001-1001' });
 });
+
+test('run_id is on the person view in /api/agents, SSE agent events and after a rebuild; no prompt data', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const sse = await openSse(s.base);
+  t.after(() => sse.close());
+  const sub = (over) => ev({ agent: 'verify', session_id: 'p1:a1', ...over });
+  await post(s.base, sub());
+  await post(
+    s.base,
+    sub({
+      type: 'link',
+      tool: undefined,
+      meta: { run_id: 'alpha-1000000001-1001' },
+      tool_input: { prompt: 'SECRET PROMPT' },
+    }),
+  );
+  const msg = await sse.waitFor((m) => m.event === 'agent' && m.data.id === 'Ada' && m.data.run_id);
+  assert.equal(msg.data.run_id, 'alpha-1000000001-1001');
+  const body = await (await fetch(`${s.base}/api/agents`, authed(DASH))).json();
+  const ada = body.agents.find((a) => a.id === 'Ada');
+  assert.equal(ada.run_id, 'alpha-1000000001-1001');
+  assert.equal(ada.status, 'working');
+  assert.equal(body.agents.find((a) => a.id === 'Bram').run_id, null);
+  assert.ok(!JSON.stringify(body).includes('SECRET PROMPT'));
+  const { createApp } = require('../src/server');
+  const again = createApp(s.config, s.store);
+  const v = again.agents.snapshot(Date.now()).find((a) => a.id === 'Ada');
+  assert.equal(v.run_id, 'alpha-1000000001-1001', 'replay rebuilds the same run_id');
+  await again.close();
+});
