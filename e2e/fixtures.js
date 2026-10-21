@@ -115,8 +115,8 @@ const test = base.extend({
   peopleServer: async ({}, use) => withServer(use, { AGENTS: 'orchestrator', AGENT_COOLDOWN_SECONDS: '8' }),
 
   // A private app instance whose orchestrator card carries a configured display label.
+  // eslint-disable-next-line no-empty-pattern
   labelServer: async ({}, use) =>
-    // eslint-disable-line no-empty-pattern
     withServer(use, { AGENTS: 'orchestrator', AGENT_DISPLAY_NAMES: 'orchestrator=Example Bot' }),
 
   labelPage: async ({ browser, labelServer }, use) => {
