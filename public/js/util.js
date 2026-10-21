@@ -14,6 +14,15 @@ export function h(tag, props = {}, children = []) {
   return el;
 }
 
+// Operator-configured labels for role cards (id -> label). Display only; ids stay the data key.
+let displayNames = {};
+export function setDisplayNames(map) {
+  displayNames = map && typeof map === 'object' ? map : {};
+}
+export function displayOf(id) {
+  return Object.hasOwn(displayNames, id) ? displayNames[id] : id;
+}
+
 // Empty state: a heading-level title and one line on what will appear (tokens only, no fake table).
 export function emptyState(title, line) {
   return h('div', { class: 'empty' }, [

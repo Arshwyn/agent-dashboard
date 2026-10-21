@@ -12,7 +12,7 @@ import {
 } from '../office/step-map.js';
 import { agentLook } from '../office/roles.js';
 import { freshHandoff, handoffText } from '../office/handoff.js';
-import { h, emptyState, fmtElapsed, fmtTokens, fmtCost, fmtClock, fmtAgo } from '../util.js';
+import { h, emptyState, displayOf, fmtElapsed, fmtTokens, fmtCost, fmtClock, fmtAgo } from '../util.js';
 
 const BADGE = {
   idle: ['z', 'IDLE'],
@@ -116,7 +116,7 @@ export function mountMissionControl(store, root = document) {
       detailsBtn.setAttribute('aria-expanded', String(open));
       detailsBody.hidden = !open;
     });
-    office.addAgent(id, look, a.name ?? null);
+    office.addAgent(id, look, a.name ?? store.state.displayNames[id] ?? null);
     const el = h('article', { class: 'card', 'data-agent-id': id }, [
       h('div', { class: 'card-head' }, [
         h('div', { class: 'card-id' }, [createAvatar(look), name, role]),
@@ -180,7 +180,7 @@ export function mountMissionControl(store, root = document) {
     for (const r of roles) {
       if (r && !known.has(r)) {
         known.add(r);
-        filterEl.append(h('option', { value: r, text: r }));
+        filterEl.append(h('option', { value: r, text: displayOf(r) }));
       }
     }
   }
@@ -265,7 +265,8 @@ export function mountMissionControl(store, root = document) {
     const evs = store.state.events.filter((e) => !filter || e.agent === filter).slice(0, 100);
     const people = new Map(store.state.agents.map((a) => [a.id, a.label ?? a.id]));
     // `role · name` once the server has put a person on the event (text only)
-    const whoOf = (e) => (e.instance ? `${e.agent} · ${people.get(e.instance) ?? e.instance}` : e.agent);
+    const whoOf = (e) =>
+      e.instance ? `${displayOf(e.agent)} · ${people.get(e.instance) ?? e.instance}` : displayOf(e.agent);
     feedEl.replaceChildren(
       ...evs.map((e) => {
         const ty = e.tool ? `${e.type}:${e.tool}` : e.type;
@@ -448,7 +449,9 @@ export function mountMissionControl(store, root = document) {
       pipeEl.replaceChildren(
         emptyState(
           'No pipeline run yet.',
-          'A run appears here when the orchestrator reports its first step.',
+          `A run appears here when ${
+            displayOf('orchestrator') === 'orchestrator' ? 'the orchestrator' : displayOf('orchestrator')
+          } reports its first step.`,
         ),
       );
       return;

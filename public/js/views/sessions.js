@@ -1,6 +1,6 @@
 // Per-session cost list. Pure rendering over store.state.costs.sessions (GET /api/sessions).
 import { SESSIONS_LIMIT } from '../store.js';
-import { h, emptyState, fmtTokens, fmtCost, fmtClock, fmtAgo } from '../util.js';
+import { h, emptyState, displayOf, fmtTokens, fmtCost, fmtClock, fmtAgo } from '../util.js';
 
 // The store caps the list at SESSIONS_LIMIT, so a full list means "at least that many".
 export function sessionCountLabel(n) {
@@ -29,7 +29,7 @@ export function mountSessions(store, root = document) {
     const recent = list.slice(0, 3).map((s) =>
       h('li', { class: s.cost_incomplete ? 'sess-row unpriced' : 'sess-row' }, [
         h('span', { class: 'sess-id', title: s.session_id, text: s.session_id.slice(0, 12) }),
-        h('span', { class: 'sess-agents', text: s.agents.join(', ') }),
+        h('span', { class: 'sess-agents', text: s.agents.map(displayOf).join(', ') }),
         h('span', { class: 'sess-repo', text: s.repo || '-' }),
         h('span', { class: 'sess-ago', title: fmtClock(s.last_ts), text: fmtAgo(now - s.last_ts) }),
         h('span', {
@@ -52,7 +52,7 @@ export function mountSessions(store, root = document) {
         );
       return h('tr', { class: s.cost_incomplete ? 'unpriced' : '' }, [
         h('th', { scope: 'row', title: s.session_id, text: s.session_id.slice(0, 12) }),
-        h('td', { text: s.agents.join(', ') }),
+        h('td', { text: s.agents.map(displayOf).join(', ') }),
         h('td', { text: s.repo || '-' }),
         h('td', { title: fmtClock(s.last_ts), text: fmtAgo(now - s.last_ts) }),
         h('td', { class: 'num', text: `${fmtTokens(tk.input)} / ${fmtTokens(tk.output)}` }),
