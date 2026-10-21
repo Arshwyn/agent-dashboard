@@ -1205,3 +1205,127 @@ test('without display names the snapshot is identical to an unmapped tracker', (
   const mk = (extra) => new AgentTracker({ configured: ['orchestrator'], names: ['Ada'], ...extra });
   assert.equal(JSON.stringify(mk({}).snapshot(T0)), JSON.stringify(mk({ displayNames: {} }).snapshot(T0)));
 });
+
+// ---------------------------------------------------------------- run links
+
+const link = (n, runId, over = {}) =>
+  agentEv(n, 'helper', { type: 'link', meta: { run_id: runId }, ...over });
+const person = (t, id, now) => t.snapshot(now).find((a) => a.id === id);
+
+test('run link: link before the first event gives the same person the run once it works', () => {
+  const t = crew();
+  assert.equal(feed(t, link(1, 'alpha-1')).instance, 'Ada');
+  assert.equal(person(t, 'Ada', T0).run_id, 'alpha-1');
+  const first = feed(t, agentEv(1, 'verify', { ts: T0 + PSEC }));
+  assert.equal(first.instance, 'Ada');
+  const v = person(t, 'Ada', T0 + PSEC);
+  assert.equal(v.run_id, 'alpha-1');
+  assert.equal(v.status, 'working');
+  assert.equal(v.role, 'verify');
+  assert.equal(v.run_started_ts, T0 + PSEC, 'the first real event still starts the run');
+});
+
+test('run link: link after the first event and after subagent_stop is applied retroactively', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'verify'));
+  assert.equal(person(t, 'Ada', T0).run_id, null);
+  feed(t, link(1, 'alpha-1', { ts: T0 + PSEC }));
+  assert.equal(person(t, 'Ada', T0 + PSEC).run_id, 'alpha-1');
+  feed(t, stop(1, 'verify', T0 + 2 * PSEC));
+  assert.equal(person(t, 'Ada', T0 + 3 * PSEC).run_id, null, 'free after the stop');
+  feed(t, link(1, 'alpha-1', { ts: T0 + 4 * PSEC }));
+  const v = person(t, 'Ada', T0 + 5 * PSEC);
+  assert.equal(v.run_id, null, 'a late link does not reopen a stopped agent');
+  assert.equal(v.status, 'resting');
+  feed(t, agentEv(1, 'verify', { ts: T0 + 6 * PSEC }));
+  assert.equal(person(t, 'Ada', T0 + 6 * PSEC).run_id, 'alpha-1', 'kept across resume on the same session');
+});
+
+test('run link: a link changes no status, timestamps, totals, role or handoff', () => {
+  const mk = () => {
+    const t = crew();
+    feed(t, agentEv(1, 'spec', { tokens_in: 5, summary: 'plan' }));
+    feed(t, stop(1, 'spec', T0 + PSEC));
+    return t;
+  };
+  const a = mk();
+  const b = mk();
+  feed(b, link(1, 'alpha-1', { ts: T0 + 2 * PSEC }));
+  feed(b, link(2, 'alpha-1', { ts: T0 + 3 * PSEC }));
+  for (const t of [a, b]) feed(t, agentEv(2, 'code', { ts: T0 + 10 * PSEC, tokens_in: 7 }));
+  const strip = (v) => ({ ...v, run_id: undefined });
+  const pa = a.snapshot(T0 + 11 * PSEC).map(strip);
+  const pb = b.snapshot(T0 + 11 * PSEC).map(strip);
+  assert.deepEqual(pb, pa);
+  const bram = person(b, 'Bram', T0 + 11 * PSEC);
+  assert.deepEqual(bram.handoff, person(a, 'Bram', T0 + 11 * PSEC).handoff);
+  assert.ok(bram.handoff, 'handoff inference still works with a link first');
+});
+
+test('run link: free or resting people have no run_id and a new session replaces the link', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'verify'));
+  feed(t, link(1, 'alpha-1', { ts: T0 + 1 }));
+  assert.equal(person(t, 'Ada', T0 + 2).run_id, 'alpha-1');
+  feed(t, stop(1, 'verify', T0 + PSEC));
+  assert.equal(person(t, 'Ada', T0 + 2 * PSEC).status, 'resting');
+  assert.equal(person(t, 'Ada', T0 + 2 * PSEC).run_id, null);
+  // after the rest, a new unlinked session lands on Ada: no run
+  const later = T0 + 3 * PMIN;
+  assert.equal(feed(t, agentEv(5, 'verify', { ts: later })).instance, 'Ada');
+  assert.equal(person(t, 'Ada', later).run_id, null);
+  feed(t, link(5, 'beta-2', { ts: later + 1 }));
+  assert.equal(person(t, 'Ada', later + 2).run_id, 'beta-2');
+});
+
+test('run link: two linked people never share a run link', () => {
+  const t = crew();
+  feed(t, link(1, 'alpha-1'));
+  feed(t, link(2, 'beta-2'));
+  feed(t, agentEv(1, 'verify', { ts: T0 + 1 }));
+  feed(t, agentEv(2, 'verify', { ts: T0 + 2 }));
+  assert.equal(person(t, 'Ada', T0 + 3).run_id, 'alpha-1');
+  assert.equal(person(t, 'Bram', T0 + 3).run_id, 'beta-2');
+  assert.equal(person(t, 'Carl', T0 + 3).run_id, null);
+});
+
+test('run link: replay of stored rows gives the same run_id as live ingest', () => {
+  const live = crew();
+  const rows = [
+    feed(live, agentEv(1, 'verify')),
+    feed(live, link(1, 'alpha-1', { ts: T0 + 1 })),
+    feed(live, link(2, 'beta-2', { ts: T0 + 2 })),
+    feed(live, agentEv(2, 'review', { ts: T0 + 3 })),
+  ];
+  const replay = crew();
+  for (const r of rows) replay.apply(r);
+  const ids = (t) => t.snapshot(T0 + 4).map((a) => [a.id, a.run_id]);
+  assert.deepEqual(ids(replay), ids(live));
+  assert.deepEqual(
+    ids(live).filter(([, r]) => r),
+    [
+      ['Ada', 'alpha-1'],
+      ['Bram', 'beta-2'],
+    ],
+  );
+});
+
+test('run link: link state is bounded by the worker sweep and MAX_MAPPINGS', () => {
+  const t = crew();
+  for (let i = 0; i < 2100; i++) t.apply({ ...link(i, `r-${i}`, { ts: T0 + i }), instance: 'Ada' });
+  assert.ok(t.workers.size > 2000);
+  t.retire(T0 + 3000);
+  assert.ok(t.workers.size <= 2000);
+  t.retire(T0 + 3 * 60 * PMIN);
+  assert.equal(t.workers.size, 0, 'old links are forgotten');
+});
+
+test('run link: untracked agents and top-level sessions are ignored', () => {
+  const t = crew();
+  assert.equal(t.apply(e({ agent: 'test', session_id: 's:a', type: 'link', meta: { run_id: 'x' } })), null);
+  assert.equal(
+    t.apply(e({ session_id: 'plain', type: 'link', meta: { run_id: 'x' }, instance: 'Ada' })),
+    null,
+  );
+  assert.equal(t.workers.size, 0);
+});

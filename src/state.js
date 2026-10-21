@@ -1,6 +1,7 @@
 'use strict';
 
 const { detectHandoff } = require('./handoff');
+const { RUN_ID_RE } = require('./schema');
 
 /**
  * Derived state. Pure in-memory trackers fed one event at a time (and rebuilt from the DB at
@@ -66,7 +67,7 @@ class AgentTracker {
     this.names = names;
     this.cooldownMs = cooldownSeconds * 1000;
     this.handoffMs = handoffWindowSeconds * 1000;
-    this.workers = new Map(); // session_id -> { person, role, last_ts, stopped, stop_ts }
+    this.workers = new Map(); // session_id -> { person, role, last_ts, stopped, stop_ts, real, run_id, link_ts }
     this.released = new Map(); // person -> newest release ts of workers already swept
     this.lastStop = null; // { person, role, ts } of the newest subagent_stop
     this.doneToIdleMs = doneToIdleSeconds * 1000;
@@ -177,9 +178,19 @@ class AgentTracker {
   _track(ev, person) {
     let w = this.workers.get(ev.session_id);
     if (!w) {
-      w = { person, role: ev.agent, last_ts: -Infinity, stopped: false, stop_ts: null };
+      w = {
+        person,
+        role: ev.agent,
+        last_ts: -Infinity,
+        stopped: false,
+        stop_ts: null,
+        real: false,
+        run_id: null,
+        link_ts: -Infinity,
+      };
       this.workers.set(ev.session_id, w);
     }
+    w.real = true; // seen a real (non-link) event
     if (ev.ts >= w.last_ts) {
       w.person = person;
       w.role = ev.agent;
@@ -187,6 +198,45 @@ class AgentTracker {
       w.stopped = ev.type === 'subagent_stop';
       w.stop_ts = w.stopped ? ev.ts : null;
     }
+  }
+
+  /**
+   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id: no card
+   * status, timestamps, totals, role or handoff change, and it never reopens a stopped worker. A link that
+   * arrives first creates the worker (busy, like any pooled event) and the first real event continues it.
+   */
+  _applyLink(ev, a) {
+    const rid = ev.meta && typeof ev.meta.run_id === 'string' ? ev.meta.run_id : null;
+    if (!rid || !RUN_ID_RE.test(rid)) return null;
+    let w = this.workers.get(ev.session_id);
+    if (!w) {
+      w = {
+        person: a.id,
+        role: ev.agent,
+        last_ts: ev.ts,
+        stopped: false,
+        stop_ts: null,
+        real: false,
+        run_id: null,
+        link_ts: -Infinity,
+      };
+      this.workers.set(ev.session_id, w);
+    }
+    if (ev.ts >= w.link_ts) {
+      w.run_id = rid;
+      w.link_ts = ev.ts;
+    }
+    return a;
+  }
+
+  /** The run of the newest worker holding a person, only while the person is busy; else null. */
+  _runIdOf(person, now) {
+    let best = null;
+    for (const w of this.workers.values()) {
+      if (w.person !== person || w.stopped || now - w.last_ts > this.staleMs) continue;
+      if (best === null || w.last_ts > best.last_ts) best = w;
+    }
+    return best ? best.run_id : null;
   }
 
   /** Forget agents past the resume window, keeping when their person was released. */
@@ -215,7 +265,9 @@ class AgentTracker {
     const a = this.cardFor(ev); // replay trusts the stored person and never reassigns
     if (!a) return null;
     const person = agentPart(ev.session_id) !== null;
-    const isNewAgent = person && !this.workers.has(ev.session_id);
+    if (ev.type === 'link') return person ? this._applyLink(ev, a) : null;
+    const known = this.workers.get(ev.session_id);
+    const isNewAgent = person && !(known && known.real);
     if (isNewAgent) {
       const h = detectHandoff(this.lastStop, { person: a.id, role: ev.agent, ts: ev.ts }, this.handoffMs);
       if (h) {
@@ -323,6 +375,7 @@ class AgentTracker {
       label: name ?? this.displayNames[a.id] ?? a.agent,
       slot: person ? this.slotOf(a) : null,
       cooldown_until: cooldown,
+      run_id: person ? this._runIdOf(a.id, now) : null,
       handoff: h,
       status,
       stale,
