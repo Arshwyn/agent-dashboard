@@ -8,6 +8,7 @@ const DEFAULT_AGENTS = ['orchestrator'];
 const DEFAULT_AGENT_NAMES = ['Ada', 'Bram', 'Carl', 'Dax', 'Ena', 'Finn', 'Gia', 'Hugo'];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/;
 const MAX_NAMES = 99;
+const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}$/;
 
 const MIN_TOKEN_LENGTH = 20;
 const WEAK_FRAGMENTS = [
@@ -66,6 +67,30 @@ function parseNames(raw, reserved = []) {
   return names;
 }
 
+/**
+ * Parse AGENT_DISPLAY_NAMES (`id=Label,id2=Label 2`) into { id: label }. Display only: keys must be
+ * role cards. Errors name the key or the entry position, never the label.
+ */
+function parseDisplayNames(raw, roles) {
+  if (raw === undefined || raw.trim() === '') return {};
+  const out = {};
+  raw.split(',').forEach((entry, i) => {
+    const eq = entry.indexOf('=');
+    if (eq < 0) throw new Error(`AGENT_DISPLAY_NAMES entry ${i + 1} must be id=Label`);
+    const key = entry.slice(0, eq).trim();
+    const label = entry.slice(eq + 1).trim();
+    if (!roles.includes(key)) {
+      throw new Error(`AGENT_DISPLAY_NAMES key "${key}" must be a role card listed in AGENTS`);
+    }
+    if (Object.hasOwn(out, key)) throw new Error(`AGENT_DISPLAY_NAMES lists "${key}" more than once`);
+    if (!LABEL_RE.test(label)) {
+      throw new Error(`AGENT_DISPLAY_NAMES label for "${key}" must match ${LABEL_RE}`);
+    }
+    out[key] = label;
+  });
+  return out;
+}
+
 /** Build config from an env-like object. Throws with a clear message if insecure. */
 function loadConfig(env = process.env) {
   const errors = [];
@@ -102,6 +127,10 @@ function loadConfig(env = process.env) {
     dbPath: env.DB_PATH || './data/dashboard.db',
     agents: agents.filter((n) => !UNTRACKED_AGENTS.includes(n)),
     agentNames: parseNames(env.AGENT_NAMES, agents),
+    agentDisplayNames: parseDisplayNames(
+      env.AGENT_DISPLAY_NAMES,
+      agents.filter((n) => !UNTRACKED_AGENTS.includes(n)),
+    ),
     agentCooldownSeconds: int(env, 'AGENT_COOLDOWN_SECONDS', 60, { min: 0 }),
     handoffWindowSeconds: int(env, 'HANDOFF_WINDOW_SECONDS', 120, { min: 0 }),
     retentionDays: int(env, 'RETENTION_DAYS', 30, { min: 1 }),

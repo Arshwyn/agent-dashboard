@@ -26,6 +26,41 @@ test('config refuses to start with missing, short, default or identical tokens',
   assert.equal(c.port, 8787);
 });
 
+test('AGENT_DISPLAY_NAMES defaults to empty and is strictly validated', () => {
+  const base = { INGEST_TOKEN: GOOD_A, DASHBOARD_TOKEN: GOOD_B };
+  const load = (v, extra = {}) => loadConfig({ ...base, ...extra, AGENT_DISPLAY_NAMES: v });
+  assert.deepEqual(loadConfig(base).agentDisplayNames, {});
+  assert.deepEqual(load('').agentDisplayNames, {});
+  assert.deepEqual(load('   ').agentDisplayNames, {});
+  assert.deepEqual(load('orchestrator=Example Bot').agentDisplayNames, { orchestrator: 'Example Bot' });
+  assert.deepEqual(load(' orchestrator = Example Bot ', { AGENTS: 'orchestrator,ask' }).agentDisplayNames, {
+    orchestrator: 'Example Bot',
+  });
+  assert.deepEqual(load('orchestrator=Alice AI,ask=Bob.2', { AGENTS: 'orchestrator,ask' }).agentDisplayNames, {
+    orchestrator: 'Alice AI',
+    ask: 'Bob.2',
+  });
+  assert.throws(() => load('spec=Example Bot'), /key "spec".*AGENTS/);
+  assert.throws(() => load('test=Example Bot', { AGENTS: 'orchestrator,test' }), /key "test"/);
+  assert.throws(() => load('Ada=Example Bot'), /key "Ada"/, 'persons are never relabelled');
+  assert.throws(() => load('orchestrator=A,orchestrator=B'), /more than once/);
+  assert.throws(() => load('orchestrator'), /id=Label/);
+  assert.throws(() => load('orchestrator=Example Bot,'), /id=Label/);
+  assert.throws(() => load('orchestrator=' + 'x'.repeat(33)), /orchestrator/);
+  assert.equal(load('orchestrator=' + 'x'.repeat(32)).agentDisplayNames.orchestrator.length, 32);
+  assert.throws(() => load('orchestrator='), /orchestrator/);
+  for (const bad of ['<b>', 'a>b', 'a&b', 'a"b', "a'b", 'a=b', 'a,b', '-lead', 'caf\u00e9', 'a\nb']) {
+    assert.throws(() => load(`orchestrator=${bad}`), /AGENT_DISPLAY_NAMES/, bad);
+  }
+  assert.throws(() => load('orchestrator=<img src=x onerror=1>'), /AGENT_DISPLAY_NAMES/);
+  try {
+    load('orchestrator=Secret<Label>');
+    assert.fail('should throw');
+  } catch (e) {
+    assert.ok(!e.message.includes('Secret'), 'error must not echo the label');
+  }
+});
+
 test('PIPELINE_STALE_MINUTES defaults to 60, must be an integer >= 1', () => {
   const base = { INGEST_TOKEN: GOOD_A, DASHBOARD_TOKEN: GOOD_B };
   assert.equal(loadConfig(base).pipelineStaleMinutes, 60);
