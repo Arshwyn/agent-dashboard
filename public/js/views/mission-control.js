@@ -5,6 +5,9 @@ import { createAvatar, createIcon } from '../avatar.js';
 import {
   indicatorFor,
   indicatorOwners,
+  isBusy,
+  isLinked,
+  unclaimedSteps,
   stepsFor,
   INDICATORS,
   STEP_LABEL_UPPER,
@@ -190,8 +193,10 @@ export function mountMissionControl(store, root = document) {
   function renderIndicators() {
     const active = (store.state.pipeline && store.state.pipeline.active_steps) || [];
     const now = store.now();
-    // Several people can do the same role; only the newest busy one of a role shows the icon.
+    // A linked person shows the icon of its own run. Of the unlinked people of a role only the newest
+    // busy one shows an icon, from the entries no linked person has claimed.
     const owners = indicatorOwners(store.state.agents);
+    const unclaimed = unclaimedSteps(active, store.state.agents);
     for (const [id, c] of cards) {
       const a = c.agent;
       const role = a && a.role;
@@ -199,9 +204,12 @@ export function mountMissionControl(store, root = document) {
         if (c.stepKey) clearIndicator(id, c);
         continue;
       }
-      const busy = owners.get(role) === id;
-      const ind = busy ? indicatorFor(role, active, now) : null;
-      const list = ind ? stepsFor(role, active, now) : [];
+      const linked = isLinked(a);
+      const busy = linked ? isBusy(a) : owners.get(role) === id;
+      const pool = linked ? active : unclaimed;
+      const runId = linked ? a.run_id : null;
+      const ind = busy ? indicatorFor(role, pool, now, undefined, runId) : null;
+      const list = ind ? stepsFor(role, pool, now, undefined, runId) : [];
       const top = list.find((s) => s.substep) || list[0];
       office.setIndicator(id, ind && ind.icon);
       const extra = ind
