@@ -89,6 +89,7 @@ export function mountMissionControl(store, root = document) {
     const name = h('span', { class: 'card-name' });
     const role = h('span', { class: 'card-role' });
     const handoff = h('div', { class: 'card-handoff', hidden: true });
+    const runChip = h('div', { class: 'card-run', hidden: true });
     const badge = h('span', { class: 'badge' });
     const task = h('div', { class: 'task' });
     const stepLine = h('div', { class: 'step-line', hidden: true });
@@ -125,6 +126,7 @@ export function mountMissionControl(store, root = document) {
         h('div', { class: 'card-id' }, [createAvatar(look), name, role]),
         badge,
       ]),
+      runChip,
       task,
       handoff,
       h('div', { class: 'card-steps' }, [stepLine, stepExtra, detailsBtn]),
@@ -132,7 +134,20 @@ export function mountMissionControl(store, root = document) {
       kv('Last activity'),
       detailsBody,
     ]);
-    const c = { el, badge, task, name, role, handoff, rows, stepLine, stepExtra, stepKey: '', agent: null };
+    const c = {
+      el,
+      badge,
+      task,
+      name,
+      role,
+      handoff,
+      runChip,
+      rows,
+      stepLine,
+      stepExtra,
+      stepKey: '',
+      agent: null,
+    };
     cards.set(id, c);
     agentsEl.append(el);
     return c;
@@ -176,6 +191,7 @@ export function mountMissionControl(store, root = document) {
       c.rows.Today.textContent = `${fmtTokens(a.today.tokens.in + a.today.tokens.out)} tok, ${fmtCost(a.today.cost_usd)}`;
       tickCard(c);
     }
+    renderRunLinks();
     renderIndicators();
     // the feed filter lists roles (events keep the role in `agent`)
     const known = new Set([...filterEl.options].map((o) => o.value));
@@ -270,7 +286,10 @@ export function mountMissionControl(store, root = document) {
   }
 
   function renderFeed() {
-    const evs = store.state.events.filter((e) => !filter || e.agent === filter).slice(0, 100);
+    // `link` events tie a person to a run; they are stored but are not activity, so the feed skips them
+    const evs = store.state.events
+      .filter((e) => e.type !== 'link' && (!filter || e.agent === filter))
+      .slice(0, 100);
     const people = new Map(store.state.agents.map((a) => [a.id, a.label ?? a.id]));
     // `role · name` once the server has put a person on the event (text only)
     const whoOf = (e) =>
@@ -310,6 +329,76 @@ export function mountMissionControl(store, root = document) {
 
   // Panel collapse state, kept in memory per run_id (not persisted). Panels are open by default.
   const panelOpen = new Map();
+
+  // ---- run links: which people work on which run (text only) ------------------------------------------
+
+  // Label of a run for a person's chip: `target · step` when the run and a step are known (the active
+  // step, else the newest step that has started), otherwise the plain `run …<last 6>`.
+  function runChipText(runId) {
+    const pl = store.state.pipeline || {};
+    const plain = `run …${runId.slice(-6)}`;
+    let target = null;
+    let step = null;
+    const feat = (Array.isArray(pl.runs) ? pl.runs : []).find((r) => r.run_id === runId);
+    if (feat) {
+      target = feat.repo;
+      const steps = Array.isArray(feat.steps) ? feat.steps : [];
+      const started = steps.filter((x) => x.state !== 'pending' && Number.isFinite(x.ts));
+      const cur = steps.find((x) => x.state === 'active') || started.sort((a, b) => b.ts - a.ts)[0] || null;
+      step = cur && (STEP_LABEL[cur.name] || cur.name);
+    } else {
+      const act = (Array.isArray(pl.active_steps) ? pl.active_steps : []).find((x) => x.run_id === runId);
+      if (act) {
+        target = act.repo;
+        step = STEP_LABEL[act.step] || act.step;
+      }
+    }
+    return target && step ? `${target} · ${step}` : plain;
+  }
+
+  // The run chip of every person card: nothing when unlinked or not busy (the server sends null then).
+  function renderRunChips() {
+    for (const [, c] of cards) {
+      const a = c.agent;
+      const runId = a && a.name && typeof a.run_id === 'string' && a.run_id ? a.run_id : null;
+      const text = runId ? runChipText(runId) : '';
+      if (c.runChip.textContent !== text) c.runChip.textContent = text;
+      c.runChip.title = runId ? `${text} (run ${runId})` : '';
+      c.runChip.hidden = !runId;
+      c.el.dataset.runId = runId || '';
+    }
+  }
+
+  // Text for one panel: the busy people linked to its run, and who does the active step.
+  function peopleText(p) {
+    const busy = store.state.agents
+      .filter((a) => a.name && a.run_id === p.run_id && (a.status === 'working' || a.status === 'blocked'))
+      .sort((x, y) => (x.slot ?? 1e9) - (y.slot ?? 1e9) || (x.id < y.id ? -1 : 1));
+    if (!busy.length) return '';
+    const who = (a) => `${a.label ?? a.id} (${a.role ?? 'agent'})`;
+    let text = `People: ${busy.map(who).join(', ')}`;
+    const act = Array.isArray(p.steps) ? p.steps.find((x) => x.state === 'active') : null;
+    const doer = act && busy.find((a) => a.role === act.name);
+    if (doer) text += `  |  ${STEP_LABEL[act.name] || act.name}: ${doer.label ?? doer.id}`;
+    return text;
+  }
+
+  function renderPanelPeople() {
+    const runs = new Map(
+      ((store.state.pipeline && store.state.pipeline.runs) || []).map((r) => [r.run_id, r]),
+    );
+    for (const el of root.querySelectorAll('.pipe-people[data-run-id]')) {
+      const p = runs.get(el.dataset.runId);
+      const text = p ? peopleText(p) : '';
+      if (el.textContent !== text) el.textContent = text;
+      el.hidden = !text;
+    }
+  }
+
+  function renderRunLinks() {
+    renderRunChips();
+    renderPanelPeople();
+  }
 
   // The stepper, abandoned banner and meta lines for one run.
   function renderRun(p) {
@@ -413,6 +502,7 @@ export function mountMissionControl(store, root = document) {
       );
     }
     parts.push(h('div', { class: 'pipe-meta' }, meta));
+    parts.push(h('div', { class: 'pipe-people muted', 'data-run-id': p.run_id, hidden: true }));
     return parts;
   }
 
@@ -467,6 +557,7 @@ export function mountMissionControl(store, root = document) {
     const live = new Set(runs.map((r) => r.run_id));
     for (const id of panelOpen.keys()) if (!live.has(id)) panelOpen.delete(id);
     pipeEl.replaceChildren(...runs.map(renderPanel));
+    renderRunLinks();
   }
 
   function renderActivity() {
