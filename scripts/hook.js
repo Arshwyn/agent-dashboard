@@ -8,7 +8,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { buildEvent, loadEnvFile, curlConfig } = require('./lib/hook-lib');
+const { buildEvent, buildLinkEvent, loadEnvFile, curlConfig } = require('./lib/hook-lib');
 
 function done() {
   process.exit(0);
@@ -27,14 +27,37 @@ try {
       const url = env.AGENT_DASHBOARD_URL;
       const token = env.AGENT_DASHBOARD_INGEST_TOKEN;
       if (!url || !token) return done();
-      const ev = buildEvent(JSON.parse(Buffer.concat(chunks).toString('utf8')), env);
-      if (!ev) return done();
-      const cfg = curlConfig({ url: url.replace(/\/+$/, '') + '/event', token, body: JSON.stringify(ev) });
-      const child = spawn('curl', ['-K', '-'], { stdio: ['pipe', 'ignore', 'ignore'], detached: true });
-      child.on('error', done);
-      child.unref();
-      child.stdin.on('error', done);
-      child.stdin.end(cfg, done);
+      const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const events = [buildEvent(input, env)];
+      try {
+        events.push(buildLinkEvent(input, env)); // a link failure never blocks the main event
+      } catch {
+        /* fail open */
+      }
+      events.splice(0, events.length, ...events.filter(Boolean));
+      if (!events.length) return done();
+      const endpoint = url.replace(/\/+$/, '') + '/event';
+      // One detached curl per event; exit once every config has been handed over.
+      let pending = events.length;
+      for (const ev of events) {
+        let once = false;
+        const sent = () => {
+          if (once) return;
+          once = true;
+          pending -= 1;
+          if (pending <= 0) done();
+        };
+        try {
+          const cfg = curlConfig({ url: endpoint, token, body: JSON.stringify(ev) });
+          const child = spawn('curl', ['-K', '-'], { stdio: ['pipe', 'ignore', 'ignore'], detached: true });
+          child.on('error', sent);
+          child.unref();
+          child.stdin.on('error', sent);
+          child.stdin.end(cfg, sent);
+        } catch {
+          sent();
+        }
+      }
     } catch {
       done();
     }

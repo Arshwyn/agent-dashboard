@@ -209,6 +209,47 @@ function buildEvent(input, env = process.env, now = Date.now()) {
   return ev;
 }
 
+const RUN_ID_RE = /^[A-Za-z0-9._-]{1,80}$/;
+const AGENT_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+
+/**
+ * The run id named by the `run-id: <id>` line of a spawn prompt, or null. Exactly one distinct id is
+ * allowed: no line, an invalid id, or two different ids (even if one is invalid) give null.
+ */
+function runIdFromPrompt(prompt) {
+  if (typeof prompt !== 'string') return null;
+  const ids = new Set();
+  for (const m of prompt.matchAll(/^[ \t]*run-id:(.*)$/gm)) {
+    const id = m[1].trim();
+    if (!RUN_ID_RE.test(id)) return null;
+    ids.add(id);
+  }
+  return ids.size === 1 ? [...ids][0] : null;
+}
+
+/**
+ * The `link` event for a background Agent/Task spawn, or null. Sent in addition to the PostToolUse
+ * event of the spawn: it ties the subagent session `<sid>:<agentId>` to the run named in the prompt.
+ * Only the run id leaves the process; the prompt and the rest of tool_input are never sent. Foreground
+ * spawns carry no agent id while they run, so they are never linked.
+ */
+function buildLinkEvent(input, env = process.env, now = Date.now()) {
+  if (!input || typeof input !== 'object' || input.hook_event_name !== 'PostToolUse') return null;
+  if (input.tool_name !== 'Agent' && input.tool_name !== 'Task') return null;
+  const res = input.tool_response;
+  if (!res || typeof res !== 'object') return null;
+  if (res.isAsync !== true && res.status !== 'async_launched') return null;
+  const agentId = typeof res.agentId === 'string' ? res.agentId : res.agent_id;
+  if (typeof agentId !== 'string' || !AGENT_ID_RE.test(agentId)) return null;
+  const ti = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
+  const run_id = runIdFromPrompt(ti.prompt);
+  if (!run_id) return null;
+  const sid = String(input.session_id || 'unknown').replace(/[^A-Za-z0-9._:@/-]/g, '_');
+  const t = typeof ti.subagent_type === 'string' ? ti.subagent_type.trim() : '';
+  const agent = t && !GENERIC_AGENT_TYPES.has(t.toLowerCase()) && ROLE_RE.test(t) ? t : 'helper';
+  return { ts: now, agent, session_id: `${sid}:${agentId}`.slice(0, 100), type: 'link', meta: { run_id } };
+}
+
 function loadEnvFile(file) {
   const out = {};
   try {
@@ -242,6 +283,8 @@ module.exports = {
   resolveRole,
   describeTool,
   buildEvent,
+  buildLinkEvent,
+  runIdFromPrompt,
   sumTranscriptUsage,
   loadEnvFile,
   curlConfig,
