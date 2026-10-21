@@ -121,7 +121,7 @@ class AgentTracker {
 
   _busy(person, now, exceptKey = null) {
     for (const [key, w] of this.workers) {
-      if (key !== exceptKey && w.person === person && !w.stopped && now - w.last_ts <= this.staleMs)
+      if (key !== exceptKey && w.real && w.person === person && !w.stopped && now - w.last_ts <= this.staleMs)
         return true;
     }
     return false;
@@ -132,7 +132,7 @@ class AgentTracker {
     if (this._busy(person, now)) return null;
     let r = this.released.get(person) ?? null;
     for (const w of this.workers.values()) {
-      if (w.person !== person) continue;
+      if (w.person !== person || !w.real) continue;
       const at = w.stopped ? w.stop_ts : w.last_ts + this.staleMs;
       if (r === null || at > r) r = at;
     }
@@ -160,7 +160,7 @@ class AgentTracker {
     if (!this.isPooled(ev)) return null;
     const key = ev.session_id;
     const w = this.workers.get(key);
-    if (w && now - w.last_ts <= RESUME_MS && !this._busy(w.person, now, key)) return w.person;
+    if (w && w.real && now - w.last_ts <= RESUME_MS && !this._busy(w.person, now, key)) return w.person;
     let rested = null;
     for (const name of this.names) {
       if (this._busy(name, now, key)) continue;
@@ -189,6 +189,7 @@ class AgentTracker {
       };
       this.workers.set(ev.session_id, w);
     }
+    if (!w.real) w.last_ts = -Infinity; // a link-only worker takes its state from its first real event
     w.real = true; // seen a real (non-link) event
     if (ev.ts >= w.last_ts) {
       w.person = person;
@@ -200,9 +201,10 @@ class AgentTracker {
   }
 
   /**
-   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id (the first link of a session wins, later ones are ignored): no card
-   * status, timestamps, totals, role or handoff change, and it never reopens a stopped worker. A link that
-   * arrives first creates the worker (busy, like any pooled event) and the first real event continues it.
+   * A `link` event ties the worker of its session to a run. It only sets the worker's run_id (the first link of a
+   * session wins, later ones are ignored): no card status, timestamps, totals, role or handoff change, and it never reopens a stopped worker. A link that
+   * arrives first creates a link-only worker (`real` false) that holds no person: it is ignored by busy,
+   * rest and run lookups until its first real event, which makes it a normal worker.
    */
   _applyLink(ev, a) {
     const rid = ev.meta && typeof ev.meta.run_id === 'string' ? ev.meta.run_id : null;
@@ -228,7 +230,7 @@ class AgentTracker {
   _runIdOf(person, now) {
     let best = null;
     for (const w of this.workers.values()) {
-      if (w.person !== person || w.stopped || now - w.last_ts > this.staleMs) continue;
+      if (!w.real || w.person !== person || w.stopped || now - w.last_ts > this.staleMs) continue;
       if (best === null || w.last_ts > best.last_ts) best = w;
     }
     return best ? best.run_id : null;
@@ -238,8 +240,10 @@ class AgentTracker {
   _sweepWorkers(now) {
     for (const [key, w] of this.workers) {
       if (now - w.last_ts <= RESUME_MS) continue;
-      const at = w.stopped ? w.stop_ts : w.last_ts + this.staleMs;
-      if (at > (this.released.get(w.person) ?? -Infinity)) this.released.set(w.person, at);
+      if (w.real) {
+        const at = w.stopped ? w.stop_ts : w.last_ts + this.staleMs;
+        if (at > (this.released.get(w.person) ?? -Infinity)) this.released.set(w.person, at);
+      }
       this.workers.delete(key);
     }
     if (this.workers.size > MAX_MAPPINGS) {
