@@ -1243,7 +1243,7 @@ const person = (t, id, now) => t.snapshot(now).find((a) => a.id === id);
 
 test('run link: link before the first event gives the same person the run once it works', () => {
   const t = crew();
-  assert.equal(feed(t, link(1, 'alpha-1')).instance, 'Ada');
+  assert.equal(feed(t, link(1, 'alpha-1')).instance, null, 'a link on a fresh session gets no person');
   assert.equal(person(t, 'Ada', T0).run_id, null, 'a link alone shows no run');
   const first = feed(t, agentEv(1, 'verify', { ts: T0 + PSEC }));
   assert.equal(first.instance, 'Ada');
@@ -1334,6 +1334,45 @@ test('run link: a stale link-only worker never rests a person and is still prune
   assert.equal(t.workers.size, 0, 'pruned by the resume window');
   assert.equal(t.released.size, 0, 'no release recorded');
   assert.equal(person(t, 'Ada', later).cooldown_until, null);
+});
+
+test('run link: a link on a fresh session creates no card, even with the whole pool busy', () => {
+  const t = crew();
+  for (let n = 1; n <= NAMES.length; n++) feed(t, agentEv(n, 'code', { ts: T0 + n }));
+  const before = cards(t);
+  const row = feed(t, link(9, 'alpha-1', { ts: T0 + 10 }));
+  assert.equal(row.instance, null);
+  assert.equal(t.cardFor(row), null);
+  assert.deepEqual(cards(t, T0 + 11), before, 'no extra card');
+  assert.equal(feed(t, agentEv(9, 'verify', { ts: T0 + 12 })).instance, 'extra-1');
+  assert.equal(person(t, 'extra-1', T0 + 13).run_id, 'alpha-1', 'the link still applies retroactively');
+});
+
+test('run link: a link replaces the run of a stopped or resumed session but not of a running one', () => {
+  const t = crew();
+  feed(t, agentEv(1, 'verify'));
+  feed(t, link(1, 'alpha-1', { ts: T0 + 1 }));
+  feed(t, link(1, 'beta-2', { ts: T0 + 2 }));
+  assert.equal(person(t, 'Ada', T0 + 3).run_id, 'alpha-1', 'running: kept');
+  feed(t, stop(1, 'verify', T0 + PSEC));
+  feed(t, agentEv(1, 'verify', { ts: T0 + 2 * PSEC })); // resumed on the same session
+  assert.equal(person(t, 'Ada', T0 + 2 * PSEC).run_id, 'alpha-1', 'resumed without a new link: kept');
+  feed(t, link(1, 'beta-2', { ts: T0 + 3 * PSEC }));
+  assert.equal(person(t, 'Ada', T0 + 3 * PSEC).run_id, 'beta-2', 'resumed and relinked');
+  feed(t, link(1, 'gamma-3', { ts: T0 + 4 * PSEC }));
+  assert.equal(person(t, 'Ada', T0 + 4 * PSEC).run_id, 'beta-2', 'running again: kept');
+  feed(t, stop(1, 'verify', T0 + 5 * PSEC));
+  feed(t, link(1, 'gamma-3', { ts: T0 + 6 * PSEC }));
+  feed(t, agentEv(1, 'verify', { ts: T0 + 7 * PSEC }));
+  assert.equal(person(t, 'Ada', T0 + 7 * PSEC).run_id, 'gamma-3', 'a link while stopped replaces');
+});
+
+test('people: overflow-looking top-level names get no card in any case or digit count', () => {
+  const t = crew({ names: ['Ada'] });
+  for (const agent of ['EXTRA-1', 'Extra-7', 'extra-123', 'extra-0']) {
+    assert.equal(t.cardFor(e({ agent, session_id: 'plain' })), null, agent);
+  }
+  assert.ok(t.cardFor(e({ agent: 'extra1', session_id: 'plain' })));
 });
 
 test('run link: the first link of a session is kept; another session links independently', () => {

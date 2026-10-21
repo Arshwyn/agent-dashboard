@@ -1,7 +1,7 @@
 'use strict';
 
 const { loadPricing } = require('./pricing');
-const { UNTRACKED_AGENTS } = require('./state');
+const { UNTRACKED_AGENTS, OVERFLOW_ID_RE } = require('./state');
 
 const DEFAULT_AGENTS = ['orchestrator'];
 // Display names for parallel instances of one role (generic given names, not identities).
@@ -61,7 +61,7 @@ function parseNames(raw, reserved = []) {
     throw new Error('AGENT_NAMES must not repeat a name');
   }
   // `extra-<n>` is reserved for the overflow people, so a pool name must not look like one.
-  const overflow = names.find((x) => /^extra-\d+$/i.test(x));
+  const overflow = names.find((x) => OVERFLOW_ID_RE.test(x));
   if (overflow !== undefined) {
     throw new Error(`AGENT_NAMES entry "${overflow}" must not look like an overflow id (extra-<n>)`);
   }
