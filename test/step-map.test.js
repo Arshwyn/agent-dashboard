@@ -185,3 +185,100 @@ test('a person is matched by the role they do now: stepsFor takes the role, not 
   assert.equal(stepsFor('Carl', active, 1000).length, 0, 'a person name is not a character');
   assert.equal(indicatorFor('review', active, 1000).icon, 'shield');
 });
+
+// ---- run links: linked people use their own run -----------------------------------------------------
+
+const runStep = (run_id, step, substep, ts) => ({
+  run_id,
+  repo: 'example-app',
+  step,
+  substep,
+  ts,
+  attempt: 1,
+});
+const person = (id, role, over = {}) => ({
+  id,
+  role,
+  status: 'working',
+  stale: false,
+  run_started_ts: 100,
+  run_id: null,
+  ...over,
+});
+
+test('stepsFor and indicatorFor with a run id only use the entries of that run', async () => {
+  const { stepsFor, indicatorFor } = await mod();
+  const active = [
+    runStep('alpha-1', 'verify', 'test', NOW - 10),
+    runStep('beta-2', 'verify', 'styling', NOW - 5),
+    { step: 'test', ts: NOW }, // legacy entry without a run id
+  ];
+  assert.equal(indicatorFor('verify', active, NOW, undefined, 'alpha-1').icon, 'flask');
+  assert.equal(indicatorFor('verify', active, NOW, undefined, 'beta-2').icon, 'brush');
+  assert.equal(stepsFor('verify', active, NOW, undefined, 'alpha-1').length, 1);
+  assert.equal(indicatorFor('verify', active, NOW, undefined, 'gamma-3'), null, 'unknown run: no icon');
+  assert.equal(stepsFor('verify', active, NOW).length, 3, 'no run id keeps the old behaviour');
+});
+
+test('two linked verify people each get the icon of their own run', async () => {
+  const { indicatorFor, indicatorOwners, unclaimedSteps } = await mod();
+  const active = [
+    runStep('alpha-1', 'verify', 'test', NOW - 10),
+    runStep('beta-2', 'verify', 'styling', NOW - 5),
+  ];
+  const agents = [
+    person('Ada', 'verify', { run_id: 'alpha-1' }),
+    person('Bram', 'verify', { run_id: 'beta-2' }),
+  ];
+  assert.equal(indicatorFor('verify', active, NOW, undefined, 'alpha-1').label, 'TEST');
+  assert.equal(indicatorFor('verify', active, NOW, undefined, 'beta-2').label, 'STYLING');
+  assert.equal(indicatorOwners(agents).size, 0, 'linked people do not compete for the role icon');
+  assert.deepEqual(unclaimedSteps(active, agents), []);
+});
+
+test('unlinked people keep the role rule and never get entries a linked person claims', async () => {
+  const { indicatorOwners, unclaimedSteps, indicatorFor } = await mod();
+  const active = [
+    runStep('alpha-1', 'verify', 'test', NOW - 10),
+    runStep('beta-2', 'verify', 'styling', NOW - 5),
+    runStep('gamma-3', 'review', 'security', NOW - 5),
+    { step: 'test', ts: NOW - 1 },
+  ];
+  const agents = [
+    person('Ada', 'verify', { run_id: 'alpha-1' }),
+    person('Bram', 'verify', { run_started_ts: 200 }),
+    person('Carl', 'verify', { run_started_ts: 300 }),
+    person('Dax', 'review', { run_id: 'gamma-3', status: 'resting' }),
+  ];
+  assert.equal(indicatorOwners(agents).get('verify'), 'Carl', 'newest busy unlinked person');
+  const left = unclaimedSteps(active, agents);
+  assert.equal(
+    left.some((s) => s.run_id === 'alpha-1'),
+    false,
+    'claimed by Ada',
+  );
+  assert.equal(
+    left.some((s) => s.run_id === 'gamma-3'),
+    true,
+    'a resting linked person claims nothing',
+  );
+  assert.equal(left.length, 3);
+  assert.equal(indicatorFor('verify', left, NOW).substep, 'test', 'legacy entry still works');
+  assert.equal(unclaimedSteps(null, agents).length, 0);
+  assert.equal(unclaimedSteps(active, null).length, 4);
+});
+
+test('resting, idle and stale linked people never claim entries or show icons', async () => {
+  const { isBusy, isLinked, unclaimedSteps } = await mod();
+  const active = [runStep('alpha-1', 'verify', 'test', NOW)];
+  for (const over of [{ status: 'resting' }, { status: 'idle' }, { status: 'done' }, { stale: true }]) {
+    const a = person('Ada', 'verify', { run_id: 'alpha-1', ...over });
+    assert.equal(isBusy(a), false);
+    assert.equal(unclaimedSteps(active, [a]).length, 1);
+  }
+  assert.equal(isLinked({ run_id: '' }), false);
+  assert.equal(isLinked({ run_id: null }), false);
+  assert.equal(isLinked({}), false);
+  assert.equal(isLinked(null), false);
+  assert.equal(isLinked({ run_id: 'alpha-1' }), true);
+});

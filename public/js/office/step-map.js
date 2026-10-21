@@ -46,19 +46,27 @@ export function normalizeStep(s) {
 }
 
 // Active entries (newest first) that belong to `character` and are not stale. Entries that are
-// malformed or belong to another character are skipped.
-export function stepsFor(character, activeSteps, now, staleMs = STALE_MS) {
+// malformed or belong to another character are skipped. With `runId` (the run a person is linked to)
+// only the entries of that run are kept.
+export function stepsFor(character, activeSteps, now, staleMs = STALE_MS, runId = null) {
   if (!Array.isArray(activeSteps) || !has(INDICATORS, character)) return [];
   return activeSteps
     .map(normalizeStep)
-    .filter((s) => s && !s.abandoned && s.step === character && now - s.ts <= staleMs)
+    .filter(
+      (s) =>
+        s &&
+        !s.abandoned &&
+        s.step === character &&
+        now - s.ts <= staleMs &&
+        (runId === null || s.run_id === runId),
+    )
     .sort((a, b) => b.ts - a.ts);
 }
 
 // The indicator of one character: { step, substep, icon, label } for the newest active entry that
 // has a substep, else for a parent-only entry (text label, no icon), or null.
-export function indicatorFor(character, activeSteps, now, staleMs = STALE_MS) {
-  const list = stepsFor(character, activeSteps, now, staleMs);
+export function indicatorFor(character, activeSteps, now, staleMs = STALE_MS, runId = null) {
+  const list = stepsFor(character, activeSteps, now, staleMs, runId);
   const top = list.find((s) => s.substep) || list[0];
   if (!top) return null;
   return top.substep
@@ -84,16 +92,40 @@ export function iconFrames(prev, cur, elapsed, reduced = false) {
   return cur ? [{ icon: cur, alpha: k, dy: Math.round((1 - k) * 3) }] : [];
 }
 
-// Which card shows the step icon of each merged role. Several people can do the same role at once
-// (two verify agents); with no run link there is no way to tell their steps apart, so only the newest
-// busy person of a role shows the icon. `agents` are agent views ({ id, role, status, stale,
-// run_started_ts, last_event_ts }). Returns Map role -> id. Pure; ties go to the lowest id.
+// A person linked to a run carries a `run_id` string (see the person view); others have none.
+export const isLinked = (a) => !!a && typeof a.run_id === 'string' && a.run_id !== '';
+// Busy for the icon: working or blocked and not stale.
+export const isBusy = (a) => !!a && !a.stale && (a.status === 'working' || a.status === 'blocked');
+
+// Active entries that no linked busy person has claimed. A linked busy person of a merged role owns
+// the entries of its own run for that step; an unlinked person only ever gets what is left (and
+// entries without a run id are never claimed).
+export function unclaimedSteps(activeSteps, agents) {
+  if (!Array.isArray(activeSteps)) return [];
+  const claimed = new Set();
+  for (const a of Array.isArray(agents) ? agents : []) {
+    if (isLinked(a) && isBusy(a) && typeof a.role === 'string' && has(INDICATORS, a.role))
+      claimed.add(`${a.run_id}|${a.role}`);
+  }
+  if (!claimed.size) return activeSteps;
+  return activeSteps.filter((s) => {
+    const n = normalizeStep(s);
+    return !(n && typeof n.run_id === 'string' && claimed.has(`${n.run_id}|${n.step}`));
+  });
+}
+
+// Which card shows the step icon of each merged role when it is not linked to a run. Several people can
+// do the same role at once (two verify agents); without a run link there is no way to tell their steps
+// apart, so only the newest busy unlinked person of a role shows the icon. Linked people show the icon
+// of their own run (see `indicatorFor` with a run id) and do not compete here. `agents` are agent views
+// ({ id, role, status, stale, run_id, run_started_ts, last_event_ts }). Returns Map role -> id. Pure;
+// ties go to the lowest id.
 export function indicatorOwners(agents) {
   const owners = new Map();
   const rank = new Map();
   for (const a of Array.isArray(agents) ? agents : []) {
     if (!a || typeof a.role !== 'string' || !has(INDICATORS, a.role)) continue;
-    if (a.stale || (a.status !== 'working' && a.status !== 'blocked')) continue;
+    if (isLinked(a) || !isBusy(a)) continue;
     const t = Number.isFinite(a.run_started_ts) ? a.run_started_ts : (a.last_event_ts ?? 0);
     const best = rank.get(a.role);
     if (best === undefined || t > best.t || (t === best.t && a.id < best.id)) {
