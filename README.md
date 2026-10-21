@@ -592,3 +592,7 @@ e2e/        Playwright browser tests (npm run test:e2e)
 ```
 
 Test-only variable: `AGENT_DEFINITIONS_DIR` (optional) points at a directory of role `.md` files; `test/office-art.test.js` then checks that the role list matches the file names, and skips that check when it is unset.
+
+## License
+
+Released under the MIT License, see [LICENSE](LICENSE). The license covers the code; non-code assets are covered separately in [ASSET-LICENSE](ASSET-LICENSE).
