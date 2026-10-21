@@ -233,7 +233,7 @@ function runIdFromPrompt(prompt) {
  * Only the run id leaves the process; the prompt and the rest of tool_input are never sent. Foreground
  * spawns carry no agent id while they run, so they are never linked.
  */
-function buildLinkEvent(input, env = process.env, now = Date.now()) {
+function buildLinkEvent(input, _env = process.env, now = Date.now()) {
   if (!input || typeof input !== 'object' || input.hook_event_name !== 'PostToolUse') return null;
   if (input.tool_name !== 'Agent' && input.tool_name !== 'Task') return null;
   const res = input.tool_response;
