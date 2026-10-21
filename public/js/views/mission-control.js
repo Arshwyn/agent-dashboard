@@ -365,7 +365,7 @@ export function mountMissionControl(store, root = document) {
       if (c.runChip.textContent !== text) c.runChip.textContent = text;
       c.runChip.title = runId ? `${text} (run ${runId})` : '';
       c.runChip.hidden = !runId;
-      c.el.dataset.runId = runId || '';
+      c.el.dataset.linkedRun = runId || '';
     }
   }
 
@@ -387,8 +387,8 @@ export function mountMissionControl(store, root = document) {
     const runs = new Map(
       ((store.state.pipeline && store.state.pipeline.runs) || []).map((r) => [r.run_id, r]),
     );
-    for (const el of root.querySelectorAll('.pipe-people[data-run-id]')) {
-      const p = runs.get(el.dataset.runId);
+    for (const el of root.querySelectorAll('.pipe-people[data-people-run]')) {
+      const p = runs.get(el.dataset.peopleRun);
       const text = p ? peopleText(p) : '';
       if (el.textContent !== text) el.textContent = text;
       el.hidden = !text;
@@ -502,7 +502,7 @@ export function mountMissionControl(store, root = document) {
       );
     }
     parts.push(h('div', { class: 'pipe-meta' }, meta));
-    parts.push(h('div', { class: 'pipe-people muted', 'data-run-id': p.run_id, hidden: true }));
+    parts.push(h('div', { class: 'pipe-people muted', 'data-people-run': p.run_id, hidden: true }));
     return parts;
   }
 
