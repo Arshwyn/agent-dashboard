@@ -168,7 +168,8 @@ class AgentTracker {
     if (!this.isPooled(ev)) return null;
     const key = ev.session_id;
     const w = this.workers.get(key);
-    // A link never picks a person: it follows the session's real worker, or has none (no card is created).
+    // A link never picks a person: it follows the session's real worker, or has none (no card is
+    // created).
     if (ev.type === 'link') return w && w.real ? w.person : null;
     if (w && w.real && now - w.last_ts <= RESUME_MS && !this._busy(w.person, now, key)) return w.person;
     let rested = null;
@@ -219,8 +220,9 @@ class AgentTracker {
   /**
    * A `link` event ties the worker of its session to a run. It only sets the worker's run_id: no card
    * status, timestamps, totals, role or handoff change, and it never reopens a stopped worker.
-   * The first link of a session is kept while the agent runs; a link may replace it once the worker has
-   * stopped, or has resumed after a stop or a stale gap and not been linked since (a reused session on another run).
+   * The first link of a session is kept while the agent runs; a link may replace it once the worker
+   * has stopped, or has resumed after a stop or a stale gap and not been linked since (a reused
+   * session on another run).
    * A link that arrives first creates a link-only worker (`real` false, no person, no card): it is
    * ignored by busy, rest and run lookups until its first real event, which makes it a normal worker.
    */
