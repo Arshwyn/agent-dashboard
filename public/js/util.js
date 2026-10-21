@@ -19,8 +19,12 @@ let displayNames = {};
 export function setDisplayNames(map) {
   displayNames = map && typeof map === 'object' ? map : {};
 }
+/** The configured label for an id from an id -> label map, or null; inherited keys never match. */
+export function labelFrom(map, id) {
+  return map && typeof map === 'object' && Object.hasOwn(map, id) ? map[id] : null;
+}
 export function displayOf(id) {
-  return Object.hasOwn(displayNames, id) ? displayNames[id] : id;
+  return labelFrom(displayNames, id) ?? id;
 }
 
 // Empty state: a heading-level title and one line on what will appear (tokens only, no fake table).

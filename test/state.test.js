@@ -1201,6 +1201,17 @@ test('display names relabel mapped role cards only; ids and persons are unchange
   assert.deepEqual(plain.snapshot(T0).find((a) => a.id === 'orchestrator').label, 'orchestrator');
 });
 
+test('display-name lookups ignore inherited object keys', () => {
+  const t = new AgentTracker({
+    configured: [],
+    names: ['Ada'],
+    displayNames: { orchestrator: 'Example Bot' },
+  });
+  t.apply(e({ agent: 'constructor', session_id: 'c1' }));
+  const card = t.snapshot(T0).find((a) => a.id === 'constructor');
+  assert.equal(card.label, 'constructor');
+});
+
 test('without display names the snapshot is identical to an unmapped tracker', () => {
   const mk = (extra) => new AgentTracker({ configured: ['orchestrator'], names: ['Ada'], ...extra });
   assert.equal(JSON.stringify(mk({}).snapshot(T0)), JSON.stringify(mk({ displayNames: {} }).snapshot(T0)));
