@@ -17,6 +17,9 @@ COPY package.json ./
 COPY src ./src
 COPY public ./public
 RUN mkdir -p /data && chown node:node /data
+# The app runs with node only; drop the bundled package-manager tooling.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 USER node
 VOLUME ["/data"]
 EXPOSE 8787
