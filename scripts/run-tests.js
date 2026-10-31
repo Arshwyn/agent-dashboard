@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 'use strict';
-// Runs `node --test test/` with TMPDIR pointing at a per-run dir, then fails if the tests left
-// anything behind in it. Only this run's dir is inspected, so concurrent runs do not interfere.
+// Runs `node --test` on every test/*.test.js file, listed explicitly because directory arguments are
+// rejected on Node 22+ and glob patterns are not expanded on Node 20. TMPDIR points at a per-run dir,
+// and the run fails if the tests left anything behind in it.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+const testFiles = fs
+  .readdirSync('test')
+  .filter((f) => f.endsWith('.test.js'))
+  .sort()
+  .map((f) => path.join('test', f));
 const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ad-run-'));
-const res = spawnSync(process.execPath, ['--test', 'test/', ...process.argv.slice(2)], {
+const res = spawnSync(process.execPath, ['--test', ...testFiles, ...process.argv.slice(2)], {
   stdio: 'inherit',
   env: { ...process.env, TMPDIR: runDir, TMP: runDir, TEMP: runDir },
 });
