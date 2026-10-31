@@ -1,12 +1,13 @@
-# Pinned by digest (multi-arch index for node:20-slim, resolved 2026-10-18). Refresh periodically.
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS deps
+# Pinned by exact tag and digest (multi-arch index for node:24.22.2-trixie-slim, resolved 2026-10-31). Refresh periodically.
+FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-# better-sqlite3 ships prebuilt binaries for node 20; fall back to compiling only if needed.
+# better-sqlite3 11.10.0 has no prebuilt binary for node 24, so the apt toolchain fallback compiles it.
+# Install the toolchain only when the prebuilt download fails.
 RUN npm ci --omit=dev || (apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && npm ci --omit=dev && rm -rf /var/lib/apt/lists/*)
 
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
 ENV NODE_ENV=production \
     PORT=8787 \
     DB_PATH=/data/dashboard.db
