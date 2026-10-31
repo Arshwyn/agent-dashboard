@@ -2,7 +2,7 @@ services:
   agent-dashboard:
     build:
       context: .
-    image: agent-dashboard:latest
+    image: agent-dashboard:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       # Defaults to loopback (for a same-host TLS reverse proxy). For LAN access set BIND_ADDR to the
