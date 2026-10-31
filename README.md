@@ -3,7 +3,7 @@
 A "mission control" web dashboard for the Claude Code pipeline agents (`spec`, `code`, `cleanup`, `server-ops`, `ask`, `verify` and `review`; see "Merged agents" and "Untracked agents"). The pipeline stepper shows one step per agent (`verify`, `review`); the gate work inside them (`test`, `styling`, `security`, `code-review`) is a substep. It ingests events from Claude Code hooks, stores them in
 SQLite, derives per-agent state and pipeline progress, and pushes everything live to the browser over SSE.
 
-- Node 20, plain `http` server, `better-sqlite3` (pinned to 11.10.0, which has prebuilt binaries for Node 20), no frontend framework, no CDN.
+- Node 24, plain `http` server, `better-sqlite3` (pinned to 11.10.0, compiled from source in the image build because it has no prebuilt binary for Node 24), no frontend framework, no CDN.
 - Default port: **8787**.
 - Pixel-art skin: retro theme plus a canvas virtual office where each agent walks between desks, lounge, kitchen and more (see [Adding a skin](#adding-a-skin)).
 - Layout ("command centre"): a sticky header (title, connection state, run summary, Sign out), then the pipeline as one panel per active feature run (abandoned runs leave after a window; stacked, each collapsible, with its own compact one-row stepper and inline substep chips), the office (box capped at 420 px, zoom and pan kept), the agents grid beside the live feed on desktop, then cost summary, sessions and other requests. Every section has a collapse button in its heading; cost summary and sessions start collapsed. Content is at most 1440 px wide; breakpoints are 768 px (agents in two columns, stepper 4 + 4) and 1200 px (desktop grid, stepper in one row); phones get one column and a 2x4 stepper.

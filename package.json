@@ -5,7 +5,7 @@
   "description": "Mission-control dashboard for Claude Code pipeline agents",
   "main": "src/index.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "start": "node src/index.js",
