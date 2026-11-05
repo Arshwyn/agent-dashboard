@@ -305,6 +305,8 @@ Any agent runner can report to the dashboard; nothing here is tied to a particul
    ```
    `agent` is the spawn's `subagent_type` if it is not a generic built-in, else `helper`. Run ids with and without a trailing nonce both work.
 
+The `/api/*` endpoints sit behind `DASHBOARD_TOKEN` and must not be published beyond that auth gate (for example through a proxy or tunnel rule at `https://<dashboard-host>/api/`); agent machines only need `POST /event` with the ingest token.
+
 The seven role names (`spec`, `code`, `cleanup`, `server-ops`, `ask`, `verify`, `review`) and the `orchestrator` / `server-ops` cwd defaults are the vocabulary of the pipeline this dashboard was built for. They can be overridden with `AGENTS` and `AGENT_DASHBOARD_CWD_ROLES`; the bundled office art covers those seven roles.
 
 ## Pipeline events (for the orchestrator)
