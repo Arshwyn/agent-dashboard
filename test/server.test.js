@@ -1319,3 +1319,20 @@ test('run_id is on the person view in /api/agents, SSE agent events and after a 
   assert.equal(v.run_id, 'alpha-1000000001-1001', 'replay rebuilds the same run_id');
   await again.close();
 });
+
+test('a pipeline event rejected by validation logs one dropped-event line', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const lines = [];
+  t.mock.method(console, 'warn', (...a) => lines.push(a.join(' ')));
+  const bad = await post(s.base, ev({ type: 'pipeline', meta: 'not-an-object' }));
+  assert.equal(bad.status, 400);
+  assert.equal(lines.filter((l) => l.includes('pipeline event dropped')).length, 1);
+  assert.equal((await post(s.base, ev({ type: 'nope' }))).status, 400);
+  assert.equal(
+    (await post(s.base, ev({ type: 'pipeline', meta: { run_id: 'r1', step: 'spec', state: 'active' } })))
+      .status,
+    201,
+  );
+  assert.equal(lines.filter((l) => l.includes('pipeline event dropped')).length, 1);
+});
