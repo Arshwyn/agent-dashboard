@@ -226,6 +226,16 @@ function createApp(config, store, opts = {}) {
   }
 
   // ------------------------------------------------------------ routes
+  let droppedPipelineEvents = 0;
+
+  /** One concise log line when a pipeline event is rejected by validation. */
+  function noteDroppedEvent(req, body, errors) {
+    if (!body || body.type !== 'pipeline') return;
+    console.warn(
+      `pipeline event dropped: ${errors.length} validation error(s), total ${droppedPipelineEvents++}, auth ${req.headers.authorization}`,
+    );
+  }
+
   function handleIngest(req, res) {
     const ip = clientIp(req);
     const wait = ingestLimiter.blockedFor(ip);
@@ -247,7 +257,10 @@ function createApp(config, store, opts = {}) {
         return send(res, 400, { error: 'invalid JSON' });
       }
       const result = validateEvent(body, now());
-      if (!result.ok) return send(res, 400, { error: 'invalid event', details: result.errors });
+      if (!result.ok) {
+        noteDroppedEvent(req, body, result.errors);
+        return send(res, 400, { error: 'invalid event', details: result.errors });
+      }
       const ev = result.event;
       // The person is chosen here, never taken from the client (validateEvent drops unknown fields).
       ev.instance = agents.assign(ev, now());
