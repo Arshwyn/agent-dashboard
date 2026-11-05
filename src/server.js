@@ -229,7 +229,6 @@ function createApp(config, store, opts = {}) {
   let droppedPipelineEvents = 0;
   const DROP_LOG_MAX = 5;
   const DROP_LOG_WINDOW_MS = 60 * 1000;
-  const FAKE_LOG_TOKEN = 'FAKE-TEST-TOKEN-0000000000';
   const dropLog = new Map();
 
   /** One concise log line when a pipeline event is rejected by validation, throttled per agent. */
