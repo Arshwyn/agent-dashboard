@@ -1361,3 +1361,14 @@ test('dropped-event log line carries a running total starting at 1', async (t) =
     .map((l) => /total (\d+)/.exec(l)[1]);
   assert.deepEqual(totals, ['1', '2']);
 });
+
+test('dropped-event log line is throttled to a few lines per window', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const lines = [];
+  t.mock.method(console, 'warn', (...a) => lines.push(a.join(' ')));
+  for (let i = 0; i < 8; i++) {
+    assert.equal((await post(s.base, ev({ type: 'pipeline', meta: 'x' }))).status, 400);
+  }
+  assert.equal(lines.filter((l) => l.includes('pipeline event dropped')).length, 5);
+});
