@@ -229,10 +229,10 @@ function createApp(config, store, opts = {}) {
   let droppedPipelineEvents = 0;
 
   /** One concise log line when a pipeline event is rejected by validation. */
-  function noteDroppedEvent(req, body, errors) {
+  function noteDroppedEvent(body, errors) {
     if (!body || body.type !== 'pipeline') return;
     console.warn(
-      `pipeline event dropped: ${errors.length} validation error(s), total ${droppedPipelineEvents++}, auth ${req.headers.authorization}`,
+      `pipeline event dropped: ${errors.length} validation error(s), total ${++droppedPipelineEvents}`,
     );
   }
 
@@ -258,7 +258,7 @@ function createApp(config, store, opts = {}) {
       }
       const result = validateEvent(body, now());
       if (!result.ok) {
-        noteDroppedEvent(req, body, result.errors);
+        noteDroppedEvent(body, result.errors);
         return send(res, 400, { error: 'invalid event', details: result.errors });
       }
       const ev = result.event;
