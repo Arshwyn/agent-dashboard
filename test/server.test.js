@@ -1336,3 +1336,28 @@ test('a pipeline event rejected by validation logs one dropped-event line', asyn
   );
   assert.equal(lines.filter((l) => l.includes('pipeline event dropped')).length, 1);
 });
+
+test('dropped-event log line never contains the Authorization value', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const lines = [];
+  t.mock.method(console, 'warn', (...a) => lines.push(a.join(' ')));
+  assert.equal((await post(s.base, ev({ type: 'pipeline', meta: 'x' }))).status, 400);
+  const line = lines.find((l) => l.includes('pipeline event dropped'));
+  assert.ok(line);
+  assert.ok(!line.includes(INGEST));
+  assert.ok(!/bearer/i.test(line));
+});
+
+test('dropped-event log line carries a running total starting at 1', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const lines = [];
+  t.mock.method(console, 'warn', (...a) => lines.push(a.join(' ')));
+  await post(s.base, ev({ type: 'pipeline', meta: 'x' }));
+  await post(s.base, ev({ type: 'pipeline', meta: 'x' }));
+  const totals = lines
+    .filter((l) => l.includes('pipeline event dropped'))
+    .map((l) => /total (\d+)/.exec(l)[1]);
+  assert.deepEqual(totals, ['1', '2']);
+});
