@@ -227,12 +227,33 @@ function createApp(config, store, opts = {}) {
 
   // ------------------------------------------------------------ routes
   let droppedPipelineEvents = 0;
+  const DROP_LOG_MAX = 5;
+  const DROP_LOG_WINDOW_MS = 60 * 1000;
+  const FAKE_LOG_TOKEN = 'FAKE-TEST-TOKEN-0000000000';
+  const dropLog = new Map();
 
-  /** One concise log line when a pipeline event is rejected by validation. */
+  /** One concise log line when a pipeline event is rejected by validation, throttled per agent. */
   function noteDroppedEvent(body, errors) {
     if (!body || body.type !== 'pipeline') return;
+    droppedPipelineEvents += 1;
+    const key = String(body.agent);
+    const t = now();
+    let slot = dropLog.get(key);
+    if (!slot || t - slot.start >= DROP_LOG_WINDOW_MS) {
+      const suppressed = slot ? slot.suppressed : 0;
+      slot = { start: t, logged: 0, suppressed: 0 };
+      dropLog.set(key, slot);
+      slot.carry = suppressed;
+    }
+    if (slot.logged >= DROP_LOG_MAX) {
+      slot.suppressed += 1;
+      return;
+    }
+    slot.logged += 1;
+    const extra = slot.carry ? `, ${slot.carry} suppressed earlier` : '';
+    slot.carry = 0;
     console.warn(
-      `pipeline event dropped: ${errors.length} validation error(s), total ${++droppedPipelineEvents}`,
+      `pipeline event dropped: ${errors.length} validation error(s), total ${droppedPipelineEvents}${extra}`,
     );
   }
 
