@@ -1,13 +1,14 @@
 # Vendored three.js
 
-`three.min.js` is a minified classic-script bundle of the symbols listed in `three-subset.js`, taken from the `three@0.187.0` npm package (MIT, see `three.LICENSE`). A classic script is used because browsers block ES modules loaded from `file://`, and these mocks must open straight from the file system.
+`three.min.js` is a minified classic-script bundle of the symbols listed in `three-subset.js` (including `GLTFLoader`), taken from the `three@0.187.0` npm package (MIT, see `three.LICENSE`). A classic script is used because browsers block ES modules loaded from `file://`, and these mocks must open straight from the file system.
 
 Rebuild (from a scratch directory that has `three@0.187.0` and `esbuild` installed; the paths are placeholders):
 
 ```bash
 esbuild three-subset.js --bundle --minify --format=iife --global-name=THREE \
-  --alias:three=/path/to/node_modules/three/build/three.module.js --legal-comments=none \
-  --banner:js="/* three.js r187 (MIT), subset bundle built from three@0.187.0; see three.LICENSE and README.md in this folder */" \
+  --alias:three=/path/to/node_modules/three/build/three.module.js \
+  --alias:three-loaders=/path/to/node_modules/three/examples/jsm/loaders --legal-comments=none \
+  --banner:js="/* three.js r187 (MIT), subset bundle built from three@0.187.0 incl. GLTFLoader; see three.LICENSE and README.md in this folder */" \
   --outfile=three.min.js
 ```
 

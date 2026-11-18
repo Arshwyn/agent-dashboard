@@ -9,7 +9,6 @@ export {
   CylinderGeometry,
   EdgesGeometry,
   Group,
-  IcosahedronGeometry,
   LineBasicMaterial,
   LineSegments,
   LinearSRGBColorSpace,
@@ -25,3 +24,4 @@ export {
   Vector3,
   WebGLRenderer,
 } from 'three';
+export { GLTFLoader } from 'three-loaders/GLTFLoader.js';
