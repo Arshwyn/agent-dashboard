@@ -28,9 +28,9 @@
       id: 'hephaestus',
       name: 'Hephaestus',
       role: 'Builder',
-      scan: 'vespasian-head',
       pal: ['#ff9a1f', '#ff5a1f', '#ffd08a'],
-      attrs: ['cap', 'beard', 'anvil', 'hammer'],
+      attrs: [],
+      fallback: ['cap', 'beard', 'anvil', 'hammer'], // only while no scan is loaded: the Vulcan statue carries its own
       you: 'Is the dashboard change ready for review?',
       reply:
         'Built and pushed on its own branch. Tests green, lint clean, three small commits. Passing it to the gate now.',
@@ -39,7 +39,6 @@
       id: 'themis',
       name: 'Themis',
       role: 'Quality gate',
-      scan: 'octavia-bust',
       pal: ['#9bb8ff', '#e9c46a', '#f2f6ff'],
       attrs: ['band', 'scales'],
       you: 'Did the checks pass?',
@@ -49,8 +48,6 @@
       id: 'janus',
       name: 'Janus',
       role: 'Gatekeeper',
-      scan: 'alexander-head',
-      twin: true,
       pal: ['#5ad1d6', '#c27bf0', '#e8eef7'],
       attrs: ['door', 'key'],
       you: 'Anything blocking the merge?',
@@ -61,9 +58,9 @@
       id: 'atlas',
       name: 'Atlas',
       role: 'Operator',
-      scan: 'herakles-head',
       pal: ['#6aa0ff', '#3b5bd6', '#e0ecff'],
-      attrs: ['sky'],
+      attrs: [],
+      fallback: ['sky'], // the Atlas scan carries its own globe
       you: 'Is the new version running?',
       reply: 'It is. Deployed, the health check is green, and the previous version is kept in reserve.',
     },
@@ -71,7 +68,6 @@
       id: 'plutus',
       name: 'Plutus',
       role: 'Finance',
-      scan: 'noble-bust',
       pal: ['#3fbf7a', '#d6a82a', '#eaffd8'],
       attrs: ['crown', 'coin'],
       you: 'How are the savings tracking this month?',
@@ -82,7 +78,6 @@
       id: 'apollo',
       name: 'Apollo',
       role: 'Coach',
-      scan: 'apollo-head',
       pal: ['#ffd24a', '#8fbf6a', '#fff3bd'],
       attrs: ['laurel', 'lyre'],
       you: 'How did recovery look this week?',
@@ -93,7 +88,6 @@
       id: 'iris',
       name: 'Iris',
       role: 'Mail and calendar',
-      scan: 'octavia-bust',
       pal: ['#ff7ac8', '#5ad1ff', '#ffe27a'],
       attrs: ['veil', 'rainbow'],
       you: 'What is on tomorrow?',
@@ -104,23 +98,27 @@
       id: 'dionysus',
       name: 'Dionysus',
       role: 'Travel and food',
-      scan: 'alexander-head',
       pal: ['#b04ad6', '#e0456a', '#f0d0ff'],
-      attrs: ['ivy'],
+      attrs: [],
+      fallback: ['ivy'], // the Bacchus scan carries its own vine
       you: 'Where should we eat on Friday?',
       reply:
         'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
     },
   ];
-  // Scan id -> how the mesh is used. head: a head only (a procedural body is added); bust: head and shoulders.
-  // yaw turns the model about Y so it faces the camera; tuned per scan once the real files are in.
+  // One scan per god, models/<god id>.glb. kind: head = a head only (a procedural body is added);
+  // bust = head and shoulders as scanned; statue = a full statue cut to a bust at crop (the top fraction of its height).
+  // up: 'y' or 'z' (the model's up axis); yaw turns it about Y to face the camera; scale and dy nudge the fit;
+  // eyes are optional glow positions in bust space. These are placeholders until the real files are in.
   var SCANS = {
-    'apollo-head': { kind: 'head', yaw: 0 },
-    'alexander-head': { kind: 'head', yaw: 0 },
-    'vespasian-head': { kind: 'head', yaw: 0 },
-    'herakles-head': { kind: 'head', yaw: 0 },
-    'octavia-bust': { kind: 'bust', yaw: 0 },
-    'noble-bust': { kind: 'bust', yaw: 0 },
+    apollo: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
+    dionysus: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
+    janus: { kind: 'head', up: 'y', yaw: 0, scale: 1, dy: 0 }, // one head with two faces: no duplicate
+    hephaestus: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
+    atlas: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
+    themis: { kind: 'bust', up: 'y', yaw: 0, scale: 1, dy: 0 },
+    iris: { kind: 'head', up: 'y', yaw: 0, scale: 1, dy: 0 },
+    plutus: { kind: 'bust', up: 'y', yaw: 0, scale: 1, dy: 0 },
   };
   var godIdx = 0;
   var god = GODS[0];
@@ -625,7 +623,12 @@
   function webglOk() {
     try {
       var c = document.createElement('canvas');
-      return !!(window.WebGL2RenderingContext && c.getContext('webgl2'));
+      var gl = window.WebGL2RenderingContext ? c.getContext('webgl2') : null;
+      if (gl) {
+        var lose = gl.getExtension('WEBGL_lose_context'); // release the probe context straight away
+        if (lose) lose.loseContext();
+      }
+      return !!gl;
     } catch {
       return false;
     }
@@ -639,10 +642,13 @@
     });
   }
   var STATE_LABEL = { idle: 'Idle', thinking: 'Thinking', speaking: 'Speaking' };
+  function stateOk(st) {
+    return typeof st === 'string' && Object.prototype.hasOwnProperty.call(STATE_LABEL, st); // not 'constructor' and friends
+  }
   function setStateLabel(st) {
     document.querySelectorAll('[data-status]').forEach(function (el) {
       el.setAttribute('data-now', st);
-      el.textContent = STATE_LABEL[st] || 'Idle';
+      el.textContent = stateOk(st) ? STATE_LABEL[st] : 'Idle';
     });
     document.querySelectorAll('[data-state-set]').forEach(function (b) {
       b.setAttribute('aria-pressed', b.getAttribute('data-state-set') === st ? 'true' : 'false');
@@ -681,11 +687,17 @@
     });
   }
 
-  if (typeof THREE === 'undefined' || !webglOk() || params.has('nogl')) {
+  // No WebGL 2, or the context was lost: a text message and a stage that is no longer a button.
+  function noGl() {
     stage.setAttribute('data-gl', 'none');
-    ['role', 'tabindex', 'aria-expanded', 'aria-label'].forEach(function (a) {
+    ['role', 'tabindex', 'aria-expanded', 'aria-label', 'aria-describedby'].forEach(function (a) {
       stage.removeAttribute(a);
     });
+    stage.blur();
+  }
+
+  if (typeof THREE === 'undefined' || !webglOk() || params.has('nogl')) {
+    noGl();
     var pick = function (id) {
       god = GODS.filter(function (g) {
         return g.id === id;
@@ -962,9 +974,10 @@
 
   // ---------- scanned models: lazy GLB load, sampled into surface points with normals ----------
   var scans = {}; // id -> { pts: Float32Array(M*6) } | { failed: true } | { loading: true }
-  var meshNote = '';
 
-  function sampleScene(gltfScene, kind, yaw) {
+  function sampleScene(gltfScene, cfg) {
+    var kind = cfg.kind;
+    var yaw = cfg.yaw;
     var tris = [];
     var minY = Infinity;
     var maxY = -Infinity;
@@ -982,6 +995,7 @@
       for (var f = 0; f + 2 < count; f += 3) {
         for (var k = 0; k < 3; k++) {
           v[k].fromBufferAttribute(pos, idx ? idx.getX(f + k) : f + k).applyMatrix4(o.matrixWorld);
+          if (cfg.up === 'z') v[k].set(v[k].x, v[k].z, -v[k].y); // Z-up export: turn it upright
           minX = Math.min(minX, v[k].x);
           maxX = Math.max(maxX, v[k].x);
           minY = Math.min(minY, v[k].y);
@@ -993,11 +1007,32 @@
       }
     });
     if (!tris.length) return null;
-    var s = (kind === 'bust' ? 2.3 : 1.08) / (maxY - minY || 1);
+    if (kind === 'statue') {
+      // keep only the top fraction of a full statue (head and shoulders), then fit that
+      var cut = maxY - cfg.crop * (maxY - minY);
+      tris = tris.filter(function (t) {
+        return (t[1] + t[4] + t[7]) / 3 >= cut;
+      });
+      if (!tris.length) return null;
+      minX = minY = minZ = Infinity;
+      maxX = maxY = maxZ = -Infinity;
+      tris.forEach(function (t) {
+        for (var k = 0; k < 9; k += 3) {
+          minX = Math.min(minX, t[k]);
+          maxX = Math.max(maxX, t[k]);
+          minY = Math.min(minY, t[k + 1]);
+          maxY = Math.max(maxY, t[k + 1]);
+          minZ = Math.min(minZ, t[k + 2]);
+          maxZ = Math.max(maxZ, t[k + 2]);
+        }
+      });
+    }
+    var full = kind !== 'head'; // bust and cropped statue fill the whole figure; a head gets a procedural body
+    var s = ((full ? 2.3 : 1.08) / (maxY - minY || 1)) * (cfg.scale || 1);
     var cx = (minX + maxX) / 2;
     var cz = (minZ + maxZ) / 2;
     var oy = (minY + maxY) / 2;
-    var cy = kind === 'bust' ? 0 : HEAD_C[1];
+    var cy = (full ? 0 : HEAD_C[1]) + (cfg.dy || 0);
     var cum = new Float32Array(tris.length);
     var total = 0;
     var cos = Math.cos(yaw);
@@ -1057,29 +1092,42 @@
     return out;
   }
 
+  // status text per scan id; the readout shows the entry for the current god only (no cross-god races)
+  var scanNote = {};
   function loadScan(id) {
     if (scans[id]) return;
     scans[id] = { loading: true };
-    var cfg = SCANS[id];
-    meshNote = 'loading ' + id;
+    scanNote[id] = 'loading models/' + id + '.glb';
     new THREE.GLTFLoader().load(
       'models/' + id + '.glb',
       function (gltf) {
-        var pts = sampleScene(gltf.scene, cfg.kind, cfg.yaw);
+        var pts = sampleScene(gltf.scene, SCANS[id]);
         scans[id] = pts ? { pts: pts } : { failed: true };
-        meshNote = pts ? 'mesh ' + id : 'empty model ' + id;
-        if (god.scan === id) rebuildBust();
+        scanNote[id] = pts ? 'mesh ' + id : 'empty model ' + id + ', procedural bust';
+        if (god.id === id) swapIn();
       },
       undefined,
       function () {
         scans[id] = { failed: true };
-        if (god.scan === id) meshNote = 'procedural bust (models/' + id + '.glb not available)';
+        scanNote[id] = 'procedural bust (models/' + id + '.glb not available)';
       },
     );
   }
 
+  // When a model arrives while the bust is showing, dissolve to the orb, rebuild, then re-form (no pop).
+  var swapPending = false;
+  function swapIn() {
+    if (morph > 0.01 && !reduce.matches) {
+      swapPending = true;
+      target = 0;
+      return;
+    }
+    rebuildBust();
+  }
+
   // ---------- build the bust targets for the current god ----------
   var usingMesh = false;
+  var eyesShown = true;
   var usingBustMesh = false;
   function meshPoint(scan) {
     var k = Math.floor(rnd() * CFG.scanPoints) * 6;
@@ -1087,9 +1135,9 @@
     return O;
   }
   function rebuildBust() {
-    var scan = scans[god.scan] && scans[god.scan].pts ? scans[god.scan] : null;
-    var kind = SCANS[god.scan].kind;
-    var defs = god.attrs.filter(function (n) {
+    var scan = scans[god.id] && scans[god.id].pts ? scans[god.id] : null;
+    var kind = SCANS[god.id].kind;
+    var defs = god.attrs.concat(scan ? [] : god.fallback || []).filter(function (n) {
       return ATTRS[n] && ATTRS[n].pt;
     });
     var ashare = defs.length ? 0.2 : 0;
@@ -1098,17 +1146,10 @@
     for (var i = 0; i < N; i++) {
       if (rnd() < ashare) {
         src = ATTRS[defs[Math.floor(rnd() * defs.length)]].pt();
-      } else if (scan && kind === 'bust') {
+      } else if (scan && kind !== 'head') {
         src = meshPoint(scan);
       } else if (rnd() < 0.5) {
         src = scan ? meshPoint(scan) : headProc();
-        if (god.twin && rnd() < 0.5) {
-          // back-to-back second face: the same head turned 180 degrees about the vertical axis
-          O[0] = -O[0];
-          O[2] = -O[2];
-          O[3] = -O[3];
-          O[5] = -O[5];
-        }
       } else {
         src = bodyProc();
       }
@@ -1122,8 +1163,27 @@
     pg.attributes.aBust.needsUpdate = true;
     pg.attributes.aNorm.needsUpdate = true;
     usingMesh = !!scan;
-    usingBustMesh = !!scan && kind === 'bust';
+    var cfg = SCANS[god.id];
+    eyesShown = !scan || !!cfg.eyes;
+    if (!scan) {
+      eyeL.position.set(-0.15, 0.68, 0.42);
+      eyeR.position.set(0.15, 0.68, 0.42);
+    } else if (cfg.eyes) {
+      eyeL.position.set(cfg.eyes[0][0], cfg.eyes[0][1], cfg.eyes[0][2]);
+      eyeR.position.set(cfg.eyes[1][0], cfg.eyes[1][1], cfg.eyes[1][2]);
+    }
+    usingBustMesh = !!scan && kind !== 'head';
+    rebuildAttrs();
     requestStatic();
+  }
+
+  function rebuildAttrs() {
+    disposeGroup(attrGroup);
+    var list = god.attrs.concat(usingMesh ? [] : god.fallback || []);
+    list.forEach(function (n) {
+      if (ATTRS[n] && ATTRS[n].wire) ATTRS[n].wire(attrGroup);
+    });
+    applyPalette();
   }
 
   function disposeGroup(grp) {
@@ -1169,18 +1229,12 @@
     if (idx < 0) return;
     godIdx = idx;
     god = GODS[idx];
+    swapPending = false;
     setExpanded(false, true);
-    disposeGroup(attrGroup);
-    god.attrs.forEach(function (n) {
-      if (ATTRS[n] && ATTRS[n].wire) ATTRS[n].wire(attrGroup);
-    });
+    morph = 0; // a new god always starts as the orb
     applyPalette();
-    meshNote = '';
-    rebuildBust(); // procedural first; scanned points swap in when the model arrives
-    var sc = scans[god.scan];
-    if (!sc) loadScan(god.scan);
-    else if (sc.failed) meshNote = 'procedural bust (models/' + god.scan + '.glb not available)';
-    else if (sc.pts) meshNote = 'mesh ' + god.scan;
+    rebuildBust(); // procedural first if the scan is not loaded yet; it swaps in when it arrives
+    if (!scans[god.id]) loadScan(god.id);
     chrome();
     syncAria();
     requestStatic();
@@ -1224,7 +1278,7 @@
 
   function setExpanded(v, silent) {
     expanded = v;
-    target = v ? 1 : 0;
+    target = v && !swapPending ? 1 : 0; // while a model swaps in, the bust stays dissolved until it re-forms
     if (!silent) stage.setAttribute('data-hinted', 'true');
     if (reduce.matches) morph = target;
     syncAria();
@@ -1245,7 +1299,7 @@
   }
   new MutationObserver(function () {
     var st = stage.getAttribute('data-state');
-    if (STATE_LABEL[st]) {
+    if (stateOk(st)) {
       thinkTarget = st === 'thinking' ? 1 : 0;
       speakTarget = st === 'speaking' ? 1 : 0;
       if (reduce.matches) {
@@ -1276,6 +1330,12 @@
       time += dt;
       var step = CFG.morphSpeed * dt;
       morph += Math.max(-step, Math.min(step, target - morph));
+      if (swapPending && morph <= 0.001) {
+        // the model arrived while the bust was up: it has dissolved, so rebuild and re-form
+        swapPending = false;
+        rebuildBust();
+        target = expanded ? 1 : 0;
+      }
       think += (thinkTarget - think) * Math.min(1, dt * 3);
       speak += (speakTarget * (0.6 + 0.4 * Math.sin(time * 9)) - speak) * Math.min(1, dt * 12);
       hover += (hoverTarget - hover) * Math.min(1, dt * 6);
@@ -1334,7 +1394,7 @@
       }
     });
 
-    var eyeOn = usingMesh ? 0 : ss(0.7, 1, m);
+    var eyeOn = eyesShown ? ss(0.7, 1, m) : 0;
     eyeL.material.opacity = eyeR.material.opacity = eyeOn * (0.8 + 0.2 * speak);
     eyeL.scale.setScalar(0.14 + 0.05 * speak);
     eyeR.scale.setScalar(0.14 + 0.05 * speak);
@@ -1393,7 +1453,7 @@
       ' points, dpr ' +
       dpr.toFixed(2) +
       (level ? ', step ' + level : '') +
-      (meshNote ? ', ' + meshNote : '');
+      (scanNote[god.id] ? ', ' + scanNote[god.id] : '');
   }
 
   // Step down stays 3D: fewer particles and a lower pixel ratio, then the extra glow off. Never a flat look.
@@ -1492,7 +1552,7 @@
   canvas.addEventListener('webglcontextlost', function (ev) {
     ev.preventDefault();
     stopLoop();
-    stage.setAttribute('data-gl', 'none');
+    noGl();
   });
 
   function dispose() {
@@ -1525,7 +1585,7 @@
       : 'hephaestus',
   );
   var startState = params.get('state');
-  setActivity(STATE_LABEL[startState] ? startState : 'idle');
+  setActivity(stateOk(startState) ? startState : 'idle');
   if (params.get('open') === '1') setExpanded(true);
   resize();
   startLoop();
