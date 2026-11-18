@@ -1,5 +1,7 @@
 # agent-dashboard
 
+> The dashboard is being rebuilt as a private agent hub (chat with each agent, shown as an animated body). Design mockups for the first step are in [`docs/mocks/`](docs/mocks/README.md); the description below still covers the current pipeline dashboard until the rebuild lands.
+
 A "mission control" web dashboard for the Claude Code pipeline agents (`spec`, `code`, `cleanup`, `server-ops`, `ask`, `verify` and `review`; see "Merged agents" and "Untracked agents"). The pipeline stepper shows one step per agent (`verify`, `review`); the gate work inside them (`test`, `styling`, `security`, `code-review`) is a substep. It ingests events from Claude Code hooks, stores them in
 SQLite, derives per-agent state and pipeline progress, and pushes everything live to the browser over SSE.
 
