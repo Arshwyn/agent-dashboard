@@ -44,13 +44,30 @@ How it behaves
 - Per-god attributes are built in code: Hephaestus cap, beard, anvil and hammer (stand-in only); Themis blindfold band and scales; Janus a doorway arch and key; Atlas a sky arc (stand-in only); Plutus a crown and a coin; Apollo a laurel wreath and lyre; Iris a veil and rainbow arcs; Dionysus an ivy wreath with hanging vines (stand-in only). Janus's scan is a single head with two faces.
 - The 3D stage keeps dark glass tones in both themes; the page chrome follows the dark or the designed light set.
 
-Models (planned; none is in the repo yet)
+Models
 
-- One scan per god, `models/<god id>.glb` (apollo, dionysus, janus, hephaestus, atlas, themis, iris, plutus), decimated to roughly 10-20k faces each. A scan is loaded only when its god is selected (lazy) and cached for the session; nothing is fetched from anywhere else at runtime.
-- Scan kinds: `head` (a head only, a procedural body is added: Janus, Iris), `bust` (as scanned: Themis, Plutus) and `statue` (a full statue cut to a bust at a per-scan crop height: Apollo, Dionysus, Hephaestus, Atlas). Each scan has its own up axis, yaw, scale, offset and optional eye glow positions in `SCANS` in `3d-gods.js`.
-- Where a scan already carries an attribute (Vulcan's hammer and anvil, Atlas's globe, Bacchus's vine), the in-code attribute is used only as a procedural stand-in while no scan is loaded. Code attributes stay for Themis (blindfold, scales), Iris (veil, rainbow), Plutus (crown, coin), Apollo (laurel, lyre) and Janus (doorway arch, key).
-- Licences: the CC0 scans need no attribution but are credited anyway; each CC BY scan is credited in `ASSET-LICENSE` and in the attribution section below with author, title, licence, URL, retrieval date and what was modified (decimated, cropped, re-pointed). The attribution section is added together with the files.
+- One scan per god, `docs/mocks/models/<god id>.glb`: apollo, dionysus, janus, hephaestus, atlas, themis, iris, plutus. Each file is geometry only (positions and indices; textures, materials and normals dropped), decimated to about 15k triangles, about 165 to 220 KB each and about 1.4 MB in total. Budget for any future model: at most 20k triangles and 250 KB per file, 2 MB for the set. A scan is loaded only when its god is selected (lazy) and cached for the session; nothing is fetched from anywhere else at runtime.
+- Models load over http only (browsers block `fetch` from `file://`); without them the procedural bust is used.
+- Scan kinds: `head` (a head only, a procedural body is added: Hephaestus, Iris, Plutus) and `bust` (the file is shown as the whole figure: the rest; Janus is a herm shown large and alone). Statues (Apollo, Dionysus, Hephaestus, Atlas) were cropped when the file was made, and `SCANS` can crop further at load time with a box in fractions of the model's extent (also `?crop=y0,y1,x0,x1,z0,z1`). Each scan has its own yaw, scale and offset in `SCANS` in `3d-gods.js`; `?yaw=`, `?scale=` and `?dy=` override them for the god being viewed.
+- Where a scan carries an attribute (Vulcan's spear and arm, Atlas's globe, Bacchus's curls), the in-code attribute is used only as a procedural stand-in while no scan is loaded. Code attributes stay for Themis (blindfold, scales), Iris (veil, rainbow), Plutus (crown, coin), Apollo (laurel, lyre) and Janus (doorway arch, key). Janus's scan is a single head with two faces.
 - When a model arrives while the bust is showing, the bust dissolves to the orb and re-forms from the scan, so there is no pop.
+
+Model attribution
+
+Sources are CC0 or CC BY 4.0 Sketchfab models, downloaded by the repository owner; the full entries (retrieval date, processing) are in `ASSET-LICENSE`. Every file was modified: decimated, cropped where noted, re-pointed (geometry only).
+
+| God        | Title                                            | Author or holder        | Licence   | Source                                                                                                           |
+| ---------- | ------------------------------------------------ | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| Apollo     | 2004.30 Apollo the Python-Slayer                 | Cleveland Museum of Art | CC0 1.0   | https://sketchfab.com/3d-models/200430-apollo-the-python-slayer-6267c784116c4b59821fdf8d09bc0298                 |
+| Dionysus   | Bacchus                                          | Musée Saint-Raymond     | CC0 1.0   | https://sketchfab.com/3d-models/bacchus-aa8748acb2594a37a372fe78dc41235d                                         |
+| Janus      | Janus                                            | danielpett              | CC BY 4.0 | https://sketchfab.com/3d-models/janus-7cf073c057ac4488b88d3911d4b2b01a                                           |
+| Hephaestus | Vulcan Statue, Birmingham, Alabama.              | caw3rd (Sketchfab)      | CC BY 4.0 | https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5                |
+| Atlas      | Atlas                                            | LastRights93            | CC BY 4.0 | https://sketchfab.com/3d-models/atlas-62db2034e9a64301a961ad8dfc08cc93                                           |
+| Themis     | 1925.943 Portrait Of The Empress Claudia Octavia | Cleveland Museum of Art | CC0 1.0   | https://sketchfab.com/3d-models/1925943-portrait-of-the-empress-claudia-octavia-9b2fbfe552ac4107a3623e19c1ddb4e4 |
+| Iris       | 1926.53 Head of Aphrodite                        | Cleveland Museum of Art | CC BY 4.0 | https://sketchfab.com/3d-models/192653-head-of-aphrodite-2774d71b9211479a9ea49b519ca4ce2f                        |
+| Plutus     | 1952.260 Bust                                    | Cleveland Museum of Art | CC0 1.0   | https://sketchfab.com/3d-models/1952260-bust-fc442ce1d47a49b0aea6ee03e86b5080                                    |
+
+Credit lines for the CC BY works (licence: https://creativecommons.org/licenses/by/4.0/): "Janus" by danielpett; "Vulcan Statue, Birmingham, Alabama." by caw3rd (Sketchfab); "Atlas" by LastRights93; "1926.53 Head of Aphrodite" by Cleveland Museum of Art. Each is modified as described above.
 
 ### Performance notes
 
