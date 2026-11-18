@@ -12,6 +12,7 @@ module.exports = [
       'test-results/**',
       'e2e-artifacts/**',
       'playwright-report/**',
+      'docs/mocks/vendor/**',
     ],
   },
   js.configs.recommended,
@@ -27,7 +28,7 @@ module.exports = [
   {
     // Mock stage scripts: classic browser scripts, not modules.
     files: ['docs/mocks/**/*.js'],
-    languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
+    languageOptions: { sourceType: 'script', globals: { ...globals.browser, THREE: 'readonly' } },
   },
   {
     // Playwright specs: node (commonjs) plus browser globals for page.evaluate() callbacks.

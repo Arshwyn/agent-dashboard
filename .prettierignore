@@ -6,3 +6,4 @@ coverage
 test-results
 e2e-artifacts
 playwright-report
+docs/mocks/vendor
