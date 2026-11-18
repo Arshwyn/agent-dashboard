@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hephaestus 3D prototype (layout B)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="mock.css" />
+    <style>
+      :root {
+        --bg: #0e1116;
+        --surface: #161b22;
+        --surface-2: #1f2630;
+        --text: #e8ecf2;
+        --muted: #9ba6b5;
+        --accent: #8ab4ff;
+        --on-accent: #0b1220;
+        --line: #2a3340;
+        --glow: rgba(138, 180, 255, 0.5);
+        --bubble-agent: #1b222c;
+        --bubble-user: #8ab4ff;
+        --on-bubble-user: #0b1220;
+        --font-display: Georgia, 'Times New Roman', serif;
+        --stage-bg: #07090d;
+        --stage-text: #eef1f6;
+        --stage-muted: #a9b3c2;
+        --stage-a: #ff9a1f;
+        --stage-b: #ff5a1f;
+        --stage-c: #ffd08a;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) {
+          --bg: #f4f5f8;
+          --surface: #ffffff;
+          --surface-2: #eceff4;
+          --text: #161a22;
+          --muted: #566074;
+          --accent: #2a55c4;
+          --on-accent: #ffffff;
+          --line: #d6dbe5;
+          --glow: rgba(42, 85, 196, 0.3);
+          --bubble-agent: #ffffff;
+          --bubble-user: #2a55c4;
+          --on-bubble-user: #ffffff;
+          color-scheme: light;
+        }
+      }
+      :root[data-theme='light'] {
+        --bg: #f4f5f8;
+        --surface: #ffffff;
+        --surface-2: #eceff4;
+        --text: #161a22;
+        --muted: #566074;
+        --accent: #2a55c4;
+        --on-accent: #ffffff;
+        --line: #d6dbe5;
+        --glow: rgba(42, 85, 196, 0.3);
+        --bubble-agent: #ffffff;
+        --bubble-user: #2a55c4;
+        --on-bubble-user: #ffffff;
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+      }
+      .rail {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+      .rail button {
+        display: grid;
+        justify-items: center;
+        gap: var(--s-1);
+        min-height: var(--tap);
+        padding: var(--s-2) var(--s-1);
+        border: 0;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: var(--fs-0);
+        cursor: pointer;
+      }
+      .rail button[aria-pressed='true'] {
+        background: var(--surface-2);
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px var(--a);
+      }
+      .rail .dot {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, var(--c), var(--a) 42%, var(--b) 70%, transparent 74%);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--a) 55%, transparent);
+      }
+      .stage3d {
+        position: relative;
+        height: 380px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background:
+          radial-gradient(
+            ellipse at 50% 58%,
+            color-mix(in srgb, var(--stage-a) 16%, transparent),
+            transparent 62%
+          ),
+          linear-gradient(180deg, #0b0d12, var(--stage-bg));
+        color: var(--stage-text);
+        cursor: pointer;
+        touch-action: pan-y;
+        transition: box-shadow 0.25s ease;
+      }
+      .stage3d[data-gl='none'] {
+        cursor: default;
+      }
+      .stage3d:hover,
+      .stage3d:focus-visible {
+        box-shadow:
+          0 0 0 1px var(--stage-a),
+          0 0 32px color-mix(in srgb, var(--stage-a) 45%, transparent);
+      }
+      .stage3d:focus-visible {
+        outline: 2px solid var(--stage-c);
+        outline-offset: 3px;
+      }
+      .stage3d canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .stage3d[data-gl='none'] canvas {
+        display: none;
+      }
+      .stage3d .nogl {
+        position: absolute;
+        inset: 0;
+        display: none;
+        place-content: center;
+        margin: 0;
+        padding: var(--s-4);
+        text-align: center;
+        color: var(--stage-muted);
+      }
+      .stage3d:not([data-gl='ok']) .nogl {
+        display: grid;
+      }
+      .stage3d .info {
+        position: absolute;
+        left: var(--s-4);
+        top: var(--s-3);
+        pointer-events: none;
+      }
+      .stage3d .info h3 {
+        font-size: var(--fs-2);
+      }
+      .stage3d .info p {
+        margin: 0;
+        color: var(--stage-muted);
+        font-size: var(--fs-0);
+      }
+      .stage3d .status {
+        color: var(--stage-muted);
+      }
+      .stage3d .hint {
+        position: absolute;
+        left: 50%;
+        bottom: var(--s-3);
+        transform: translateX(-50%);
+        margin: 0;
+        padding: var(--s-1) var(--s-4);
+        border: 1px solid color-mix(in srgb, var(--stage-a) 60%, transparent);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.45);
+        color: var(--stage-text);
+        font-size: var(--fs-0);
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.4s ease;
+      }
+      .stage3d[data-hinted='true'] .hint {
+        opacity: 0.55;
+      }
+      .stage3d[data-gl='none'] .hint {
+        display: none;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .stage3d:not([data-hinted='true']) .hint {
+          animation: hint-pulse 2.2s ease-in-out infinite;
+        }
+      }
+      @keyframes hint-pulse {
+        50% {
+          opacity: 0.6;
+        }
+      }
+      .stage3d .perf {
+        position: absolute;
+        right: var(--s-3);
+        top: var(--s-3);
+        margin: 0;
+        max-width: 55%;
+        text-align: right;
+        font: 11px/1.3 var(--font-mono);
+        color: var(--stage-muted);
+        pointer-events: none;
+      }
+      .status[data-now='thinking']::before {
+        background: var(--stage-b, var(--accent));
+        opacity: 0.8;
+      }
+      .status[data-now='speaking']::before {
+        background: var(--stage-a, var(--accent));
+        box-shadow: 0 0 8px var(--stage-a, var(--glow));
+      }
+      @media (min-width: 900px) {
+        .stage3d {
+          height: 460px;
+        }
+        .rail {
+          display: flex;
+          flex-direction: column;
+        }
+        .rail button {
+          padding-block: var(--s-3);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <div>
+        <a class="back" href="index.html">&larr; All mocks</a>
+        <h1 data-god-name>Hephaestus</h1>
+        <small style="color: var(--muted)"
+          >3D prototype, layout B. A glass orb that expands into a bust on click.</small
+        >
+      </div>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Activity (stands in for the chat stream)">
+          <span class="seg-label">Activity</span>
+          <button type="button" data-state-set="idle" aria-pressed="true">Idle</button>
+          <button type="button" data-state-set="thinking" aria-pressed="false">Thinking</button>
+          <button type="button" data-state-set="speaking" aria-pressed="false">Speaking</button>
+        </div>
+        <div class="seg" role="group" aria-label="Theme">
+          <span class="seg-label">Theme</span>
+          <button type="button" data-theme-set="auto" aria-pressed="true">System</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <section class="sec" id="chat">
+        <h2>3D prototype, all eight gods</h2>
+        <p class="note">
+          Pick a god in the rail. Click the body (or focus it and press Enter or Space) to expand the orb into
+          the bust; click again or press Esc to collapse. Move the pointer over it for parallax. The Activity
+          switch stands in for the chat stream.
+        </p>
+        <div class="shell">
+          <nav class="rail" aria-label="Gods">
+            <button
+              type="button"
+              data-god="hephaestus"
+              aria-pressed="true"
+              style="--a: #ff9a1f; --b: #ff5a1f; --c: #ffd08a"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Hephaestus</span></button
+            ><button
+              type="button"
+              data-god="themis"
+              aria-pressed="false"
+              style="--a: #9bb8ff; --b: #e9c46a; --c: #f2f6ff"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Themis</span></button
+            ><button
+              type="button"
+              data-god="janus"
+              aria-pressed="false"
+              style="--a: #5ad1d6; --b: #c27bf0; --c: #e8eef7"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Janus</span></button
+            ><button
+              type="button"
+              data-god="atlas"
+              aria-pressed="false"
+              style="--a: #6aa0ff; --b: #3b5bd6; --c: #e0ecff"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Atlas</span></button
+            ><button
+              type="button"
+              data-god="plutus"
+              aria-pressed="false"
+              style="--a: #3fbf7a; --b: #d6a82a; --c: #eaffd8"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Plutus</span></button
+            ><button
+              type="button"
+              data-god="apollo"
+              aria-pressed="false"
+              style="--a: #ffd24a; --b: #8fbf6a; --c: #fff3bd"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Apollo</span></button
+            ><button
+              type="button"
+              data-god="iris"
+              aria-pressed="false"
+              style="--a: #ff7ac8; --b: #5ad1ff; --c: #ffe27a"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Iris</span></button
+            ><button
+              type="button"
+              data-god="dionysus"
+              aria-pressed="false"
+              style="--a: #b04ad6; --b: #e0456a; --c: #f0d0ff"
+            >
+              <span class="dot" aria-hidden="true"></span><span>Dionysus</span>
+            </button>
+          </nav>
+          <div class="main-b">
+            <div
+              class="stage3d"
+              id="stage3d"
+              role="button"
+              tabindex="0"
+              aria-expanded="false"
+              aria-label="Hephaestus body"
+              aria-describedby="hint"
+              data-state="idle"
+              data-gl="none"
+            >
+              <canvas aria-hidden="true"></canvas>
+              <p class="nogl">3D view needs WebGL 2</p>
+              <div class="info">
+                <h3 data-god-name>Hephaestus</h3>
+                <p data-god-role>Builder</p>
+                <span class="status" data-status data-now="idle">Idle</span>
+              </div>
+              <p class="perf" id="perf"></p>
+              <p class="hint" id="hint">Click the orb to expand</p>
+            </div>
+            <section class="chat" aria-label="Chat">
+              <div class="chat-head">
+                <strong data-god-name>Hephaestus</strong>
+                <span class="status" data-status data-now="idle">Idle</span>
+              </div>
+              <div class="transcript">
+                <div class="msg me">
+                  <small>You</small><span data-god-you>Is the dashboard change ready for review?</span>
+                </div>
+                <div class="msg">
+                  <small data-god-name>Hephaestus</small><span data-god-reply>Built and pushed.</span>
+                </div>
+              </div>
+              <div class="composer">
+                <input type="text" aria-label="Message" placeholder="Message (mock, does nothing)" />
+                <button type="button">Send</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="vendor/three.min.js"></script>
+    <script src="3d-gods.js"></script>
+  </body>
+</html>
