@@ -25,6 +25,11 @@ module.exports = [
     languageOptions: { sourceType: 'module', globals: { ...globals.browser } },
   },
   {
+    // Mock stage scripts: classic browser scripts, not modules.
+    files: ['docs/mocks/**/*.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
+  },
+  {
     // Playwright specs: node (commonjs) plus browser globals for page.evaluate() callbacks.
     files: ['e2e/**/*.js'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
