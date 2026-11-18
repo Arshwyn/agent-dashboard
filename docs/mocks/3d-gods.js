@@ -115,13 +115,15 @@
   var SCANS = {
     apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     dionysus: { kind: 'bust', yaw: -Math.PI / 2, scale: 1, dy: 0 },
-    janus: { kind: 'head', yaw: 0, scale: 1, dy: 0 }, // one head with two faces: no duplicate
-    hephaestus: { kind: 'bust', yaw: -Math.PI / 2, scale: 1, dy: 0 },
-    atlas: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    iris: { kind: 'head', yaw: 0, scale: 1.45, dy: -0.12 },
-    plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    // one head with two faces, shown large and alone (a herm has no shoulders); turn it to see one face frontally
+    janus: { kind: 'bust', yaw: Math.PI / 2 - 0.5, scale: 0.85, dy: 0, crop: { y: [0.12, 1] } },
+    hephaestus: { kind: 'head', yaw: -Math.PI / 2, scale: 1, dy: 0, crop: { y: [0.42, 1], x: [0.25, 0.85] } }, // head only: drops the statue's stray arm and ground
+    atlas: { kind: 'bust', yaw: 0, scale: 0.9, dy: 0 }, // the figure bends forward under the globe: no head is visible in this scan
+    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0, crop: { y: [0.13, 1] } }, // drops the display rod under the bust
+    iris: { kind: 'head', yaw: 0, scale: 1, dy: 0, crop: { y: [0.18, 1] } }, // drops the neck stump
+    plutus: { kind: 'head', yaw: 0, scale: 1, dy: 0 }, // the scan is a head, not a bust
   };
+
   ['yaw', 'scale', 'dy'].forEach(function (k) {
     var v = parseFloat(new URLSearchParams(window.location.search).get(k));
     if (isFinite(v)) {
@@ -455,12 +457,12 @@
     key: {
       wire: function (g) {
         var k = new THREE.Group();
-        k.add(lineObj(circlePts(-0.18, -0.96, 0.46, 0.1, 18), true, 'a', 0.8));
+        k.add(lineObj(circlePts(-0.18, 0, 0.46, 0.1, 18), true, 'a', 0.8));
         k.add(
           lineObj(
             [
-              [-0.08, -0.96, 0.46],
-              [0.34, -0.96, 0.46],
+              [-0.08, 0, 0.46],
+              [0.34, 0, 0.46],
             ],
             false,
             'b',
@@ -470,8 +472,8 @@
         k.add(
           lineObj(
             [
-              [0.26, -0.96, 0.46],
-              [0.26, -1.08, 0.46],
+              [0.26, 0, 0.46],
+              [0.26, -0.12, 0.46],
             ],
             false,
             'b',
@@ -481,14 +483,16 @@
         k.add(
           lineObj(
             [
-              [0.33, -0.96, 0.46],
-              [0.33, -1.04, 0.46],
+              [0.33, 0, 0.46],
+              [0.33, -0.08, 0.46],
             ],
             false,
             'b',
             0.8,
           ),
         );
+        k.position.set(1.2, -0.3, 0.2);
+        k.rotation.z = Math.PI / 2;
         g.add(k);
       },
     },
@@ -796,7 +800,7 @@
       'attribute vec3 aNorm;',
       'attribute vec4 aRnd;',
       'uniform float uMorph, uTime, uPx, uThink, uSpeak;',
-      'varying float vMix, vT, vY, vDepth, vRim, vFace;',
+      'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float t = clamp((uMorph - aRnd.x * 0.45) / 0.55, 0.0, 1.0);',
       '  t = t * t * (3.0 - 2.0 * t);',
@@ -816,6 +820,7 @@
       '  float nd = dot(n, normalize(-mv.xyz));',
       '  vRim = pow(1.0 - abs(nd), 2.2);',
       '  vFace = nd > 0.0 ? 1.0 : 0.35;',
+      '  vLit = max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);',
       '  gl_PointSize = aRnd.y * uPx / -mv.z * (1.0 + mid * 0.5) * (1.0 - 0.15 * t);',
       '  gl_Position = projectionMatrix * mv;',
       '  vMix = aRnd.z; vT = t; vY = p.y; vDepth = clamp(1.25 - (-mv.z - 3.0) * 0.28, 0.35, 1.3);',
@@ -824,7 +829,7 @@
     fragmentShader: [
       'uniform vec3 uA, uB, uC;',
       'uniform float uTime, uSpeak, uThink;',
-      'varying float vMix, vT, vY, vDepth, vRim, vFace;',
+      'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float d = length(gl_PointCoord - 0.5);',
       '  if (d > 0.5) discard;',
@@ -835,7 +840,7 @@
       '  col = mix(col, uC, 0.25 + sweep * 0.7);',
       '  col = mix(col, uC, vRim * vT * 0.7);',
       '  float k = mix(1.0 + uThink * 0.5, scan + sweep * 1.5 + uSpeak * 0.25 + vRim * 0.9 + 0.25, vT);',
-      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace, vT);',
+      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace * (0.55 + 1.1 * vLit), vT);',
       '  gl_FragColor = vec4(col * alpha, alpha);',
       '}',
     ].join('\n'),
@@ -1064,11 +1069,11 @@
       });
     }
     var full = kind !== 'head'; // a bust fills the whole figure; a head gets a procedural body
-    var s = ((full ? 2.3 : 1.08) / (maxY - minY || 1)) * (cfg.scale || 1);
+    var s = ((full ? 2.3 : 1.4) / (maxY - minY || 1)) * (cfg.scale || 1);
     var cx = (minX + maxX) / 2;
     var cz = (minZ + maxZ) / 2;
     var oy = (minY + maxY) / 2;
-    var cy = (full ? 0 : HEAD_C[1]) + (cfg.dy || 0);
+    var cy = (full ? 0 : 0.5) + (cfg.dy || 0);
     var cum = new Float32Array(tris.length);
     var total = 0;
     var cos = Math.cos(yaw);
@@ -1358,7 +1363,7 @@
     camera.userData.dist = Math.max(4.3, 2.3 / (camera.aspect * Math.tan((CFG.fov * Math.PI) / 360)));
     camera.updateProjectionMatrix();
     // small stages get bigger points so a bust stays readable (the camera also sits further back there)
-    pu.uPx.value = ((h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360))) * (w < 600 ? 1.4 : 1);
+    pu.uPx.value = ((h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360))) * (w < 600 ? 2.1 : 1);
     requestStatic();
   }
 
