@@ -10,7 +10,6 @@
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   var params = new URLSearchParams(window.location.search);
 
-  // ---------- configuration (kept in one object so other agents can reuse it later) ----------
   var CFG = {
     particles: 7000,
     fov: 40,
@@ -23,11 +22,14 @@
   // ---------- helpers ----------
   var seed = 7;
   function rnd() {
-    // mulberry32: deterministic so the shape is the same on every load
+    // mulberry32: deterministic so the shapes are the same on every load
     seed = (seed + 0x6d2b79f5) | 0;
     var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  function gauss() {
+    return ((rnd() + rnd() + rnd()) / 3) * 2 - 1; // bell-ish, -1..1
   }
 
   function cssColor(name) {
@@ -55,44 +57,45 @@
     var a = rnd() * 2 - 1;
     var b = rnd() * 2 - 1;
     var ax = f >> 1;
-    var s = f & 1 ? 1 : -1;
     var p = [0, 0, 0];
-    p[ax] = s;
+    p[ax] = f & 1 ? 1 : -1;
     p[(ax + 1) % 3] = a;
     p[(ax + 2) % 3] = b;
     return [c[0] + p[0] * h[0], c[1] + p[1] * h[1], c[2] + p[2] * h[2]];
   }
 
-  function ringPoint(radius, tiltX, tiltZ) {
+  // a point on a tilted circle with soft thickness (gaussian), for particle bands
+  function ringPoint(radius, tiltX, tiltZ, thick) {
     var a = rnd() * Math.PI * 2;
-    var x = Math.cos(a) * radius;
-    var y = (rnd() - 0.5) * 0.04;
-    var z = Math.sin(a) * radius;
+    var rr = radius + gauss() * thick;
+    var x = Math.cos(a) * rr;
+    var y = gauss() * thick;
+    var z = Math.sin(a) * rr;
     var y1 = y * Math.cos(tiltX) - z * Math.sin(tiltX);
     var z1 = y * Math.sin(tiltX) + z * Math.cos(tiltX);
     return [x * Math.cos(tiltZ) - y1 * Math.sin(tiltZ), x * Math.sin(tiltZ) + y1 * Math.cos(tiltZ), z1];
   }
 
   var RINGS = [
-    { r: 1.3, tx: 1.15, tz: 0.25, spin: 0.18 },
-    { r: 0.95, tx: -0.7, tz: 0.6, spin: -0.27 },
-    { r: 0.66, tx: 0.35, tz: -0.9, spin: 0.4 },
+    { r: 1.3, tx: 1.15, tz: 0.25, speed: 0.16 },
+    { r: 0.95, tx: -0.7, tz: 0.6, speed: -0.24 },
+    { r: 0.66, tx: 0.35, tz: -0.9, speed: 0.34 },
   ];
 
-  // Idle shape: particle shell, three tilted rings, a dense core and a little loose dust.
-  function orbPoint() {
+  // ---------- orb shapes, one per variant ----------
+  // A: particle-band halo. A thin shell, three soft particle bands and a dense core.
+  function orbA() {
     var r = rnd();
     var p;
-    if (r < 0.34) {
+    if (r < 0.18) {
       p = unitVec();
-      var k = 1.05 + (rnd() - 0.5) * 0.04;
-      return [p[0] * k, p[1] * k, p[2] * k];
+      return [p[0] * 1.05, p[1] * 1.05, p[2] * 1.05];
     }
-    if (r < 0.66) {
+    if (r < 0.76) {
       var ring = RINGS[Math.floor(rnd() * RINGS.length)];
-      return ringPoint(ring.r, ring.tx, ring.tz);
+      return ringPoint(ring.r, ring.tx, ring.tz, 0.045);
     }
-    if (r < 0.86) {
+    if (r < 0.9) {
       p = unitVec();
       var d = Math.pow(rnd(), 0.6) * 0.3;
       return [p[0] * d, p[1] * d, p[2] * d];
@@ -102,57 +105,106 @@
     return [p[0] * q, p[1] * q * 0.7, p[2] * q];
   }
 
-  // Active shape: head with smith's cap and beard, neck, shoulders, anvil on the chest, a halo ring.
+  // B: soft glass sphere. Sparkle shell, a luminous interior and a little dust.
+  function orbB() {
+    var r = rnd();
+    var p = unitVec();
+    if (r < 0.38) return [p[0] * 1.02, p[1] * 1.02, p[2] * 1.02];
+    if (r < 0.8) {
+      var d = Math.pow(rnd(), 0.5) * 0.9;
+      return [p[0] * d, p[1] * d, p[2] * d];
+    }
+    var q = 1.15 + rnd() * 0.7;
+    return [p[0] * q, p[1] * q * 0.8, p[2] * q];
+  }
+
+  // C: nebula. Three spiral arms, a bright bulge and loose dust, tilted for depth.
+  function orbC() {
+    var r = rnd();
+    var x;
+    var y;
+    var z;
+    if (r < 0.66) {
+      var arm = Math.floor(rnd() * 3);
+      var rr = 0.12 + Math.pow(rnd(), 0.75) * 1.3;
+      var ang = rr * 2.6 + arm * 2.094 + gauss() * 0.28;
+      x = Math.cos(ang) * rr;
+      z = Math.sin(ang) * rr;
+      y = gauss() * 0.1 * (1.4 - rr);
+    } else if (r < 0.9) {
+      var v = unitVec();
+      var d = Math.pow(rnd(), 0.7) * 0.42;
+      x = v[0] * d;
+      y = v[1] * d;
+      z = v[2] * d;
+    } else {
+      var w = unitVec();
+      var q = 1.2 + rnd() * 0.7;
+      x = w[0] * q;
+      y = w[1] * q * 0.6;
+      z = w[2] * q;
+    }
+    var tilt = 0.55; // rotate about X
+    return [x, y * Math.cos(tilt) - z * Math.sin(tilt), y * Math.sin(tilt) + z * Math.cos(tilt)];
+  }
+
+  // ---------- bust shape (procedural stand-in for a scanned model) ----------
+  // Round cranium, tapered jaw, brow, nose and chin, a flared neck, sloping trapezius lines,
+  // deltoids, an upper chest, and an anvil plate on the chest (the Hephaestus attribute).
   function bustPoint() {
     var r = rnd();
     var p;
-    if (r < 0.32) {
-      p = ellipsoid([0, 0.62, 0], [0.4, 0.52, 0.44]);
-      if (p[1] < 0.62) {
-        // narrow the jaw
-        var jaw = 0.78 + 0.22 * (1 - Math.min(1, (0.62 - p[1]) / 0.52));
-        p[0] *= jaw;
-        p[2] *= jaw;
-      }
-      if (p[1] > 1.0) {
-        p[0] *= 1.07;
-        p[2] *= 1.07;
-        p[1] += 0.03;
-      } else if (p[1] < 0.5 && p[2] > 0.08) {
-        p[2] *= 1.12;
-        p[1] -= 0.05;
-      }
-      return p;
-    }
+    var k;
     if (r < 0.4) {
-      var a = rnd() * Math.PI * 2;
-      return [Math.cos(a) * 0.16, -0.34 + rnd() * 0.5, Math.sin(a) * 0.17];
-    }
-    if (r < 0.76) {
-      // upper half of a wide ellipsoid: sloping shoulders that close at the bottom edge
-      p = ellipsoid([0, -1.15, 0], [1.0, 0.85, 0.5]);
-      p[1] = -1.15 + Math.abs(p[1] + 1.15);
+      p = ellipsoid([0, 0.64, -0.02], [0.4, 0.5, 0.45]);
+      if (p[1] < 0.64) {
+        k = (0.64 - p[1]) / 0.5;
+        p[0] *= 1 - 0.3 * k * k;
+        if (p[2] > 0) p[2] *= 1 - 0.2 * k;
+      }
       return p;
     }
-    if (r < 0.88) {
+    if (r < 0.42) return ellipsoid([0, 0.57, 0.45], [0.05, 0.12, 0.07]); // nose
+    if (r < 0.44) return ellipsoid([0, 0.2, 0.34], [0.11, 0.06, 0.08]); // chin
+    if (r < 0.47) return ellipsoid([0, 0.76, 0.38], [0.29, 0.04, 0.07]); // brow
+    if (r < 0.56) {
+      var a = rnd() * Math.PI * 2;
+      var y = -0.42 + rnd() * 0.62;
+      var rad = 0.16 + (0.13 * Math.max(0, -0.05 - y)) / 0.37;
+      return [Math.cos(a) * rad, y, Math.sin(a) * rad * 0.95];
+    }
+    if (r < 0.64) {
+      var s = rnd() < 0.5 ? -1 : 1;
+      var t = rnd();
+      var v = unitVec();
+      var tube = 0.11 * (1 - 0.5 * t);
+      return [s * (0.17 + t * 0.7) + v[0] * tube, -0.3 - t * 0.38 + v[1] * tube, v[2] * tube * 1.2];
+    }
+    if (r < 0.84) {
+      p = ellipsoid([0, -1.1, 0], [0.88, 0.72, 0.42]);
+      p[1] = -1.1 + Math.abs(p[1] + 1.1);
+      return p;
+    }
+    if (r < 0.89) return ellipsoid([rnd() < 0.5 ? -0.84 : 0.84, -0.76, 0], [0.17, 0.2, 0.2]);
+    if (r < 0.95) {
       var boxes = [
         [
-          [0, -0.96, 0.42],
-          [0.5, 0.07, 0.24],
+          [0, -0.97, 0.4],
+          [0.46, 0.06, 0.2],
         ],
         [
-          [0, -0.84, 0.42],
-          [0.15, 0.08, 0.17],
+          [0, -0.86, 0.4],
+          [0.14, 0.07, 0.15],
         ],
         [
-          [0, -0.68, 0.42],
-          [0.62, 0.09, 0.2],
+          [0, -0.72, 0.4],
+          [0.58, 0.08, 0.18],
         ],
       ];
       var b = boxes[Math.floor(rnd() * boxes.length)];
       return boxSurface(b[0], b[1]);
     }
-    return ringPoint(1.25, 1.45, 0.1);
+    return ringPoint(1.25, 1.45, 0.1, 0.03);
   }
 
   // ---------- capability checks ----------
@@ -166,16 +218,36 @@
   }
 
   var flatBtns = document.querySelectorAll('[data-renderer-set]');
+  var orbBtns = document.querySelectorAll('[data-orb-set]');
+  function pressed(btns, attr, value) {
+    btns.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute(attr) === value ? 'true' : 'false');
+    });
+  }
+
   function setRenderer(kind, note) {
     stage.setAttribute('data-renderer', kind);
-    flatBtns.forEach(function (b) {
-      b.setAttribute('aria-pressed', b.getAttribute('data-renderer-set') === kind ? 'true' : 'false');
-    });
+    pressed(flatBtns, 'data-renderer-set', kind);
     if (note) perfEl.textContent = note;
     else if (kind === 'flat') perfEl.textContent = 'flat renderer (SVG/CSS)';
     if (kind === 'flat') stopLoop();
     else if (ready) startLoop();
   }
+
+  // the orb variant also tints the flat fallback (CSS reads data-orb)
+  function setOrbAttr(k) {
+    stage.setAttribute('data-orb', k);
+    pressed(orbBtns, 'data-orb-set', k);
+  }
+  var variant = /^[abc]$/.test(params.get('orb') || '') ? params.get('orb') : 'a';
+  setOrbAttr(variant);
+  orbBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      variant = btn.getAttribute('data-orb-set');
+      setOrbAttr(variant);
+      if (ready) applyVariant();
+    });
+  });
 
   if (typeof THREE === 'undefined' || !webglOk() || params.has('flat')) {
     perfEl.textContent = params.has('flat') ? 'flat renderer (forced)' : 'flat renderer (no WebGL)';
@@ -207,33 +279,44 @@
     return new THREE.Color().setRGB(t[0], t[1], t[2]);
   }
 
+  // uniforms shared by every orb shader
+  var U = {
+    uTime: { value: 0 },
+    uOrb: { value: 1 }, // 1 = full orb, falls when the bust takes over
+    uThink: { value: 0 },
+    uA: { value: new THREE.Vector3(toneA[0], toneA[1], toneA[2]) },
+    uB: { value: new THREE.Vector3(toneB[0], toneB[1], toneB[2]) },
+    uC: { value: new THREE.Vector3(toneC[0], toneC[1], toneC[2]) },
+  };
+
   // One Points object carries the whole body: each particle knows its orb and its bust position.
   var N = CFG.particles;
-  var posOrb = new Float32Array(N * 3);
+  var orbPos = { a: new Float32Array(N * 3), b: new Float32Array(N * 3), c: new Float32Array(N * 3) };
   var posBust = new Float32Array(N * 3);
   var rndAttr = new Float32Array(N * 4);
   for (var i = 0; i < N; i++) {
-    var o = orbPoint();
-    var b = bustPoint();
-    posOrb.set(o, i * 3);
-    posBust.set(b, i * 3);
+    orbPos.a.set(orbA(), i * 3);
+    orbPos.b.set(orbB(), i * 3);
+    orbPos.c.set(orbC(), i * 3);
+    posBust.set(bustPoint(), i * 3);
     rndAttr[i * 4] = rnd();
     rndAttr[i * 4 + 1] = 0.045 + rnd() * rnd() * 0.1;
     rndAttr[i * 4 + 2] = rnd();
     rndAttr[i * 4 + 3] = rnd();
   }
   var pg = new THREE.BufferGeometry();
-  pg.setAttribute('position', new THREE.BufferAttribute(posOrb, 3));
+  pg.setAttribute('position', new THREE.BufferAttribute(orbPos[variant].slice(), 3));
   pg.setAttribute('aBust', new THREE.BufferAttribute(posBust, 3));
   pg.setAttribute('aRnd', new THREE.BufferAttribute(rndAttr, 4));
 
   var pu = {
     uMorph: { value: 0 },
-    uTime: { value: 0 },
+    uTime: U.uTime,
+    uThink: U.uThink,
     uPx: { value: 600 },
-    uA: { value: new THREE.Vector3(toneA[0], toneA[1], toneA[2]) },
-    uB: { value: new THREE.Vector3(toneB[0], toneB[1], toneB[2]) },
-    uC: { value: new THREE.Vector3(toneC[0], toneC[1], toneC[2]) },
+    uA: U.uA,
+    uB: U.uB,
+    uC: U.uC,
     uSpeak: { value: 0 },
   };
 
@@ -245,28 +328,31 @@
     vertexShader: [
       'attribute vec3 aBust;',
       'attribute vec4 aRnd;',
-      'uniform float uMorph, uTime, uPx;',
+      'uniform float uMorph, uTime, uPx, uThink;',
       'varying float vMix, vT, vY, vDepth;',
       'void main() {',
       '  float t = clamp((uMorph - aRnd.x * 0.45) / 0.55, 0.0, 1.0);',
       '  t = t * t * (3.0 - 2.0 * t);',
-      '  float ang = uTime * 0.12 * (0.4 + aRnd.w) * (1.0 - t);',
+      '  float ang = uTime * 0.12 * (0.4 + aRnd.w) * (1.0 + uThink * 3.0) * (1.0 - t);',
       '  vec3 a = position;',
       '  a.xz = mat2(cos(ang), sin(ang), -sin(ang), cos(ang)) * a.xz;',
+      '  a *= 1.0 - 0.14 * uThink;',
       '  vec3 p = mix(a, aBust, t);',
       '  float mid = sin(t * 3.14159);',
       '  p += normalize(a + 1e-3) * mid * 0.55 * aRnd.w;',
       '  p.xz += vec2(-p.z, p.x) * mid * 0.9 * (aRnd.w - 0.5);',
       '  p *= 1.0 + 0.018 * sin(uTime * 1.4 + aRnd.w * 6.28) * (1.0 - t);',
+      '  float g = step(0.975, fract(sin(floor(p.y * 14.0) * 12.9898 + floor(uTime * 6.0) * 78.233) * 43758.5));',
+      '  p.x += g * 0.05 * t;',
       '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
-      '  gl_PointSize = aRnd.y * uPx / -mv.z * (1.0 + mid * 0.5) * (1.0 - 0.35 * t);',
+      '  gl_PointSize = aRnd.y * uPx / -mv.z * (1.0 + mid * 0.5) * (1.0 - 0.15 * t);',
       '  gl_Position = projectionMatrix * mv;',
       '  vMix = aRnd.z; vT = t; vY = p.y; vDepth = clamp(1.25 - (-mv.z - 3.0) * 0.28, 0.35, 1.3);',
       '}',
     ].join('\n'),
     fragmentShader: [
       'uniform vec3 uA, uB, uC;',
-      'uniform float uTime, uSpeak;',
+      'uniform float uTime, uSpeak, uThink;',
       'varying float vMix, vT, vY, vDepth;',
       'void main() {',
       '  float d = length(gl_PointCoord - 0.5);',
@@ -276,7 +362,7 @@
       '  float scan = 0.7 + 0.3 * sin(vY * 70.0 - uTime * 2.5);',
       '  float sweep = exp(-pow(fract(uTime * 0.22) * 2.8 - 1.4 - vY, 2.0) * 30.0);',
       '  col = mix(col, uC, 0.25 + sweep * 0.7);',
-      '  float k = mix(1.0, scan + sweep * 1.5 + uSpeak * 0.25, vT);',
+      '  float k = mix(1.0 + uThink * 0.5, scan + sweep * 1.5 + uSpeak * 0.25, vT);',
       '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k;',
       '  gl_FragColor = vec4(col * alpha, alpha);',
       '}',
@@ -313,44 +399,142 @@
     return s;
   }
 
-  function addMat(tone, opacity) {
-    return new THREE.MeshBasicMaterial({
-      color: color(tone),
+  var GLSL_NOISE = [
+    'float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
+    'float noise(vec3 x) {',
+    '  vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);',
+    '  return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),',
+    '             mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);',
+    '}',
+    'float fbm(vec3 p) { return 0.55 * noise(p) + 0.3 * noise(p * 2.1) + 0.15 * noise(p * 4.3); }',
+  ].join('\n');
+
+  function orbMaterial(frag, extra) {
+    var u = { uTime: U.uTime, uOrb: U.uOrb, uThink: U.uThink, uA: U.uA, uB: U.uB, uC: U.uC };
+    Object.keys(extra || {}).forEach(function (k) {
+      u[k] = { value: extra[k] };
+    });
+    return new THREE.ShaderMaterial({
+      uniforms: u,
       transparent: true,
-      opacity: opacity,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      vertexShader: [
+        'varying vec3 vN; varying vec3 vV; varying vec3 vObj;',
+        'void main() {',
+        '  vObj = position;',
+        '  vN = normalize(normalMatrix * normal);',
+        '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '  vV = -mv.xyz;',
+        '  gl_Position = projectionMatrix * mv;',
+        '}',
+      ].join('\n'),
+      fragmentShader: frag,
     });
   }
 
-  // layered rings: a thin bright torus plus a wider faint one as a cheap bloom
-  var ringObjs = RINGS.map(function (cfg, idx) {
-    var g = new THREE.Group();
-    g.rotation.set(cfg.tx, 0, cfg.tz);
-    var spin = new THREE.Group();
-    var core = new THREE.Mesh(
-      new THREE.TorusGeometry(cfg.r, 0.006, 6, 180),
-      addMat(idx === 1 ? toneB : toneA, 0.85),
+  // A: thin comet arcs. Radial profile is a soft bell, the tail fades out, so nothing reads as a hard line.
+  function cometMat(speed, useB, inner, outer) {
+    return orbMaterial(
+      [
+        'uniform float uTime, uOrb, uThink, uSpeed, uInner, uOuter;',
+        'uniform vec3 uA, uB;',
+        'varying vec3 vObj;',
+        'void main() {',
+        '  float rad = length(vObj.xy);',
+        '  float t = clamp((rad - uInner) / (uOuter - uInner), 0.0, 1.0);',
+        '  float radial = pow(sin(t * 3.14159), 2.0);',
+        '  float a = atan(vObj.y, vObj.x) / 6.28318 + 0.5;',
+        '  float phase = fract(a - uTime * uSpeed * (1.0 + uThink * 3.0));',
+        '  float tail = pow(phase, 2.2) * 0.9 + 0.05;',
+        '  vec3 col = ' + (useB ? 'uB' : 'uA') + ' * (0.6 + 0.8 * pow(phase, 8.0));',
+        '  float alpha = radial * tail * 0.55 * uOrb;',
+        '  gl_FragColor = vec4(col * alpha, alpha);',
+        '}',
+      ].join('\n'),
+      { uSpeed: speed, uInner: inner, uOuter: outer },
     );
-    var halo = new THREE.Mesh(
-      new THREE.TorusGeometry(cfg.r, 0.035, 6, 120),
-      addMat(idx === 1 ? toneB : toneA, 0.12),
+  }
+
+  // B: glass sphere. Fresnel rim plus a soft interior glow; no outline anywhere.
+  var glassMat = orbMaterial(
+    [
+      'uniform float uTime, uOrb, uThink;',
+      'uniform vec3 uA, uB, uC;',
+      'varying vec3 vN; varying vec3 vV; varying vec3 vObj;',
+      'void main() {',
+      '  float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.6);',
+      '  float shimmer = 0.85 + 0.15 * sin(vObj.y * 6.0 + uTime * 1.2);',
+      '  vec3 col = mix(uB, uA, f) + uC * 0.15;',
+      '  float alpha = (0.08 + f * 0.42) * shimmer * (1.0 + uThink * 0.5) * uOrb;',
+      '  gl_FragColor = vec4(col * alpha, alpha);',
+      '}',
+    ].join('\n'),
+  );
+
+  // C: plasma. Animated fbm noise on a sphere, thresholded into soft filaments, with a rim.
+  var plasmaMat = orbMaterial(
+    [
+      'uniform float uTime, uOrb, uThink;',
+      'uniform vec3 uA, uB, uC;',
+      'varying vec3 vN; varying vec3 vV; varying vec3 vObj;',
+      GLSL_NOISE,
+      'void main() {',
+      '  float flow = uTime * (0.22 + uThink * 0.6);',
+      '  vec3 p = normalize(vObj) * 2.2 + vec3(flow, -flow * 0.6, flow * 0.4);',
+      '  float n = fbm(p + fbm(p * 1.3 + flow) * 1.4);',
+      '  float cloud = smoothstep(0.25, 0.7, n);',
+      '  float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);',
+      '  vec3 col = mix(uB, uA, n) + uC * pow(cloud, 3.0) * 0.5;',
+      '  float alpha = (cloud * 0.55 + f * 0.25) * (1.0 + uThink * 0.3) * uOrb;',
+      '  gl_FragColor = vec4(col * alpha, alpha);',
+      '}',
+    ].join('\n'),
+  );
+
+  // soft equatorial haze band for B: a wide gaussian, not a ring
+  var hazeBandMat = orbMaterial(
+    [
+      'uniform float uOrb;',
+      'uniform vec3 uA;',
+      'varying vec3 vObj;',
+      'void main() {',
+      '  float r = length(vObj.xy);',
+      '  float a = exp(-pow((r - 1.2) / 0.32, 2.0)) * 0.2 * uOrb;',
+      '  gl_FragColor = vec4(uA * a, a);',
+      '}',
+    ].join('\n'),
+  );
+
+  var groups = { a: new THREE.Group(), b: new THREE.Group(), c: new THREE.Group() };
+  RINGS.forEach(function (cfg, idx) {
+    var inner = cfg.r - 0.06;
+    var outer = cfg.r + 0.06;
+    var m = new THREE.Mesh(
+      new THREE.RingGeometry(inner, outer, 160, 1),
+      cometMat(cfg.speed, idx === 1, inner, outer),
     );
-    core.rotation.x = halo.rotation.x = Math.PI / 2;
-    spin.add(core);
-    spin.add(halo);
-    g.add(spin);
-    world.add(g);
-    return { cfg: cfg, group: g, spin: spin, core: core, halo: halo };
+    m.rotation.set(cfg.tx + Math.PI / 2, 0, cfg.tz);
+    groups.a.add(m);
+  });
+  groups.b.add(new THREE.Mesh(new THREE.SphereGeometry(1.08, 48, 32), glassMat));
+  var band = new THREE.Mesh(new THREE.RingGeometry(0.4, 1.9, 96, 1), hazeBandMat);
+  band.rotation.set(Math.PI / 2 + 0.45, 0, 0.2);
+  groups.b.add(band);
+  groups.c.add(new THREE.Mesh(new THREE.SphereGeometry(0.95, 48, 32), plasmaMat));
+  Object.keys(groups).forEach(function (k) {
+    world.add(groups[k]);
   });
 
-  // orbiting mote
-  var mote = glowSprite(toneC, 0.26, 1);
-  var moteDot = glowSprite([1, 1, 1], 0.07, 1);
-  world.add(mote);
-  world.add(moteDot);
+  // light haze behind everything (wide, faint)
+  var haze = glowSprite(toneB, 3.6, 0.14);
+  world.add(haze);
 
-  // core: a flame-coloured glow plus a small wireframe icosahedron; it travels from the orb centre to the chest
+  // orbiting mote: a soft glow, no hard dot
+  var mote = glowSprite(toneC, 0.3, 0.9);
+  world.add(mote);
+
+  // core: a flame-coloured glow, travelling from the orb centre to the chest; a faint wire gem for variant A
   var coreG = new THREE.Group();
   var coreGlow = glowSprite(toneB, 1.0, 0.9);
   var coreIco = new THREE.LineSegments(
@@ -358,7 +542,7 @@
     new THREE.LineBasicMaterial({
       color: color(toneC),
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.55,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }),
@@ -367,7 +551,7 @@
   coreG.add(coreIco);
   world.add(coreG);
 
-  // hologram wire shell for the bust
+  // hologram wire shells for the bust
   function wire(geom, tone) {
     var m = new THREE.LineSegments(
       new THREE.EdgesGeometry(geom, 1),
@@ -382,22 +566,22 @@
     world.add(m);
     return m;
   }
-  var headWire = wire(new THREE.SphereGeometry(1, 16, 12), toneA);
-  headWire.scale.set(0.4, 0.52, 0.44);
-  headWire.position.set(0, 0.62, 0);
-  var shoulderWire = wire(new THREE.SphereGeometry(1, 22, 6, 0, Math.PI * 2, 0, Math.PI / 2), toneA);
-  shoulderWire.scale.set(1.0, 0.85, 0.5);
-  shoulderWire.position.set(0, -1.15, 0);
+  var headWire = wire(new THREE.SphereGeometry(1, 20, 14), toneA);
+  headWire.scale.set(0.4, 0.5, 0.45);
+  headWire.position.set(0, 0.64, -0.02);
+  var shoulderWire = wire(new THREE.SphereGeometry(1, 24, 6, 0, Math.PI * 2, 0, Math.PI / 2), toneA);
+  shoulderWire.scale.set(0.88, 0.72, 0.42);
+  shoulderWire.position.set(0, -1.1, 0);
 
   var anvilWire = new THREE.Group();
   [
-    [0.5, 0.07, 0.24, 0, -0.96],
-    [0.15, 0.08, 0.17, 0, -0.84],
-    [0.62, 0.09, 0.2, 0, -0.68],
+    [0.46, 0.06, 0.2, 0, -0.97],
+    [0.14, 0.07, 0.15, 0, -0.86],
+    [0.58, 0.08, 0.18, 0, -0.72],
   ].forEach(function (s) {
     var w = wire(new THREE.BoxGeometry(s[0] * 2, s[1] * 2, s[2] * 2), toneC);
     world.remove(w);
-    w.position.set(s[3], s[4], 0.42);
+    w.position.set(s[3], s[4], 0.4);
     anvilWire.add(w);
   });
   world.add(anvilWire);
@@ -405,31 +589,44 @@
   // a floating hammer: handle plus head, extruded forms in wire
   var hammer = new THREE.Group();
   [
-    [new THREE.CylinderGeometry(0.035, 0.035, 0.9, 8), 0, 0, 0],
-    [new THREE.BoxGeometry(0.42, 0.2, 0.2), 0, 0.5, 0],
+    [new THREE.CylinderGeometry(0.035, 0.035, 0.9, 8), 0, 0],
+    [new THREE.BoxGeometry(0.42, 0.2, 0.2), 0, 0.5],
   ].forEach(function (s) {
     var w = wire(s[0], toneB);
     world.remove(w);
-    w.position.set(s[1], s[2] + s[3], 0);
+    w.position.set(s[1], s[2], 0);
     hammer.add(w);
   });
   hammer.position.set(1.3, 0.1, 0.2);
   hammer.rotation.z = -0.5;
   world.add(hammer);
 
-  // eyes and the speaking pulse ring
+  // eyes and the speaking pulse (a soft glow, not a ring line)
   var eyeL = glowSprite(toneC, 0.16, 0);
   var eyeR = glowSprite(toneC, 0.16, 0);
-  eyeL.position.set(-0.16, 0.66, 0.4);
-  eyeR.position.set(0.16, 0.66, 0.4);
+  eyeL.position.set(-0.15, 0.68, 0.42);
+  eyeR.position.set(0.15, 0.68, 0.42);
   world.add(eyeL);
   world.add(eyeR);
-  var pulse = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.008, 6, 90), addMat(toneA, 0));
-  pulse.position.set(0, 0.62, 0);
+  var pulse = glowSprite(toneA, 1.3, 0);
+  pulse.position.set(0, 0.64, 0);
   world.add(pulse);
+
+  var CORE_SCALE = { a: 0.95, b: 2.1, c: 0.7 };
+  function applyVariant() {
+    pg.attributes.position.array.set(orbPos[variant]);
+    pg.attributes.position.needsUpdate = true;
+    Object.keys(groups).forEach(function (k) {
+      groups[k].visible = k === variant;
+    });
+    coreIco.visible = variant === 'a';
+    requestStatic();
+  }
 
   // ---------- state, resize, loop ----------
   var target = 0;
+  var thinkTarget = 0;
+  var think = 0;
   var morph = 0;
   var speak = 0;
   var time = 0;
@@ -458,17 +655,19 @@
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    var dist = Math.max(4.3, 2.1 / (camera.aspect * Math.tan((CFG.fov * Math.PI) / 360)));
-    camera.userData.dist = dist;
+    camera.userData.dist = Math.max(4.3, 2.1 / (camera.aspect * Math.tan((CFG.fov * Math.PI) / 360)));
     camera.updateProjectionMatrix();
     pu.uPx.value = (h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360));
     requestStatic();
   }
 
   function applyState() {
-    target = stage.getAttribute('data-state') === 'active' ? 1 : 0;
+    var st = stage.getAttribute('data-state');
+    target = st === 'active' ? 1 : 0;
+    thinkTarget = st === 'thinking' ? 1 : 0;
     if (reduce.matches) {
       morph = target;
+      think = thinkTarget;
       requestStatic();
     }
   }
@@ -479,6 +678,7 @@
       time += dt;
       var step = CFG.morphSpeed * dt;
       morph += Math.max(-step, Math.min(step, target - morph));
+      think += (thinkTarget - think) * Math.min(1, dt * 3);
     }
     var m = morph;
     var e = m * m * (3 - 2 * m);
@@ -486,45 +686,40 @@
     speak += (talk - speak) * Math.min(1, dt * 12);
 
     pu.uMorph.value = m;
-    pu.uTime.value = time;
     pu.uSpeak.value = speak;
+    U.uTime.value = time;
+    U.uThink.value = think;
+    U.uOrb.value = 1 - 0.78 * e;
 
     // pointer parallax, eased; off when motion is reduced
     pointer.sx += (pointer.x - pointer.sx) * Math.min(1, dt * 4);
     pointer.sy += (pointer.y - pointer.sy) * Math.min(1, dt * 4);
-    var d = camera.userData.dist;
     var px = anim ? pointer.sx : 0;
     var py = anim ? pointer.sy : 0;
-    camera.position.set(px * 0.55, py * 0.35 + 0.08, d);
+    camera.position.set(px * 0.55, py * 0.35 + 0.08, camera.userData.dist);
     camera.lookAt(0, 0.05 * e, 0);
     world.rotation.y = anim ? Math.sin(time * 0.35) * 0.22 * e + time * 0.05 * (1 - e) : 0;
 
-    ringObjs.forEach(function (r, idx) {
-      r.spin.rotation.y = anim ? time * r.cfg.spin : 0.6 * idx;
-      r.group.position.set(0, e * 0.15, -e * 0.25);
-      r.core.material.opacity = 0.85 - 0.62 * e;
-      r.halo.material.opacity = 0.12 - 0.07 * e;
-    });
+    groups[variant].position.set(0, e * 0.15, -e * 0.25);
+    haze.material.opacity = 0.14 * (1 - 0.5 * e) * (1 + think * 0.6);
 
     // mote keeps orbiting around whichever shape is showing
-    var ma = anim ? time * 0.9 : 0.8;
+    var ma = anim ? time * (0.9 + think * 1.5) : 0.8;
     var mr = 1.55 - 0.15 * e;
     var mx = Math.cos(ma) * mr;
     var mz = Math.sin(ma) * mr;
-    var tilt = 0.5;
-    mote.position.set(mx, mz * Math.sin(tilt), mz * Math.cos(tilt));
-    moteDot.position.copy(mote.position);
-    mote.material.opacity = 0.85;
+    mote.position.set(mx, mz * Math.sin(0.5), mz * Math.cos(0.5));
 
     coreG.position.set(0, -0.72 * e, 0.45 * e);
-    var cs = (1 - e * 0.55) * (1 + 0.12 * Math.sin(time * 2.2) + speak * 0.35);
-    coreGlow.scale.setScalar(Math.max(0.2, cs) * 0.95);
+    var cs =
+      (1 - e * 0.55) * (1 + 0.12 * Math.sin(time * 2.2) + speak * 0.35 + think * 0.25 * Math.sin(time * 6));
+    coreGlow.scale.setScalar(Math.max(0.2, cs) * (CORE_SCALE[variant] * (1 - e) + 0.95 * e));
     coreIco.rotation.y = time * 0.8;
     coreIco.rotation.x = time * 0.5;
 
     var wireOp = ss(0.35, 1, m);
-    headWire.material.opacity = wireOp * 0.3;
-    shoulderWire.material.opacity = wireOp * 0.26;
+    headWire.material.opacity = wireOp * 0.16;
+    shoulderWire.material.opacity = wireOp * 0.22;
     anvilWire.children.forEach(function (c) {
       c.material.opacity = wireOp * 0.7;
     });
@@ -540,8 +735,8 @@
     eyeR.scale.setScalar(0.14 + 0.05 * speak);
 
     var pp = anim && target === 1 ? (time * 0.55) % 1 : 0;
-    pulse.scale.setScalar(1 + pp * 0.7);
-    pulse.material.opacity = anim && target === 1 && m > 0.95 ? (1 - pp) * 0.5 : 0;
+    pulse.scale.setScalar(1.3 + pp * 1.3);
+    pulse.material.opacity = anim && target === 1 && m > 0.95 ? (1 - pp) * 0.35 : 0;
   }
 
   function draw(dt) {
@@ -571,8 +766,8 @@
       var avg = accum / frames;
       if (avg > CFG.slowMs) slowFrames++;
       else slowFrames = 0;
-      if (slowFrames >= 2) degrade();
-      stats(avg, cpuAccum / frames);
+      if (slowFrames >= 2 && !params.has('nodegrade')) degrade();
+      else stats(avg, cpuAccum / frames);
       frames = 0;
       accum = 0;
       cpuAccum = 0;
@@ -581,6 +776,7 @@
 
   function stats(avg, cpu) {
     var info = renderer.info.render;
+    var pts = pg.drawRange.count === Infinity ? N : pg.drawRange.count;
     perfEl.textContent =
       'frame ' +
       avg.toFixed(1) +
@@ -589,7 +785,7 @@
       ' ms, ' +
       info.calls +
       ' draws, ' +
-      Math.round(pg.drawRange.count === Infinity ? N : pg.drawRange.count) +
+      pts +
       ' points, dpr ' +
       dpr.toFixed(2);
   }
@@ -680,6 +876,7 @@
   });
 
   ready = true;
+  applyVariant();
   applyState();
   setRenderer('webgl');
   resize();

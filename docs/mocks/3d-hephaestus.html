@@ -169,6 +169,38 @@
         color: var(--stage-muted);
         pointer-events: none;
       }
+
+      .rail .body .ring {
+        opacity: 0.5;
+        filter: blur(1px);
+      }
+      /* flat fallback: soft bands instead of solid rings, tinted per orb variant */
+      .stage3d .flat-body .body .ring {
+        stroke-width: 9;
+        opacity: 0.16;
+        filter: blur(2.5px);
+      }
+      .stage3d .flat-body .body .ring.dash {
+        stroke-width: 4;
+        stroke-dasharray: 0.5 9;
+        opacity: 0.8;
+        filter: none;
+      }
+      .stage3d .flat-body .body .ring.faint {
+        opacity: 0.1;
+      }
+      .stage3d[data-orb='b'] .flat-body .body {
+        --tone-a: #ffc27a;
+        --tone-b: #ff7a3a;
+      }
+      .stage3d[data-orb='c'] .flat-body .body {
+        --tone-a: #ff6a3a;
+        --tone-b: #ffb347;
+      }
+      .status[data-now='thinking']::before {
+        background: var(--accent);
+        opacity: 0.6;
+      }
       @media (min-width: 900px) {
         .stage3d {
           height: 460px;
@@ -181,13 +213,16 @@
       <div>
         <a class="back" href="index.html">&larr; All mocks</a>
         <h1>Hephaestus</h1>
-        <small style="color: var(--muted)">3D prototype, layout B. Orb idle, bust when active.</small>
+        <small style="color: var(--muted)"
+          >3D prototype, layout B. Three soft orb variants; bust when active.</small
+        >
       </div>
       <div class="controls">
         <div class="seg" role="group" aria-label="Body state">
           <span class="seg-label">Body state</span>
           <button type="button" data-mode="auto" aria-pressed="true">Auto</button>
           <button type="button" data-mode="idle" aria-pressed="false">Idle</button>
+          <button type="button" data-mode="thinking" aria-pressed="false">Thinking</button>
           <button type="button" data-mode="active" aria-pressed="false">Active</button>
         </div>
         <div class="seg" role="group" aria-label="Theme">
@@ -197,6 +232,12 @@
           <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
         </div>
 
+        <div class="seg" role="group" aria-label="Orb variant">
+          <span class="seg-label">Orb variant</span>
+          <button type="button" data-orb-set="a" aria-pressed="true" title="Particle-band halo">Orb A</button>
+          <button type="button" data-orb-set="b" aria-pressed="false" title="Soft glass sphere">Orb B</button>
+          <button type="button" data-orb-set="c" aria-pressed="false" title="Nebula core">Orb C</button>
+        </div>
         <div class="seg" role="group" aria-label="Renderer">
           <span class="seg-label">Renderer</span>
           <button type="button" data-renderer-set="webgl" aria-pressed="true">3D</button>
@@ -330,7 +371,7 @@
             >
           </nav>
           <div class="main-b">
-            <div class="stage3d" id="stage3d" data-live data-state="idle" data-renderer="flat">
+            <div class="stage3d" id="stage3d" data-live data-state="idle" data-renderer="flat" data-orb="a">
               <canvas aria-hidden="true"></canvas>
               <div class="flat-body">
                 <svg
