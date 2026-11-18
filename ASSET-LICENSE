@@ -26,6 +26,42 @@ art/kenney-roguelike-indoors/SOURCE.txt
     They live outside public/, so they are neither served nor copied into the Docker image; they are
     only the input of scripts/build-office-atlas.js.
 
+docs/mocks/models/apollo.glb
+    "2004.30 Apollo the Python-Slayer" by Cleveland Museum of Art. Source: https://sketchfab.com/3d-models/200430-apollo-the-python-slayer-6267c784116c4b59821fdf8d09bc0298
+    Licence: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, cropped (to head and shoulders), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+docs/mocks/models/dionysus.glb
+    "Bacchus" by Musée Saint-Raymond. Source: https://sketchfab.com/3d-models/bacchus-aa8748acb2594a37a372fe78dc41235d
+    Licence: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, cropped (to head and shoulders (raised hand removed)), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+docs/mocks/models/janus.glb
+    "Janus" by danielpett. Source: https://sketchfab.com/3d-models/janus-7cf073c057ac4488b88d3911d4b2b01a
+    Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, cropped (to the head (plinth removed)), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+    Attribution (CC BY 4.0): This work is based on "Janus" (https://sketchfab.com/3d-models/janus-7cf073c057ac4488b88d3911d4b2b01a) by danielpett licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
+docs/mocks/models/hephaestus.glb
+    "Vulcan Statue, Birmingham, Alabama." by Neal Wellman (Sketchfab: caw3rd). Source: https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5
+    Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, cropped (to head and shoulders (raised arm removed)), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+    Attribution (CC BY 4.0): This work is based on "Vulcan Statue, Birmingham, Alabama." (https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5) by Neal Wellman (Sketchfab: caw3rd) licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
+docs/mocks/models/atlas.glb
+    "Atlas" by LastRights93. Source: https://sketchfab.com/3d-models/atlas-62db2034e9a64301a961ad8dfc08cc93
+    Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: not further decimated (13.5k triangles after the crop), cropped (to the globe, head and shoulders), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+    Attribution (CC BY 4.0): This work is based on "Atlas" (https://sketchfab.com/3d-models/atlas-62db2034e9a64301a961ad8dfc08cc93) by LastRights93 licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
+docs/mocks/models/themis.glb
+    "1925.943 Portrait Of The Empress Claudia Octavia" by Cleveland Museum of Art. Source: https://sketchfab.com/3d-models/1925943-portrait-of-the-empress-claudia-octavia-9b2fbfe552ac4107a3623e19c1ddb4e4
+    Licence: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, not cropped (whole bust), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+docs/mocks/models/iris.glb
+    "1926.53 Head of Aphrodite" by Cleveland Museum of Art. Source: https://sketchfab.com/3d-models/192653-head-of-aphrodite-2774d71b9211479a9ea49b519ca4ce2f
+    Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, not cropped (whole head), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
+    Attribution (CC BY 4.0): This work is based on "1926.53 Head of Aphrodite" (https://sketchfab.com/3d-models/192653-head-of-aphrodite-2774d71b9211479a9ea49b519ca4ce2f) by Cleveland Museum of Art licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
+docs/mocks/models/plutus.glb
+    "1952.260 Bust" by Cleveland Museum of Art. Source: https://sketchfab.com/3d-models/1952260-bust-fc442ce1d47a49b0aea6ee03e86b5080
+    Licence: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
+    Modified: decimated to about 15k triangles, not cropped (whole bust), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
 docs/mocks/vendor/three.min.js
 docs/mocks/vendor/three.LICENSE
 docs/mocks/vendor/three-subset.js
