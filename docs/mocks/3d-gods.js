@@ -106,20 +106,41 @@
         'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
     },
   ];
-  // One scan per god, models/<god id>.glb. kind: head = a head only (a procedural body is added);
-  // bust = head and shoulders as scanned; statue = a full statue cut to a bust at crop (the top fraction of its height).
-  // up: 'y' or 'z' (the model's up axis); yaw turns it about Y to face the camera; scale and dy nudge the fit;
-  // eyes are optional glow positions in bust space. These are placeholders until the real files are in.
+  // One scan per god, models/<god id>.glb (geometry only: positions and indices, textures stripped).
+  // kind: head = a head only (a procedural body is added); bust = the file already holds head and shoulders
+  // (statues were cropped to a bust when the file was made). yaw turns the model about Y so it faces the camera;
+  // scale and dy nudge the fit; eyes are optional glow positions in bust space; orient 'winding' trusts the
+  // triangle winding for normals instead of pointing them away from the middle of the model.
+  // For tuning, ?yaw=, ?scale= and ?dy= override the values for the god being viewed.
   var SCANS = {
-    apollo: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    dionysus: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    janus: { kind: 'head', up: 'y', yaw: 0, scale: 1, dy: 0 }, // one head with two faces: no duplicate
-    hephaestus: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    atlas: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    themis: { kind: 'bust', up: 'y', yaw: 0, scale: 1, dy: 0 },
-    iris: { kind: 'head', up: 'y', yaw: 0, scale: 1, dy: 0 },
-    plutus: { kind: 'bust', up: 'y', yaw: 0, scale: 1, dy: 0 },
+    apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    dionysus: { kind: 'bust', yaw: -Math.PI / 2, scale: 1, dy: 0 },
+    // one head with two faces, shown large and alone (a herm has no shoulders); turn it to see one face frontally
+    janus: { kind: 'bust', yaw: Math.PI / 2 - 0.5, scale: 0.85, dy: 0, crop: { y: [0.12, 1] } },
+    hephaestus: { kind: 'head', yaw: -Math.PI / 2, scale: 1, dy: 0, crop: { y: [0.42, 1], x: [0.25, 0.85] } }, // head only: drops the statue's stray arm and ground
+    atlas: { kind: 'bust', yaw: 0, scale: 0.9, dy: 0 }, // the figure bends forward under the globe: no head is visible in this scan
+    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0, crop: { y: [0.13, 1] } }, // drops the display rod under the bust
+    iris: { kind: 'head', yaw: 0, scale: 1, dy: 0, crop: { y: [0.18, 1] } }, // drops the neck stump
+    plutus: { kind: 'head', yaw: 0, scale: 1, dy: 0 }, // the scan is a head, not a bust
   };
+
+  ['yaw', 'scale', 'dy'].forEach(function (k) {
+    var v = parseFloat(new URLSearchParams(window.location.search).get(k));
+    if (isFinite(v)) {
+      var gid = new URLSearchParams(window.location.search).get('god') || 'hephaestus';
+      if (SCANS[gid]) SCANS[gid][k] = v;
+    }
+  });
+  // ?crop=y0,y1,x0,x1,z0,z1 (fractions 0..1 of the model's box) overrides the crop box while tuning
+  (function () {
+    var q = new URLSearchParams(window.location.search).get('crop');
+    var gid = new URLSearchParams(window.location.search).get('god') || 'hephaestus';
+    if (q && SCANS[gid]) {
+      var n = q.split(',').map(parseFloat);
+      if (n.length === 6 && n.every(isFinite))
+        SCANS[gid].crop = { y: [n[0], n[1]], x: [n[2], n[3]], z: [n[4], n[5]] };
+    }
+  })();
   var godIdx = 0;
   var god = GODS[0];
 
@@ -436,12 +457,12 @@
     key: {
       wire: function (g) {
         var k = new THREE.Group();
-        k.add(lineObj(circlePts(-0.18, -0.96, 0.46, 0.1, 18), true, 'a', 0.8));
+        k.add(lineObj(circlePts(-0.18, 0, 0.46, 0.1, 18), true, 'a', 0.8));
         k.add(
           lineObj(
             [
-              [-0.08, -0.96, 0.46],
-              [0.34, -0.96, 0.46],
+              [-0.08, 0, 0.46],
+              [0.34, 0, 0.46],
             ],
             false,
             'b',
@@ -451,8 +472,8 @@
         k.add(
           lineObj(
             [
-              [0.26, -0.96, 0.46],
-              [0.26, -1.08, 0.46],
+              [0.26, 0, 0.46],
+              [0.26, -0.12, 0.46],
             ],
             false,
             'b',
@@ -462,14 +483,16 @@
         k.add(
           lineObj(
             [
-              [0.33, -0.96, 0.46],
-              [0.33, -1.04, 0.46],
+              [0.33, 0, 0.46],
+              [0.33, -0.08, 0.46],
             ],
             false,
             'b',
             0.8,
           ),
         );
+        k.position.set(1.2, -0.3, 0.2);
+        k.rotation.z = Math.PI / 2;
         g.add(k);
       },
     },
@@ -777,7 +800,7 @@
       'attribute vec3 aNorm;',
       'attribute vec4 aRnd;',
       'uniform float uMorph, uTime, uPx, uThink, uSpeak;',
-      'varying float vMix, vT, vY, vDepth, vRim, vFace;',
+      'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float t = clamp((uMorph - aRnd.x * 0.45) / 0.55, 0.0, 1.0);',
       '  t = t * t * (3.0 - 2.0 * t);',
@@ -797,6 +820,7 @@
       '  float nd = dot(n, normalize(-mv.xyz));',
       '  vRim = pow(1.0 - abs(nd), 2.2);',
       '  vFace = nd > 0.0 ? 1.0 : 0.35;',
+      '  vLit = max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);',
       '  gl_PointSize = aRnd.y * uPx / -mv.z * (1.0 + mid * 0.5) * (1.0 - 0.15 * t);',
       '  gl_Position = projectionMatrix * mv;',
       '  vMix = aRnd.z; vT = t; vY = p.y; vDepth = clamp(1.25 - (-mv.z - 3.0) * 0.28, 0.35, 1.3);',
@@ -805,7 +829,7 @@
     fragmentShader: [
       'uniform vec3 uA, uB, uC;',
       'uniform float uTime, uSpeak, uThink;',
-      'varying float vMix, vT, vY, vDepth, vRim, vFace;',
+      'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float d = length(gl_PointCoord - 0.5);',
       '  if (d > 0.5) discard;',
@@ -816,7 +840,7 @@
       '  col = mix(col, uC, 0.25 + sweep * 0.7);',
       '  col = mix(col, uC, vRim * vT * 0.7);',
       '  float k = mix(1.0 + uThink * 0.5, scan + sweep * 1.5 + uSpeak * 0.25 + vRim * 0.9 + 0.25, vT);',
-      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace, vT);',
+      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace * (0.55 + 1.1 * vLit), vT);',
       '  gl_FragColor = vec4(col * alpha, alpha);',
       '}',
     ].join('\n'),
@@ -993,9 +1017,14 @@
       var count = idx ? idx.count : pos.count;
       var v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       for (var f = 0; f + 2 < count; f += 3) {
+        var ok = true;
         for (var k = 0; k < 3; k++) {
           v[k].fromBufferAttribute(pos, idx ? idx.getX(f + k) : f + k).applyMatrix4(o.matrixWorld);
           if (cfg.up === 'z') v[k].set(v[k].x, v[k].z, -v[k].y); // Z-up export: turn it upright
+          ok = ok && isFinite(v[k].x + v[k].y + v[k].z); // skip NaN or infinite vertices
+        }
+        if (!ok) continue;
+        for (k = 0; k < 3; k++) {
           minX = Math.min(minX, v[k].x);
           maxX = Math.max(maxX, v[k].x);
           minY = Math.min(minY, v[k].y);
@@ -1007,32 +1036,44 @@
       }
     });
     if (!tris.length) return null;
-    if (kind === 'statue') {
-      // keep only the top fraction of a full statue (head and shoulders), then fit that
-      var cut = maxY - cfg.crop * (maxY - minY);
+    if (cfg.crop) {
+      // keep the triangles whose centre lies in a box given as fractions of the model's own extent
+      var bx = [minX, maxX];
+      var by = [minY, maxY];
+      var bz = [minZ, maxZ];
+      var cr = cfg.crop;
+      var lim = function (b, r) {
+        return [b[0] + (r ? r[0] : 0) * (b[1] - b[0]), b[0] + (r ? r[1] : 1) * (b[1] - b[0])];
+      };
+      var lx = lim(bx, cr.x);
+      var ly = lim(by, cr.y);
+      var lz = lim(bz, cr.z);
       tris = tris.filter(function (t) {
-        return (t[1] + t[4] + t[7]) / 3 >= cut;
+        var cx2 = (t[0] + t[3] + t[6]) / 3;
+        var cy2 = (t[1] + t[4] + t[7]) / 3;
+        var cz2 = (t[2] + t[5] + t[8]) / 3;
+        return cx2 >= lx[0] && cx2 <= lx[1] && cy2 >= ly[0] && cy2 <= ly[1] && cz2 >= lz[0] && cz2 <= lz[1];
       });
       if (!tris.length) return null;
       minX = minY = minZ = Infinity;
       maxX = maxY = maxZ = -Infinity;
       tris.forEach(function (t) {
-        for (var k = 0; k < 9; k += 3) {
-          minX = Math.min(minX, t[k]);
-          maxX = Math.max(maxX, t[k]);
-          minY = Math.min(minY, t[k + 1]);
-          maxY = Math.max(maxY, t[k + 1]);
-          minZ = Math.min(minZ, t[k + 2]);
-          maxZ = Math.max(maxZ, t[k + 2]);
+        for (var q = 0; q < 9; q += 3) {
+          minX = Math.min(minX, t[q]);
+          maxX = Math.max(maxX, t[q]);
+          minY = Math.min(minY, t[q + 1]);
+          maxY = Math.max(maxY, t[q + 1]);
+          minZ = Math.min(minZ, t[q + 2]);
+          maxZ = Math.max(maxZ, t[q + 2]);
         }
       });
     }
-    var full = kind !== 'head'; // bust and cropped statue fill the whole figure; a head gets a procedural body
-    var s = ((full ? 2.3 : 1.08) / (maxY - minY || 1)) * (cfg.scale || 1);
+    var full = kind !== 'head'; // a bust fills the whole figure; a head gets a procedural body
+    var s = ((full ? 2.3 : 1.4) / (maxY - minY || 1)) * (cfg.scale || 1);
     var cx = (minX + maxX) / 2;
     var cz = (minZ + maxZ) / 2;
     var oy = (minY + maxY) / 2;
-    var cy = (full ? 0 : HEAD_C[1]) + (cfg.dy || 0);
+    var cy = (full ? 0 : 0.5) + (cfg.dy || 0);
     var cum = new Float32Array(tris.length);
     var total = 0;
     var cos = Math.cos(yaw);
@@ -1047,6 +1088,7 @@
       total += 0.5 * Math.hypot(uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx);
       cum[i] = total;
     });
+    if (!(total > 0) || !isFinite(total)) return null; // all triangles degenerate
     var M = CFG.scanPoints;
     var out = new Float32Array(M * 6);
     for (var i = 0; i < M; i++) {
@@ -1072,7 +1114,7 @@
       var ny = (t[5] - t[2]) * (t[6] - t[0]) - (t[3] - t[0]) * (t[8] - t[2]);
       var nz = (t[3] - t[0]) * (t[7] - t[1]) - (t[4] - t[1]) * (t[6] - t[0]);
       // scans can have either winding: point every normal away from the middle of the model
-      if (nx * (px - cx) + ny * (py - oy) + nz * (pz - cz) < 0) {
+      if (cfg.orient !== 'winding' && nx * (px - cx) + ny * (py - oy) + nz * (pz - cz) < 0) {
         nx = -nx;
         ny = -ny;
         nz = -nz;
@@ -1320,7 +1362,8 @@
     camera.aspect = w / h;
     camera.userData.dist = Math.max(4.3, 2.3 / (camera.aspect * Math.tan((CFG.fov * Math.PI) / 360)));
     camera.updateProjectionMatrix();
-    pu.uPx.value = (h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360));
+    // small stages get bigger points so a bust stays readable (the camera also sits further back there)
+    pu.uPx.value = ((h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360))) * (w < 600 ? 2.1 : 1);
     requestStatic();
   }
 
