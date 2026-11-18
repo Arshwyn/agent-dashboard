@@ -30,18 +30,18 @@ Each page has a body-state switch (Auto loops idle and active, or force one) and
 
 ## 3D prototype (slice 0b)
 
-The picks after the flat mocks: orb-first, layout B, dark default. `3d-hephaestus.html` tests whether real depth fixes the "flat" feeling.
+The picks after the flat mocks: orb-first, layout B, dark default. `3d-hephaestus.html` tests whether real depth fixes the "flat" feeling. Slice 0c refined it after feedback (soft orb variants, better procedural bust, thinking state).
 
 - Orb (idle): three tilted glowing rings with a faint wide copy each (cheap additive bloom), a particle shell and core, an orbiting mote, and pointer-driven camera parallax.
-- Bust (active): a hologram figure made only from generated geometry: a point-cloud shell, wire shells for head and shoulders, an anvil and a floating hammer in wire, emissive eyes and a core that travels from the orb centre to the chest. No meshes or textures are loaded, so there is nothing to license beyond three.js itself.
+- Bust (active): still a procedural stand-in. Round cranium with tapered jaw, brow, nose and chin, a flared neck, sloping trapezius lines, deltoids and an upper chest, plus an anvil and a floating hammer in wire, soft emissive eyes and a core that travels from the orb centre to the chest. Hologram shading in the point shader: scanlines, a rising scan sweep, depth fade and a rare horizontal glitch slice. The intended final look is a real sculpted mesh rendered through this same shader; no model is in the repo, and none is added until one is approved (candidates are listed in the PR discussion, with licences checked on the source pages).
 - Morph: one `Points` object holds both shapes; each particle flies from its orb position to its bust position on a staggered delay with a swirl, so the orb dissolves into the figure. Speaking adds a pulse ring, eye and core flicker and a moving scan band.
 - The 3D stage keeps dark glass tones in both themes (like a display); the page chrome follows the dark or designed light set.
 
 ### Performance notes
 
-- Draw calls: 21 (one point cloud, 6 ring tori, 2 for the mote, core glow and icosahedron, 2 eyes, the pulse ring and 7 wire parts for head, shoulders, anvil and hammer). The readout in the stage corner shows live frame time, CPU time per frame, draw calls, point count and pixel ratio.
+- Draw calls: 15 to 18 depending on the variant (one point cloud, the variant's meshes, haze, mote, core glow, a wire gem for A, eyes, the pulse glow and 7 wire parts for head, shoulders, anvil and hammer). The readout in the stage corner shows live frame time, CPU time per frame, draw calls, point count and pixel ratio.
 - Pixel ratio is capped (2, or 1.5 under 700 px wide); degrading drops it to 1.
 - The loop pauses when the tab is hidden or the stage is scrolled out of view. Under `prefers-reduced-motion` nothing animates: the page draws one frame per state change and the state switch snaps between orb and bust.
-- Adaptive fallback: if the average frame interval stays above 34 ms over two 90-frame windows, particles drop to 40 percent and the pixel ratio to 1; if it stays slow, the page switches to the flat SVG renderer. Without WebGL 2, or with `?flat` in the URL, or via the Renderer switch, the flat renderer is used.
-- Measured only on a software renderer in headless Chromium (about 17 to 30 ms per frame, 0.2 to 0.6 ms CPU); real GPUs will be much faster. Please judge smoothness on a real device.
+- Adaptive fallback: if the average frame interval stays above 34 ms over two 90-frame windows, particles drop to 40 percent and the pixel ratio to 1; if it stays slow, the page switches to the flat SVG renderer. Without WebGL 2, or with `?flat` in the URL, or via the Renderer switch, the flat renderer is used. It now matches the soft look (blurred bands and a dotted particle ring instead of solid rings, tinted per orb variant). `?nodegrade` disables the automatic degrade, which is useful on software renderers when taking screenshots.
+- Measured only on a software renderer in headless Chromium (about 17 to 35 ms per frame, 0.1 to 0.6 ms CPU; it triggers the degrade step unless `?nodegrade` is set); real GPUs will be much faster. Please judge smoothness on a real device.
 - Bundle size: the vendored three.js subset is about 540 KB. It is a vendor file, not counted against the 150 KB limit that applied to the flat mocks.
