@@ -129,6 +129,16 @@
       if (SCANS[gid]) SCANS[gid][k] = v;
     }
   });
+  // ?crop=y0,y1,x0,x1,z0,z1 (fractions 0..1 of the model's box) overrides the crop box while tuning
+  (function () {
+    var q = new URLSearchParams(window.location.search).get('crop');
+    var gid = new URLSearchParams(window.location.search).get('god') || 'hephaestus';
+    if (q && SCANS[gid]) {
+      var n = q.split(',').map(parseFloat);
+      if (n.length === 6 && n.every(isFinite))
+        SCANS[gid].crop = { y: [n[0], n[1]], x: [n[2], n[3]], z: [n[4], n[5]] };
+    }
+  })();
   var godIdx = 0;
   var god = GODS[0];
 
@@ -1021,6 +1031,38 @@
       }
     });
     if (!tris.length) return null;
+    if (cfg.crop) {
+      // keep the triangles whose centre lies in a box given as fractions of the model's own extent
+      var bx = [minX, maxX];
+      var by = [minY, maxY];
+      var bz = [minZ, maxZ];
+      var cr = cfg.crop;
+      var lim = function (b, r) {
+        return [b[0] + (r ? r[0] : 0) * (b[1] - b[0]), b[0] + (r ? r[1] : 1) * (b[1] - b[0])];
+      };
+      var lx = lim(bx, cr.x);
+      var ly = lim(by, cr.y);
+      var lz = lim(bz, cr.z);
+      tris = tris.filter(function (t) {
+        var cx2 = (t[0] + t[3] + t[6]) / 3;
+        var cy2 = (t[1] + t[4] + t[7]) / 3;
+        var cz2 = (t[2] + t[5] + t[8]) / 3;
+        return cx2 >= lx[0] && cx2 <= lx[1] && cy2 >= ly[0] && cy2 <= ly[1] && cz2 >= lz[0] && cz2 <= lz[1];
+      });
+      if (!tris.length) return null;
+      minX = minY = minZ = Infinity;
+      maxX = maxY = maxZ = -Infinity;
+      tris.forEach(function (t) {
+        for (var q = 0; q < 9; q += 3) {
+          minX = Math.min(minX, t[q]);
+          maxX = Math.max(maxX, t[q]);
+          minY = Math.min(minY, t[q + 1]);
+          maxY = Math.max(maxY, t[q + 1]);
+          minZ = Math.min(minZ, t[q + 2]);
+          maxZ = Math.max(maxZ, t[q + 2]);
+        }
+      });
+    }
     var full = kind !== 'head'; // a bust fills the whole figure; a head gets a procedural body
     var s = ((full ? 2.3 : 1.08) / (maxY - minY || 1)) * (cfg.scale || 1);
     var cx = (minX + maxX) / 2;
