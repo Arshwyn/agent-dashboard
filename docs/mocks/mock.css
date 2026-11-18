@@ -477,7 +477,7 @@ main {
 .stage {
   display: grid;
   justify-items: center;
-  gap: var(--s-2);
+  gap: var(--s-3);
   padding: var(--s-4);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -656,6 +656,16 @@ main {
 
 .rail .body {
   width: 44px;
+}
+
+.rail .body .ring {
+  stroke-width: 5;
+}
+
+.band .body .ring,
+.band .body .line,
+.band .body .plate {
+  stroke-width: 3;
 }
 
 .main-b {
