@@ -7,31 +7,43 @@
   var msgs = document.querySelectorAll('[data-live-msg]');
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   var mode = 'auto';
-  var state = 'idle';
   var timer = null;
+  var LABELS = { idle: 'Idle', thinking: 'Thinking', active: 'Speaking' };
+  // auto loop: idle, then thinking, then speaking, each for a few seconds
+  var SEQUENCE = [
+    ['idle', 4000],
+    ['thinking', 2500],
+    ['active', 5000],
+  ];
+  var seqIndex = 0;
 
   function setState(next) {
-    state = next;
     bodies.forEach(function (el) {
       el.setAttribute('data-state', next);
     });
     labels.forEach(function (el) {
       el.setAttribute('data-now', next);
-      el.textContent = next === 'active' ? 'Speaking' : 'Idle';
+      el.textContent = LABELS[next] || 'Idle';
     });
     msgs.forEach(function (el) {
       el.setAttribute('data-now', next);
     });
   }
 
+  function step() {
+    var item = SEQUENCE[seqIndex % SEQUENCE.length];
+    setState(item[0]);
+    seqIndex++;
+    timer = window.setTimeout(step, item[1]);
+  }
+
   function apply() {
-    window.clearInterval(timer);
+    window.clearTimeout(timer);
+    seqIndex = 0;
     if (mode === 'auto') {
       setState('idle');
       if (!reduce.matches) {
-        timer = window.setInterval(function () {
-          setState(state === 'idle' ? 'active' : 'idle');
-        }, 5000);
+        timer = window.setTimeout(step, 1500);
       }
     } else {
       setState(mode);
