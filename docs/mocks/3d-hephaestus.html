@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hephaestus 3D prototype (Layout B: persistent side rail)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="mock.css" />
+    <style>
+      :root {
+        --bg: #14100c;
+        --surface: #1e1812;
+        --surface-2: #2a2118;
+        --text: #f3e9dc;
+        --muted: #b8a68f;
+        --accent: #ff9a1f;
+        --accent-2: #ff5a1f;
+        --on-accent: #1a0f05;
+        --line: #3b2e21;
+        --glow: rgba(255, 150, 30, 0.6);
+        --bubble-agent: #241c14;
+        --bubble-user: #ff9a1f;
+        --on-bubble-user: #1a0f05;
+        --tone-a: #ff9a1f;
+        --tone-b: #ff5a1f;
+        --tone-c: #ffd08a;
+        --eye: #ffd08a;
+        --hud-fill: rgba(255, 154, 31, 0.07);
+        --font-display: Rockwell, 'Roboto Slab', 'Zilla Slab', Georgia, serif;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) {
+          --bg: #f6efe6;
+          --surface: #fffaf3;
+          --surface-2: #efe3d3;
+          --text: #2a1d12;
+          --muted: #6a5641;
+          --accent: #b84f08;
+          --accent-2: #a63a0a;
+          --on-accent: #fffaf3;
+          --line: #decdb6;
+          --glow: rgba(200, 90, 10, 0.4);
+          --bubble-agent: #fff;
+          --bubble-user: #b84f08;
+          --on-bubble-user: #fffaf3;
+          --tone-a: #c8590c;
+          --tone-b: #d6360a;
+          --tone-c: #ffb454;
+          --eye: #d6360a;
+          --hud-fill: rgba(200, 90, 10, 0.06);
+          color-scheme: light;
+        }
+      }
+      :root[data-theme='light'] {
+        --bg: #f6efe6;
+        --surface: #fffaf3;
+        --surface-2: #efe3d3;
+        --text: #2a1d12;
+        --muted: #6a5641;
+        --accent: #b84f08;
+        --accent-2: #a63a0a;
+        --on-accent: #fffaf3;
+        --line: #decdb6;
+        --glow: rgba(200, 90, 10, 0.4);
+        --bubble-agent: #fff;
+        --bubble-user: #b84f08;
+        --on-bubble-user: #fffaf3;
+        --tone-a: #c8590c;
+        --tone-b: #d6360a;
+        --tone-c: #ffb454;
+        --eye: #d6360a;
+        --hud-fill: rgba(200, 90, 10, 0.06);
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] {
+        --bg: #14100c;
+        --surface: #1e1812;
+        --surface-2: #2a2118;
+        --text: #f3e9dc;
+        --muted: #b8a68f;
+        --accent: #ff9a1f;
+        --accent-2: #ff5a1f;
+        --on-accent: #1a0f05;
+        --line: #3b2e21;
+        --glow: rgba(255, 150, 30, 0.6);
+        --bubble-agent: #241c14;
+        --bubble-user: #ff9a1f;
+        --on-bubble-user: #1a0f05;
+        --tone-a: #ff9a1f;
+        --tone-b: #ff5a1f;
+        --tone-c: #ffd08a;
+        --eye: #ffd08a;
+        --hud-fill: rgba(255, 154, 31, 0.07);
+        color-scheme: dark;
+      }
+
+      :root {
+        --stage-bg: #0b0805;
+        --stage-a: #ff9a1f;
+        --stage-b: #ff5a1f;
+        --stage-c: #ffd08a;
+        --stage-text: #f3e9dc;
+        --stage-muted: #b8a68f;
+      }
+      .stage3d {
+        position: relative;
+        height: 380px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background:
+          radial-gradient(ellipse at 50% 58%, rgba(255, 130, 30, 0.16), transparent 62%),
+          linear-gradient(180deg, #120d08, var(--stage-bg));
+        color: var(--stage-text);
+        touch-action: pan-y;
+      }
+      .stage3d canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .stage3d .flat-body {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: var(--s-4);
+      }
+      .stage3d .flat-body .body {
+        width: min(70%, 260px);
+        --tone-a: var(--stage-a);
+        --tone-b: var(--stage-b);
+        --eye: var(--stage-c);
+        --glow: rgba(255, 150, 30, 0.6);
+        --surface-2: #2a2118;
+        --hud-fill: rgba(255, 154, 31, 0.07);
+      }
+      .stage3d[data-renderer='webgl'] .flat-body,
+      .stage3d[data-renderer='flat'] canvas {
+        display: none;
+      }
+      .stage3d .info {
+        position: absolute;
+        left: var(--s-4);
+        top: var(--s-3);
+        pointer-events: none;
+      }
+      .stage3d .info h3 {
+        font-size: var(--fs-2);
+      }
+      .stage3d .info p {
+        margin: 0;
+        color: var(--stage-muted);
+        font-size: var(--fs-0);
+      }
+      .stage3d .status {
+        color: var(--stage-muted);
+      }
+      .stage3d .perf {
+        position: absolute;
+        right: var(--s-3);
+        bottom: var(--s-2);
+        margin: 0;
+        max-width: 70%;
+        text-align: right;
+        font: 11px/1.3 var(--font-mono);
+        color: var(--stage-muted);
+        pointer-events: none;
+      }
+      @media (min-width: 900px) {
+        .stage3d {
+          height: 460px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <div>
+        <a class="back" href="index.html">&larr; All mocks</a>
+        <h1>Hephaestus</h1>
+        <small style="color: var(--muted)">3D prototype, layout B. Orb idle, bust when active.</small>
+      </div>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Body state">
+          <span class="seg-label">Body state</span>
+          <button type="button" data-mode="auto" aria-pressed="true">Auto</button>
+          <button type="button" data-mode="idle" aria-pressed="false">Idle</button>
+          <button type="button" data-mode="active" aria-pressed="false">Active</button>
+        </div>
+        <div class="seg" role="group" aria-label="Theme">
+          <span class="seg-label">Theme</span>
+          <button type="button" data-theme-set="auto" aria-pressed="true">System</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+        </div>
+
+        <div class="seg" role="group" aria-label="Renderer">
+          <span class="seg-label">Renderer</span>
+          <button type="button" data-renderer-set="webgl" aria-pressed="true">3D</button>
+          <button type="button" data-renderer-set="flat" aria-pressed="false">Flat</button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <section class="sec" id="chat">
+        <h2>3D prototype</h2>
+        <p class="note">
+          Orb idle, bust when active, in a real 3D scene. Move the pointer over the stage for parallax. Use
+          the Renderer switch to compare with the flat fallback.
+        </p>
+        <div class="shell">
+          <nav class="rail" aria-label="Agents">
+            <a href="#chat" aria-current="page"
+              ><svg
+                class="body"
+                viewBox="0 0 240 240"
+                data-state="idle"
+                role="img"
+                aria-label="Hephaestus idle orb"
+              >
+                <defs>
+                  <radialGradient id="r-halo">
+                    <stop offset="0" style="stop-color: var(--tone-b); stop-opacity: 0.55" />
+                    <stop offset=".6" style="stop-color: var(--tone-a); stop-opacity: 0.18" />
+                    <stop offset="1" style="stop-color: var(--tone-a); stop-opacity: 0" />
+                  </radialGradient>
+                </defs>
+                <g class="orb">
+                  <circle class="halo" cx="120" cy="120" r="112" fill="url(#r-halo)" />
+                  <g class="spin-a"><circle class="ring dash" cx="120" cy="120" r="98" /></g>
+                  <g class="spin-b">
+                    <circle class="ring" cx="120" cy="120" r="78" stroke-dasharray="130 30" />
+                  </g>
+                  <circle class="ring faint" cx="120" cy="120" r="56" />
+                  <g class="spin-mote"><circle class="fill-b glow" cx="218" cy="120" r="4.5" /></g>
+                  <g class="core glow">
+                    <path
+                      class="fill-b"
+                      d="M120 96C110 110 105 121 109 130C112 137 128 137 131 130C135 121 130 111 120 96Z"
+                    />
+                    <path
+                      class="fill-a"
+                      d="M120 112C115 119 114 125 117 129C119 132 123 132 125 129C127 125 125 119 120 112Z"
+                    />
+                  </g>
+                </g>
+                <g class="bust">
+                  <circle class="speak-ring" cx="120" cy="100" r="62" />
+                  <rect class="hud" x="10" y="64" width="52" height="84" rx="5" />
+                  <path class="line" d="M24 138L48 84" stroke-width="3" stroke-linecap="round" />
+                  <rect
+                    class="plate"
+                    x="36"
+                    y="72"
+                    width="24"
+                    height="11"
+                    rx="2"
+                    transform="rotate(25 48 77)"
+                  />
+                  <rect class="hud" x="178" y="64" width="52" height="84" rx="5" />
+                  <rect class="fill-a bar-fill" x="188" y="80" width="32" height="6" rx="3" />
+                  <rect class="fill-a bar-fill" x="188" y="98" width="32" height="6" rx="3" />
+                  <rect class="fill-a bar-fill" x="188" y="116" width="32" height="6" rx="3" />
+                  <path class="plate" d="M26 240C30 206 68 190 98 184L142 184C172 190 210 206 214 240Z" />
+                  <path class="plate" d="M105 166L135 166L138 186L102 186Z" />
+                  <path
+                    class="soft-a"
+                    d="M120 50C94 50 82 72 84 98C85 122 98 146 120 154C142 146 155 122 156 98C158 72 146 50 120 50Z"
+                  />
+                  <path
+                    class="fill-b"
+                    fill-opacity=".85"
+                    d="M88 110C92 140 104 158 120 162C136 158 148 140 152 110C142 126 132 132 120 132C108 132 98 126 88 110Z"
+                  />
+                  <path
+                    class="fill-a"
+                    d="M83 86C84 62 100 46 120 46C140 46 156 62 157 86C142 76 98 76 83 86Z"
+                  />
+                  <ellipse class="eye glow" cx="106" cy="100" rx="7" ry="2.8" />
+                  <ellipse class="eye glow" cx="134" cy="100" rx="7" ry="2.8" />
+                  <rect class="eye talk" x="111" y="140" width="18" height="3" rx="1.5" />
+                  <path
+                    class="plate"
+                    d="M94 236L100 228L108 228L108 222L86 222C80 222 78 216 82 212L158 212C158 218 152 222 146 222L132 222L132 228L140 228L146 236Z"
+                  />
+                  <path
+                    class="fill-b glow talk"
+                    d="M120 184C113 192 111 199 114 205C116 209 124 209 126 205C129 199 126 192 120 184Z"
+                  />
+                  <circle class="spark" cx="100" cy="206" r="1.8" />
+                  <circle class="spark" cx="140" cy="206" r="1.8" />
+                  <circle class="spark" cx="128" cy="204" r="1.8" />
+                </g></svg
+              ><span>Hephaestus</span></a
+            ><a href="#chat"
+              ><svg
+                class="body"
+                viewBox="0 0 240 240"
+                data-state="idle"
+                role="img"
+                aria-label="Janus idle orb"
+                style="--tone-a: #2bb5bd; --tone-b: #a45ad6"
+              >
+                <g class="orb">
+                  <circle class="ring" cx="120" cy="120" r="96" />
+                  <circle class="ring b" cx="120" cy="120" r="64" stroke-dasharray="3 9" />
+                  <circle class="fill-b" cx="120" cy="120" r="22" />
+                  <circle class="fill-a" cx="216" cy="120" r="9" />
+                </g></svg
+              ><span>Janus</span></a
+            ><a href="#chat"
+              ><svg
+                class="body"
+                viewBox="0 0 240 240"
+                data-state="idle"
+                role="img"
+                aria-label="Apollo idle orb"
+                style="--tone-a: #d9a800; --tone-b: #6f9f4a"
+              >
+                <g class="orb">
+                  <circle class="ring" cx="120" cy="120" r="96" />
+                  <circle class="ring b" cx="120" cy="120" r="64" stroke-dasharray="3 9" />
+                  <circle class="fill-b" cx="120" cy="120" r="22" />
+                  <circle class="fill-a" cx="216" cy="120" r="9" />
+                </g></svg
+              ><span>Apollo</span></a
+            >
+          </nav>
+          <div class="main-b">
+            <div class="stage3d" id="stage3d" data-live data-state="idle" data-renderer="flat">
+              <canvas aria-hidden="true"></canvas>
+              <div class="flat-body">
+                <svg
+                  class="body"
+                  data-live
+                  viewBox="0 0 240 240"
+                  data-state="idle"
+                  role="img"
+                  aria-label="Hephaestus body (flat fallback)"
+                >
+                  <defs>
+                    <radialGradient id="b-halo">
+                      <stop offset="0" style="stop-color: var(--tone-b); stop-opacity: 0.55" />
+                      <stop offset=".6" style="stop-color: var(--tone-a); stop-opacity: 0.18" />
+                      <stop offset="1" style="stop-color: var(--tone-a); stop-opacity: 0" />
+                    </radialGradient>
+                  </defs>
+                  <g class="orb">
+                    <circle class="halo" cx="120" cy="120" r="112" fill="url(#b-halo)" />
+                    <g class="spin-a"><circle class="ring dash" cx="120" cy="120" r="98" /></g>
+                    <g class="spin-b">
+                      <circle class="ring" cx="120" cy="120" r="78" stroke-dasharray="130 30" />
+                    </g>
+                    <circle class="ring faint" cx="120" cy="120" r="56" />
+                    <g class="spin-mote"><circle class="fill-b glow" cx="218" cy="120" r="4.5" /></g>
+                    <g class="core glow">
+                      <path
+                        class="fill-b"
+                        d="M120 96C110 110 105 121 109 130C112 137 128 137 131 130C135 121 130 111 120 96Z"
+                      />
+                      <path
+                        class="fill-a"
+                        d="M120 112C115 119 114 125 117 129C119 132 123 132 125 129C127 125 125 119 120 112Z"
+                      />
+                    </g>
+                  </g>
+                  <g class="bust">
+                    <circle class="speak-ring" cx="120" cy="100" r="62" />
+                    <rect class="hud" x="10" y="64" width="52" height="84" rx="5" />
+                    <path class="line" d="M24 138L48 84" stroke-width="3" stroke-linecap="round" />
+                    <rect
+                      class="plate"
+                      x="36"
+                      y="72"
+                      width="24"
+                      height="11"
+                      rx="2"
+                      transform="rotate(25 48 77)"
+                    />
+                    <rect class="hud" x="178" y="64" width="52" height="84" rx="5" />
+                    <rect class="fill-a bar-fill" x="188" y="80" width="32" height="6" rx="3" />
+                    <rect class="fill-a bar-fill" x="188" y="98" width="32" height="6" rx="3" />
+                    <rect class="fill-a bar-fill" x="188" y="116" width="32" height="6" rx="3" />
+                    <path class="plate" d="M26 240C30 206 68 190 98 184L142 184C172 190 210 206 214 240Z" />
+                    <path class="plate" d="M105 166L135 166L138 186L102 186Z" />
+                    <path
+                      class="soft-a"
+                      d="M120 50C94 50 82 72 84 98C85 122 98 146 120 154C142 146 155 122 156 98C158 72 146 50 120 50Z"
+                    />
+                    <path
+                      class="fill-b"
+                      fill-opacity=".85"
+                      d="M88 110C92 140 104 158 120 162C136 158 148 140 152 110C142 126 132 132 120 132C108 132 98 126 88 110Z"
+                    />
+                    <path
+                      class="fill-a"
+                      d="M83 86C84 62 100 46 120 46C140 46 156 62 157 86C142 76 98 76 83 86Z"
+                    />
+                    <ellipse class="eye glow" cx="106" cy="100" rx="7" ry="2.8" />
+                    <ellipse class="eye glow" cx="134" cy="100" rx="7" ry="2.8" />
+                    <rect class="eye talk" x="111" y="140" width="18" height="3" rx="1.5" />
+                    <path
+                      class="plate"
+                      d="M94 236L100 228L108 228L108 222L86 222C80 222 78 216 82 212L158 212C158 218 152 222 146 222L132 222L132 228L140 228L146 236Z"
+                    />
+                    <path
+                      class="fill-b glow talk"
+                      d="M120 184C113 192 111 199 114 205C116 209 124 209 126 205C129 199 126 192 120 184Z"
+                    />
+                    <circle class="spark" cx="100" cy="206" r="1.8" />
+                    <circle class="spark" cx="140" cy="206" r="1.8" />
+                    <circle class="spark" cx="128" cy="204" r="1.8" />
+                  </g>
+                </svg>
+              </div>
+              <div class="info">
+                <h3>Hephaestus</h3>
+                <p>Builder</p>
+                <span class="status" data-live-label data-now="idle">Idle</span>
+              </div>
+              <p class="perf" id="perf"></p>
+            </div>
+            <section class="chat" aria-label="Chat with Hephaestus">
+              <div class="chat-head">
+                <strong>Hephaestus</strong><span class="status" data-live-label data-now="idle">Idle</span>
+              </div>
+              <div class="transcript">
+                <div class="msg me"><small>You</small>Is the dashboard change ready for review?</div>
+                <div class="msg live" data-live-msg>
+                  <small>Hephaestus</small>Built and pushed on its own branch. Tests green, lint clean, three
+                  small commits. Passing it to the gate now.
+                </div>
+              </div>
+              <div class="composer">
+                <input type="text" aria-label="Message" placeholder="Message (mock, does nothing)" /><button
+                  type="button"
+                >
+                  Send
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="mock.js"></script>
+    <script src="vendor/three.min.js"></script>
+    <script src="3d-hephaestus.js"></script>
+  </body>
+</html>
