@@ -40,14 +40,17 @@ How it behaves
 - Click the body (or focus it and press Enter or Space) to expand the orb into the bust; click again or press Esc to collapse. The stage is a button with `aria-expanded`, a pointer cursor, a hover and focus glow and a first-view hint pill. Touch works the same way (tap).
 - Activity (idle, thinking, speaking) is the `data-state` attribute on the stage; the Activity switch stands in for the chat stream that will drive it later. Orb: thinking contracts, spins faster and brightens; speaking pulses the glow. Bust: thinking speeds the scan sweep; speaking adds eye and core flicker, a pulse glow and a swaying hammer or coin.
 - Orb: a soft glass sphere (low-alpha fresnel rim, glowing interior, a wide haze band), a 7000-particle shell and core, an orbiting soft mote and pointer parallax. There are no hard ring lines.
-- Bust: the same 7000 particles dissolve from the orb into the figure. Real model heads are sampled into surface points with normals and drawn through the hologram point shader (rim light from the normal, scanlines, a rising scan sweep, depth fade for back-facing points, a rare glitch slice). Until the real models are added, a procedural head and body stand in (round cranium, tapered jaw, brow, nose, chin, flared neck, shoulders).
-- Per-god attributes are built in code: Hephaestus cap, beard, anvil and hammer; Themis blindfold band and scales; Janus a second face back to back, a doorway arch and a key; Atlas a sky arc; Plutus a crown and a coin; Apollo a laurel wreath and lyre; Iris a veil and rainbow arcs; Dionysus an ivy wreath with hanging vines.
+- Bust: the same 7000 particles dissolve from the orb into the figure. Real model heads are sampled into surface points with normals and drawn through the hologram point shader (rim light from the normal, scanlines, a rising scan sweep, depth fade for back-facing points, a rare glitch slice). Until a model loads (or if it is missing), a procedural head and body stand in (round cranium, tapered jaw, brow, nose, chin, flared neck, shoulders).
+- Per-god attributes are built in code: Hephaestus cap, beard, anvil and hammer (stand-in only); Themis blindfold band and scales; Janus a doorway arch and key; Atlas a sky arc (stand-in only); Plutus a crown and a coin; Apollo a laurel wreath and lyre; Iris a veil and rainbow arcs; Dionysus an ivy wreath with hanging vines (stand-in only). Janus's scan is a single head with two faces.
 - The 3D stage keeps dark glass tones in both themes; the page chrome follows the dark or the designed light set.
 
-Models (planned)
+Models (planned; none is in the repo yet)
 
-- Scans are CC0 museum models (Cleveland Museum of Art and similar), decimated and committed under `models/` with `ASSET-LICENSE` entries; none is in the repo yet, and nothing is downloaded at runtime. Scan to god mapping: Apollo apollo-head; Dionysus and Janus (two copies back to back) alexander-head; Hephaestus vespasian-head; Atlas herakles-head; Themis and Iris octavia-bust; Plutus noble-bust.
-- A model is loaded only when its god is selected (lazy) and cached for the session.
+- One scan per god, `models/<god id>.glb` (apollo, dionysus, janus, hephaestus, atlas, themis, iris, plutus), decimated to roughly 10-20k faces each. A scan is loaded only when its god is selected (lazy) and cached for the session; nothing is fetched from anywhere else at runtime.
+- Scan kinds: `head` (a head only, a procedural body is added: Janus, Iris), `bust` (as scanned: Themis, Plutus) and `statue` (a full statue cut to a bust at a per-scan crop height: Apollo, Dionysus, Hephaestus, Atlas). Each scan has its own up axis, yaw, scale, offset and optional eye glow positions in `SCANS` in `3d-gods.js`.
+- Where a scan already carries an attribute (Vulcan's hammer and anvil, Atlas's globe, Bacchus's vine), the in-code attribute is used only as a procedural stand-in while no scan is loaded. Code attributes stay for Themis (blindfold, scales), Iris (veil, rainbow), Plutus (crown, coin), Apollo (laurel, lyre) and Janus (doorway arch, key).
+- Licences: the CC0 scans need no attribution but are credited anyway; each CC BY scan is credited in `ASSET-LICENSE` and in the attribution section below with author, title, licence, URL, retrieval date and what was modified (decimated, cropped, re-pointed). The attribution section is added together with the files.
+- When a model arrives while the bust is showing, the bust dissolves to the orb and re-forms from the scan, so there is no pop.
 
 ### Performance notes
 
