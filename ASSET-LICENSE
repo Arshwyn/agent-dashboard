@@ -40,10 +40,10 @@ docs/mocks/models/janus.glb
     Modified: decimated to about 15k triangles, cropped (to the head (plinth removed)), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
     Attribution (CC BY 4.0): This work is based on "Janus" (https://sketchfab.com/3d-models/janus-7cf073c057ac4488b88d3911d4b2b01a) by danielpett licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
 docs/mocks/models/hephaestus.glb
-    "Vulcan Statue, Birmingham, Alabama." by Neal Wellman (Sketchfab: caw3rd). Source: https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5
+    "Vulcan Statue, Birmingham, Alabama." by caw3rd (Sketchfab). Source: https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5
     Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).
     Modified: decimated to about 15k triangles, cropped (to head and shoulders (raised arm removed)), re-pointed (textures, materials and normals dropped, node transforms applied, vertices welded, yaw and scale set in the mock). Geometry only; the file's asset metadata carries the credit line.
-    Attribution (CC BY 4.0): This work is based on "Vulcan Statue, Birmingham, Alabama." (https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5) by Neal Wellman (Sketchfab: caw3rd) licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
+    Attribution (CC BY 4.0): This work is based on "Vulcan Statue, Birmingham, Alabama." (https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5) by caw3rd (Sketchfab) licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Modified as above.
 docs/mocks/models/atlas.glb
     "Atlas" by LastRights93. Source: https://sketchfab.com/3d-models/atlas-62db2034e9a64301a961ad8dfc08cc93
     Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Retrieved: 2026-11-18 (downloaded by the repository owner from the source page; the licence and author were read from the license.txt in the download).

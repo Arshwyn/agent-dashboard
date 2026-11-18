@@ -56,18 +56,18 @@ Model attribution
 
 Sources are CC0 or CC BY 4.0 Sketchfab models, downloaded by the repository owner; the full entries (retrieval date, processing) are in `ASSET-LICENSE`. Every file was modified: decimated, cropped where noted, re-pointed (geometry only).
 
-| God        | Title                                            | Author or holder                 | Licence   | Source                                                                                                           |
-| ---------- | ------------------------------------------------ | -------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
-| Apollo     | 2004.30 Apollo the Python-Slayer                 | Cleveland Museum of Art          | CC0 1.0   | https://sketchfab.com/3d-models/200430-apollo-the-python-slayer-6267c784116c4b59821fdf8d09bc0298                 |
-| Dionysus   | Bacchus                                          | Musée Saint-Raymond              | CC0 1.0   | https://sketchfab.com/3d-models/bacchus-aa8748acb2594a37a372fe78dc41235d                                         |
-| Janus      | Janus                                            | danielpett                       | CC BY 4.0 | https://sketchfab.com/3d-models/janus-7cf073c057ac4488b88d3911d4b2b01a                                           |
-| Hephaestus | Vulcan Statue, Birmingham, Alabama.              | Neal Wellman (Sketchfab: caw3rd) | CC BY 4.0 | https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5                |
-| Atlas      | Atlas                                            | LastRights93                     | CC BY 4.0 | https://sketchfab.com/3d-models/atlas-62db2034e9a64301a961ad8dfc08cc93                                           |
-| Themis     | 1925.943 Portrait Of The Empress Claudia Octavia | Cleveland Museum of Art          | CC0 1.0   | https://sketchfab.com/3d-models/1925943-portrait-of-the-empress-claudia-octavia-9b2fbfe552ac4107a3623e19c1ddb4e4 |
-| Iris       | 1926.53 Head of Aphrodite                        | Cleveland Museum of Art          | CC BY 4.0 | https://sketchfab.com/3d-models/192653-head-of-aphrodite-2774d71b9211479a9ea49b519ca4ce2f                        |
-| Plutus     | 1952.260 Bust                                    | Cleveland Museum of Art          | CC0 1.0   | https://sketchfab.com/3d-models/1952260-bust-fc442ce1d47a49b0aea6ee03e86b5080                                    |
+| God        | Title                                            | Author or holder        | Licence   | Source                                                                                                           |
+| ---------- | ------------------------------------------------ | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| Apollo     | 2004.30 Apollo the Python-Slayer                 | Cleveland Museum of Art | CC0 1.0   | https://sketchfab.com/3d-models/200430-apollo-the-python-slayer-6267c784116c4b59821fdf8d09bc0298                 |
+| Dionysus   | Bacchus                                          | Musée Saint-Raymond     | CC0 1.0   | https://sketchfab.com/3d-models/bacchus-aa8748acb2594a37a372fe78dc41235d                                         |
+| Janus      | Janus                                            | danielpett              | CC BY 4.0 | https://sketchfab.com/3d-models/janus-7cf073c057ac4488b88d3911d4b2b01a                                           |
+| Hephaestus | Vulcan Statue, Birmingham, Alabama.              | caw3rd (Sketchfab)      | CC BY 4.0 | https://sketchfab.com/3d-models/vulcan-statue-birmingham-alabama-433342f73f6a4173a90c64f4332a4bf5                |
+| Atlas      | Atlas                                            | LastRights93            | CC BY 4.0 | https://sketchfab.com/3d-models/atlas-62db2034e9a64301a961ad8dfc08cc93                                           |
+| Themis     | 1925.943 Portrait Of The Empress Claudia Octavia | Cleveland Museum of Art | CC0 1.0   | https://sketchfab.com/3d-models/1925943-portrait-of-the-empress-claudia-octavia-9b2fbfe552ac4107a3623e19c1ddb4e4 |
+| Iris       | 1926.53 Head of Aphrodite                        | Cleveland Museum of Art | CC BY 4.0 | https://sketchfab.com/3d-models/192653-head-of-aphrodite-2774d71b9211479a9ea49b519ca4ce2f                        |
+| Plutus     | 1952.260 Bust                                    | Cleveland Museum of Art | CC0 1.0   | https://sketchfab.com/3d-models/1952260-bust-fc442ce1d47a49b0aea6ee03e86b5080                                    |
 
-Credit lines for the CC BY works (licence: https://creativecommons.org/licenses/by/4.0/): "Janus" by danielpett; "Vulcan Statue, Birmingham, Alabama." by Neal Wellman; "Atlas" by LastRights93; "1926.53 Head of Aphrodite" by Cleveland Museum of Art. Each is modified as described above.
+Credit lines for the CC BY works (licence: https://creativecommons.org/licenses/by/4.0/): "Janus" by danielpett; "Vulcan Statue, Birmingham, Alabama." by caw3rd (Sketchfab); "Atlas" by LastRights93; "1926.53 Head of Aphrodite" by Cleveland Museum of Art. Each is modified as described above.
 
 ### Performance notes
 
