@@ -4,7 +4,7 @@ A private web hub for talking with a small set of AI agents. Each agent is a glo
 
 **Status: the shell.** The roster, the 3D bodies, routing and single-owner sign-in work. The chat is not connected to a backend yet and says so in the page. Apollo's card links out to its own chat app. See [`docs/DESIGN.md`](docs/DESIGN.md) for the look and the rules behind it.
 
-- Node 24, plain `http` server, no frontend framework, no build step, no CDN. The browser needs WebGL 2 (otherwise the stage shows the text "3D view needs WebGL 2").
+- Node 24, plain `http` server with no runtime dependencies, no frontend framework, no build step, no CDN. The browser needs WebGL 2 (otherwise the stage shows the text "3D view needs WebGL 2").
 - Sign-in is Cloudflare Access only: the server verifies the `Cf-Access-Jwt-Assertion` JWT against the team's published keys, checks issuer, audience and expiry, and allows exactly one email. There are no passwords or sessions of its own. Everything except `/healthz` and `/event` requires it, and it fails closed.
 - `/healthz` is open. `POST /event` is a stub that reads the body, stores nothing and returns 204, so hooks configured elsewhere for the old dashboard do not error.
 - Default port: **8787**.
@@ -13,25 +13,25 @@ A private web hub for talking with a small set of AI agents. Each agent is a glo
 
 Copy `.env.example` to `.env` and fill it in (it is gitignored).
 
-| Variable             | Required | Meaning                                                     |
-| -------------------- | -------- | ----------------------------------------------------------- |
-| `ACCESS_TEAM_DOMAIN` | yes      | Hostname of the Cloudflare Access team, no scheme           |
-| `ACCESS_AUD`         | yes      | Audience tag of the Access application in front of this app |
-| `OWNER_EMAIL`        | yes      | The single allowed email                                    |
-| `PORT`               | no       | Listen port (default 8787)                                  |
-| `HOST`               | no       | Bind address (default 127.0.0.1; the image sets 0.0.0.0)    |
-| `BIND_ADDR`          | no       | Address compose publishes the port on (default 127.0.0.1)   |
-| `APOLLO_CHAT_URL`    | no       | https link-out for the Apollo card; empty hides it          |
-| `DEV_AUTH_BYPASS`    | no       | `1` skips Access for local development only                 |
+| Variable             | Required | Meaning                                                                        |
+| -------------------- | -------- | ------------------------------------------------------------------------------ |
+| `ACCESS_TEAM_DOMAIN` | yes      | Hostname of the Cloudflare Access team, no scheme                              |
+| `ACCESS_AUD`         | yes      | Audience tag of the Access application in front of this app                    |
+| `OWNER_EMAIL`        | yes      | The single allowed email                                                       |
+| `PORT`               | no       | Listen port (default 8787)                                                     |
+| `HOST`               | no       | Bind address (default 127.0.0.1; the image sets 0.0.0.0)                       |
+| `BIND_ADDR`          | no       | Address compose publishes the port on (default 127.0.0.1)                      |
+| `APOLLO_CHAT_URL`    | no       | https link-out for the Apollo card (no credentials in the URL); empty hides it |
+| `DEV_AUTH_BYPASS`    | no       | `1` skips Access for local development only                                    |
 
-`DEV_AUTH_BYPASS=1` is accepted only when `HOST` is a loopback address and `NODE_ENV` is not `production`; otherwise the server refuses to start. With it on, only requests from the local machine are served and a warning is logged at startup. Never set it on a deployment.
+`DEV_AUTH_BYPASS=1` is accepted only when `NODE_ENV` is explicitly `development` or `test` (case and spaces ignored; unset or anything else is refused) and `HOST` is a loopback address; otherwise the server refuses to start. With it on, only requests from the local machine are served (a request carrying `X-Forwarded-For`, `Forwarded` or any `Cf-*` header is refused, as it came through a proxy or tunnel) and a warning is logged at startup. Never set it on a deployment.
 
 ## Run
 
 ```bash
 npm install
 # local development, no Access:
-DEV_AUTH_BYPASS=1 npm start        # http://127.0.0.1:8787
+NODE_ENV=development DEV_AUTH_BYPASS=1 npm start   # http://127.0.0.1:8787
 # or with Access configured in .env:
 npm start
 ```
