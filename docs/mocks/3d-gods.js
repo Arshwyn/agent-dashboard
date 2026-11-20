@@ -101,17 +101,19 @@
   // box in fractions of the model's own extent; eyes are optional glow positions; orient 'winding' trusts the
   // triangle winding for normals. For tuning, ?yaw=, ?scale=, ?dy= and ?crop= override these for the god being viewed.
   var SCANS = {
-    apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // the half figure holds its own attribute (a lyre)
-    dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // thyrsus and cup
-    janus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // two faces, a key and a staff
-    hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // anvil and hammer
-    atlas: { kind: 'bust', yaw: -0.5, scale: 1, dy: 0 }, // raised arms gripping the globe; the bowed head is behind it
-    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // scales
-    iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // wings, winged staff, pitcher
-    plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // cornucopia
+    // The corrective yaw is baked into each GLB (yaw 0 is frontal, shoulders parallel to the screen, torso centred
+    // on the origin); these numbers only nudge. pitch and roll are optional tilts in radians.
+    apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    janus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // body frontal; the two profile faces are as sculpted
+    hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    atlas: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
   };
 
-  ['yaw', 'scale', 'dy'].forEach(function (k) {
+  ['yaw', 'pitch', 'roll', 'scale', 'dy'].forEach(function (k) {
     var v = parseFloat(new URLSearchParams(window.location.search).get(k));
     if (isFinite(v)) {
       var gid = new URLSearchParams(window.location.search).get('god') || 'hephaestus';
@@ -690,8 +692,8 @@
     }
     var full = kind !== 'head'; // a bust fills the whole figure; a head gets a procedural body
     var s = ((full ? 2.3 : 1.4) / (maxY - minY || 1)) * (cfg.scale || 1);
-    var cx = (minX + maxX) / 2;
-    var cz = (minZ + maxZ) / 2;
+    var cx = 0; // the torso is centred on the origin in the baked file
+    var cz = 0;
     var oy = (minY + maxY) / 2;
     var cy = (full ? 0 : 0.5) + (cfg.dy || 0);
     var cum = new Float32Array(tris.length);
@@ -794,6 +796,31 @@
       out[i * 6 + 3] = mx * cos + mz * sin;
       out[i * 6 + 4] = ny / nl;
       out[i * 6 + 5] = -mx * sin + mz * cos;
+    }
+    if (cfg.pitch || cfg.roll) {
+      // optional tilt about the figure's centre: pitch about X, then roll about Z
+      var cp = Math.cos(cfg.pitch || 0);
+      var sP = Math.sin(cfg.pitch || 0);
+      var cRoll = Math.cos(cfg.roll || 0);
+      var sR = Math.sin(cfg.roll || 0);
+      var tiltAt = function (arr, o, dy) {
+        var y0 = arr[o + 1] - dy;
+        var z0 = arr[o + 2];
+        var y1 = y0 * cp - z0 * sP;
+        var z1 = y0 * sP + z0 * cp;
+        var x1 = arr[o];
+        arr[o] = x1 * cRoll - y1 * sR;
+        arr[o + 1] = x1 * sR + y1 * cRoll + dy;
+        arr[o + 2] = z1;
+      };
+      for (var u = 0; u < sp.length; u += 3) {
+        tiltAt(sp, u, cy);
+        tiltAt(sn, u, 0);
+      }
+      for (var w = 0; w < M; w++) {
+        tiltAt(out, w * 6, cy);
+        tiltAt(out, w * 6 + 3, 0);
+      }
     }
     return out;
   }
