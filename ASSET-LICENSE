@@ -27,29 +27,29 @@ art/kenney-roguelike-indoors/SOURCE.txt
     only the input of scripts/build-office-atlas.js.
 
 docs/mocks/models/apollo.glb
-    Stylised model of Apollo. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Apollo, one combined mesh that includes the held objects (a lyre). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/dionysus.glb
-    Stylised model of Dionysus. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Dionysus, one combined mesh that includes the held objects (a thyrsus and a wine cup). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/janus.glb
-    Stylised model of Janus. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Janus, one combined mesh that includes the held objects (a key and a short staff (one head with two faces)). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/hephaestus.glb
-    Stylised model of Hephaestus. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Hephaestus, one combined mesh that includes the held objects (an anvil and a hammer). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/atlas.glb
-    Stylised model of Atlas. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Atlas, one combined mesh that includes the held objects (a ringed celestial globe held overhead). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/themis.glb
-    Stylised model of Themis. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Themis, one combined mesh that includes the held objects (scales). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/iris.glb
-    Stylised model of Iris. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Iris, one combined mesh that includes the held objects (wings, a winged staff and a water pitcher). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/plutus.glb
-    Stylised model of Plutus. Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
-    Modified: cropped to a head-to-waist half figure, decimated to about 18k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Stylised half figure of Plutus, one combined mesh that includes the held objects (a cornucopia). Reference image generated with Google Gemini (Nano Banana) by the repository owner; image-to-3D with TRELLIS.2 (MIT, Microsoft) via ComfyUI on the owner's own hardware (2026-11-20). No third-party photograph or scan is used. Licence: CC0 1.0, dedicated by the repository owner.
+    Modified: cropped to a head-to-waist half figure, decimated to about 25k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/vendor/three.min.js
 docs/mocks/vendor/three.LICENSE
 docs/mocks/vendor/three-subset.js
