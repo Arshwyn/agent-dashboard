@@ -70,6 +70,7 @@
     timeout: 'The run took too long and was stopped.',
     too_large: 'The reply was too large and was stopped.',
     disabled: 'Web chat is switched off.',
+    switched_off: 'Web chat was switched off during this reply, so it was stopped.',
     busy: 'Another run is in progress. Try again when it finishes.',
     not_enabled: 'Chat is not enabled for this agent yet.',
     unavailable: 'The chat service is not reachable.',
@@ -176,11 +177,19 @@
     var log = el('div', {
       class: 'messages',
       role: 'log',
-      'aria-live': 'polite',
-      'aria-relevant': 'additions text',
+      // streamed text is not announced word by word; the announcer below says when a reply is complete
+      'aria-live': 'off',
       'aria-label': 'Messages',
     });
     chat.appendChild(log);
+    var announcer = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
+    chat.appendChild(announcer);
+    function announce(text) {
+      announcer.textContent = '';
+      window.setTimeout(function () {
+        announcer.textContent = text;
+      }, 50);
+    }
     var composer = el('div', { class: 'composer' });
     var input = el('textarea', {
       'aria-label': 'Message',
@@ -189,7 +198,11 @@
       placeholder: 'Message ' + a.name,
     });
     var bSend = el('button', { type: 'button' }, 'Send');
-    var bStop = el('button', { type: 'button', class: 'stop', hidden: '' }, 'Stop');
+    var bStop = el(
+      'button',
+      { type: 'button', class: 'stop', hidden: '', title: 'End this reply now' },
+      'Stop',
+    );
     [input, bSend, bStop].forEach(function (n) {
       composer.appendChild(n);
     });
@@ -204,6 +217,7 @@
 
     function lock(on) {
       chat_.busy = on;
+      log.setAttribute('aria-busy', on ? 'true' : 'false');
       bSend.disabled = on || !st.enabled;
       input.disabled = !st.enabled;
       bStop.hidden = !on;
@@ -224,7 +238,15 @@
     function drawMessages(msgs) {
       log.textContent = '';
       if (!msgs.length) {
-        log.appendChild(el('p', { class: 'empty' }, 'No messages yet. Say something to ' + a.name + '.'));
+        log.appendChild(
+          el(
+            'p',
+            { class: 'empty' },
+            'No messages yet. Say something to ' +
+              a.name +
+              '. A reply keeps running if you close the page and is saved; use Stop to end it.',
+          ),
+        );
       }
       msgs.forEach(function (m) {
         var cls = m.status === 'error' ? 'is-error' : m.status === 'cancelled' ? 'is-cancelled' : '';
@@ -341,12 +363,14 @@
           if (data.cancelled) live.appendChild(el('small', { class: 'err' }, 'Stopped.'));
           tool.remove();
           log.scrollTop = log.scrollHeight;
+          announce(data.cancelled ? 'Stopped.' : 'Reply from ' + a.name + ' complete.');
           setStageState('idle');
         } else if (ev === 'error') {
           tool.remove();
           live.appendChild(el('small', { class: 'err' }, ERROR_TEXT[data.code] || ERROR_TEXT.failed));
           live.classList.add('is-error');
           log.scrollTop = log.scrollHeight;
+          announce(ERROR_TEXT[data.code] || ERROR_TEXT.failed);
           setStageState('error');
         }
       }
