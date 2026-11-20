@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { AccessVerifier } = require('./access');
+const { csrfOk, jsonContentType } = require('./csrf');
+const { createChat } = require('./chat');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const MIME = {
@@ -94,6 +96,56 @@ function createApp(config, opts = {}) {
     req.on('error', () => {});
   }
 
+  // Chat API plumbing. Bodies are JSON only and capped well below the stub's limit.
+  const MAX_JSON_BYTES = 20 * 1024;
+  function readJson(req, res, cb) {
+    if (!jsonContentType(req)) return send(res, 415, { error: 'content type must be application/json' });
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > MAX_JSON_BYTES)
+      return send(res, 413, { error: 'payload too large' }, { Connection: 'close' });
+    const chunks = [];
+    let size = 0;
+    let dead = false;
+    req.on('data', (c) => {
+      if (dead) return;
+      size += c.length;
+      if (size > MAX_JSON_BYTES) {
+        dead = true;
+        send(res, 413, { error: 'payload too large' }, { Connection: 'close' });
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (dead) return;
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        return send(res, 400, { error: 'invalid JSON' });
+      }
+      cb(body);
+    });
+    req.on('error', () => {});
+  }
+  const chat = createChat(
+    { config, store: opts.store, gateway: opts.gateway, now: opts.now },
+    {
+      json: send,
+      readJson,
+      sseHeaders: () => ({
+        ...SECURITY_HEADERS,
+        ...hsts,
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      }),
+    },
+  );
+  if (opts.store) chat.recover();
+
   function roster() {
     return ROSTER.map((a) => ({
       ...a,
@@ -152,6 +204,11 @@ function createApp(config, opts = {}) {
         return send(res, auth.status, { error: msg });
       }
       if (badTarget) return send(res, 400, { error: 'bad request target' });
+      if (m !== 'GET' && m !== 'HEAD' && !csrfOk(req)) return send(res, 403, { error: 'forbidden' });
+      if (p === '/api/chat/status' || p === '/api/chats' || p.startsWith('/api/chats/')) {
+        if (!opts.store) return send(res, 503, { error: 'unavailable' });
+        return chat.route(req, res, new URL(target, 'http://localhost'));
+      }
       if (m !== 'GET' && m !== 'HEAD')
         return send(res, 405, { error: 'method not allowed' }, { Allow: 'GET, HEAD' });
       if (p === '/api/roster') return send(res, 200, { agents: roster() });
@@ -173,7 +230,7 @@ function createApp(config, opts = {}) {
       server.closeAllConnections?.();
     });
   }
-  return { server, close };
+  return { server, close, chat };
 }
 
 module.exports = { createApp };

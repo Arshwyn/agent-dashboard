@@ -15,6 +15,10 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   DEV_AUTH_BYPASS     "1" turns Access off for local development; needs NODE_ENV=development (or test)
  *                       and a loopback HOST, otherwise the server refuses to start
  *   APOLLO_CHAT_URL     optional https link-out for the Apollo card; empty hides it
+ *   GATEWAY_SOCKET      absolute path of the chat gateway's unix socket; unset means chat is offline
+ *   DB_PATH             SQLite file for the chat history (default ./data/hub.db)
+ *   CHAT_DISABLED       "1" is the app-side kill switch for all web chat runs
+ *   CHAT_MAX_PER_MIN    messages per minute across all conversations (default 6)
  */
 function loadConfig(env) {
   const host = (env.HOST || '127.0.0.1').trim();
@@ -68,6 +72,21 @@ function loadConfig(env) {
     apolloChatUrl = u.href;
   }
 
+  let gatewaySocket = '';
+  if (env.GATEWAY_SOCKET) {
+    if (!String(env.GATEWAY_SOCKET).startsWith('/') || String(env.GATEWAY_SOCKET).includes('\0')) {
+      throw new Error('GATEWAY_SOCKET must be an absolute path');
+    }
+    gatewaySocket = env.GATEWAY_SOCKET;
+  }
+  const perMin =
+    env.CHAT_MAX_PER_MIN === undefined || env.CHAT_MAX_PER_MIN === '' ? 6 : Number(env.CHAT_MAX_PER_MIN);
+  if (!Number.isInteger(perMin) || perMin < 1 || perMin > 120)
+    throw new Error('CHAT_MAX_PER_MIN must be 1-120');
+  if (env.CHAT_DISABLED && env.CHAT_DISABLED !== '1' && env.CHAT_DISABLED !== '0') {
+    throw new Error('CHAT_DISABLED must be 1 or 0');
+  }
+
   return {
     host,
     port,
@@ -77,6 +96,10 @@ function loadConfig(env) {
     accessAud: aud,
     ownerEmail: owner,
     apolloChatUrl,
+    gatewaySocket,
+    dbPath: env.DB_PATH || './data/hub.db',
+    chatDisabled: env.CHAT_DISABLED === '1',
+    chatMaxPerMin: perMin,
     maxBodyBytes: 65536,
   };
 }
