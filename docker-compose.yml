@@ -4,6 +4,8 @@ services:
       context: .
     image: agent-hub:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # Run as the OS user that owns the gateway socket (it is mode 0600). See docs/DEPLOY.md.
+    user: '${HUB_UID:?set HUB_UID in .env}:${HUB_GID:?set HUB_GID in .env}'
     ports:
       # Loopback by default, for a same-host tunnel or reverse proxy in front of Cloudflare Access.
       - '${BIND_ADDR:-127.0.0.1}:${PORT:-8787}:8787'
@@ -13,6 +15,15 @@ services:
       ACCESS_AUD: ${ACCESS_AUD:?set ACCESS_AUD in .env}
       OWNER_EMAIL: ${OWNER_EMAIL:?set OWNER_EMAIL in .env}
       APOLLO_CHAT_URL: ${APOLLO_CHAT_URL:-}
+      GATEWAY_SOCKET: /gateway/gateway.sock
+      DB_PATH: /data/hub.db
+      CHAT_DISABLED: ${CHAT_DISABLED:-0}
+      CHAT_MAX_PER_MIN: ${CHAT_MAX_PER_MIN:-6}
+    volumes:
+      # The gateway's socket directory, read-only (connecting to a socket needs no write access to the mount).
+      - ${GATEWAY_SOCKET_DIR:?set GATEWAY_SOCKET_DIR in .env}:/gateway:ro
+      # The conversation history. A directory owned by HUB_UID:HUB_GID.
+      - ${HUB_DATA_DIR:?set HUB_DATA_DIR in .env}:/data
     read_only: true
     tmpfs:
       - /tmp
