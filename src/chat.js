@@ -155,6 +155,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     const mapper = createStreamMapper();
     let result = null;
     let sawText = false;
+    let sawTool = false;
     let exit = null;
     let gwError = null;
     try {
@@ -167,8 +168,10 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
                 sawText = true;
                 emit('delta', { text: ev.text });
               } else if (ev.kind === 'interim') emit('interim', { text: ev.text });
-              else if (ev.kind === 'tool') emit('tool', { label: ev.label });
-              else if (ev.kind === 'result') result = ev;
+              else if (ev.kind === 'tool') {
+                sawTool = true;
+                emit('tool', { label: ev.label });
+              } else if (ev.kind === 'result') result = ev;
             }
           },
         },
@@ -176,7 +179,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     } catch (e) {
       gwError = e instanceof GatewayError ? e.code : 'unavailable';
     }
-    return { exit, result, gwError, sawText, mapper };
+    return { exit, result, gwError, sawText, sawTool, mapper };
   }
 
   async function stream(req, res, c, text) {
@@ -206,8 +209,9 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       }, keepaliveMs);
 
       // The session may exist or not, whatever the hub's flag says (a first run can die after the session was
-      // created; a session file can be gone). A run that fails without producing any text is retried once in the
-      // other mode, and the flag is only set after a successful run. The hub's history is untouched either way.
+      // created; a session file can be gone). A run that fails before it did anything (no tool event, no text) is
+      // retried once in the other mode. A run that used a tool is NEVER retried: repeating the prompt could repeat
+      // side effects (commands, writes, deploys). The flag is only set after a successful run; history is kept.
       let resume = c.session_started === true;
       let r = await attempt(c, text, resume, emit);
       const failed = (x) =>
@@ -217,6 +221,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
         !x.exit.tooBig &&
         !x.exit.switchedOff &&
         !x.sawText &&
+        !x.sawTool &&
         ((x.result && x.result.isError) || x.exit.code !== 0);
       if (failed(r) && !gone) {
         resume = !resume;
@@ -236,12 +241,28 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       else if (exit.timedOut) [statusName, errorCode] = ['error', 'timeout'];
       else if (exit.tooBig) [statusName, errorCode] = ['error', 'too_large'];
       else if ((result && result.isError) || exit.code !== 0) [statusName, errorCode] = ['error', 'failed'];
-      if (statusName === 'done' && result) store.markSessionStarted(c.id);
+      // A store failure after the run must not drop the reply: the write is retried once, and if it still fails
+      // the text is sent to the browser anyway, marked as not saved.
+      const persist = (fn) => {
+        for (let i = 0; i < 2; i++) {
+          try {
+            fn();
+            return true;
+          } catch {
+            // try once more
+          }
+        }
+        return false;
+      };
+      if (statusName === 'done' && result) persist(() => store.markSessionStarted(c.id));
       const finalText = mapper.finalText().trim() || (result && !result.isError ? result.text : '');
-      store.updateMessage(asstId, { text: finalText, status: statusName, errorCode });
-      if (statusName === 'done') emit('done', { message_id: asstId, text: finalText });
+      const saved = persist(() =>
+        store.updateMessage(asstId, { text: finalText, status: statusName, errorCode }),
+      );
+      const unsaved = saved ? {} : { unsaved: true };
+      if (statusName === 'done') emit('done', { message_id: asstId, text: finalText, ...unsaved });
       else if (statusName === 'cancelled')
-        emit('done', { message_id: asstId, text: finalText, cancelled: true });
+        emit('done', { message_id: asstId, text: finalText, cancelled: true, ...unsaved });
       else emit('error', { code: errorCode, message_id: asstId });
     } catch {
       // a store or stream failure: generic answer, and the slot is always released below

@@ -361,6 +361,8 @@
         } else if (ev === 'done') {
           live.textContent = data.text || text;
           if (data.cancelled) live.appendChild(el('small', { class: 'err' }, 'Stopped.'));
+          if (data.unsaved)
+            live.appendChild(el('small', { class: 'err' }, 'This reply could not be saved to the history.'));
           tool.remove();
           log.scrollTop = log.scrollHeight;
           announce(data.cancelled ? 'Stopped.' : 'Reply from ' + a.name + ' complete.');
