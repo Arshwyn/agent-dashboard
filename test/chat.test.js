@@ -342,6 +342,27 @@ test('one run at a time: the second send is 409 while the first streams; stop ca
   }
 });
 
+test('a silent stretch keeps the stream open with comment lines the client ignores', async () => {
+  const gw = fakeGateway({
+    async run(_r, onLine) {
+      onLine(init);
+      await new Promise((r) => setTimeout(r, 250));
+      onLine(delta('late'));
+      onLine(result('late'));
+      return { type: 'exit', code: 0, cancelled: false, timedOut: false };
+    },
+  });
+  const s = await startApp({}, { store: createMemoryStore(), gateway: gw, keepaliveMs: 50 });
+  try {
+    const c = await newChat({ ...s, store: null });
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'wait' });
+    assert.ok((r.text.match(/^: keepalive$/gm) || []).length >= 2);
+    assert.ok(r.text.includes('event: done'));
+  } finally {
+    await s.stop();
+  }
+});
+
 test('the per-minute message limit answers 429 with Retry-After', async () => {
   let t = Date.now();
   const s = await startApp(

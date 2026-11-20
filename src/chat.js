@@ -13,7 +13,7 @@ const PILOT_AGENTS = Object.freeze(['arshwyn']);
  * The chat API. `h.json(res, status, body, headers)` sends JSON, `h.readJson(req, res, cb)` reads a size-capped JSON
  * body. All routes are behind Access and (for state changes) the CSRF check, both applied by the server first.
  */
-function createChat({ config, store, gateway, now = () => Date.now() }, h) {
+function createChat({ config, store, gateway, now = () => Date.now(), keepaliveMs = 15_000 }, h) {
   const running = new Map(); // agent -> { runId, conversationId }
   const sendTimes = [];
 
@@ -166,6 +166,11 @@ function createChat({ config, store, gateway, now = () => Date.now() }, h) {
     };
     emit('start', { message_id: asstId });
     emit('thinking', {});
+    // A silent stretch (a long tool call) would let a proxy in front drop the idle stream; a comment line is ignored by
+    // the browser and keeps it open.
+    const keepalive = setInterval(() => {
+      if (!gone) res.write(': keepalive\n\n');
+    }, keepaliveMs);
 
     const mapper = createStreamMapper();
     let result = null;
@@ -199,6 +204,7 @@ function createChat({ config, store, gateway, now = () => Date.now() }, h) {
       gwError = e instanceof GatewayError ? e.code : 'unavailable';
     }
 
+    clearInterval(keepalive);
     let statusName = 'done';
     let errorCode = null;
     if (gwError) {
