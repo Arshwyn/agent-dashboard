@@ -40,7 +40,7 @@
       name: 'Themis',
       role: 'Quality gate',
       pal: ['#9bb8ff', '#e9c46a', '#f2f6ff'],
-      attrs: ['band', 'scales'],
+      attrs: ['scales'],
       you: 'Did the checks pass?',
       reply: 'Every check ran and held. One naming note is logged for later; nothing blocks the merge.',
     },
@@ -69,7 +69,7 @@
       name: 'Plutus',
       role: 'Finance',
       pal: ['#3fbf7a', '#d6a82a', '#eaffd8'],
-      attrs: ['crown', 'coin'],
+      attrs: ['coin'],
       you: 'How are the savings tracking this month?',
       reply:
         'Steady. Spending stayed under plan and nothing needs moving today. I would not trade on a hunch.',
@@ -79,7 +79,7 @@
       name: 'Apollo',
       role: 'Coach',
       pal: ['#ffd24a', '#8fbf6a', '#fff3bd'],
-      attrs: ['laurel', 'lyre'],
+      attrs: ['lyre'], // the generated head carries its own hair; no wreath
       you: 'How did recovery look this week?',
       reply:
         'A calm week. Rest held steady and effort stayed in range. Keep tomorrow easy and let the daylight do some of the work.',
@@ -89,7 +89,7 @@
       name: 'Iris',
       role: 'Mail and calendar',
       pal: ['#ff7ac8', '#5ad1ff', '#ffe27a'],
-      attrs: ['veil', 'rainbow'],
+      attrs: ['rainbow'],
       you: 'What is on tomorrow?',
       reply:
         'A light day: two meetings and one draft reply waiting for your approval. Nothing is sent until you say so.',
@@ -106,24 +106,21 @@
         'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
     },
   ];
-  // One scan per god, models/<god id>.glb (geometry only: positions and indices, textures stripped).
-  // kind: head = a head only (a procedural body is added); bust = the file already holds head and shoulders
-  // (statues were cropped to a bust when the file was made). yaw turns the model about Y so it faces the camera;
-  // scale and dy nudge the fit; eyes are optional glow positions in bust space; orient 'winding' trusts the
-  // triangle winding for normals instead of pointing them away from the middle of the model.
-  // For tuning, ?yaw=, ?scale= and ?dy= override the values for the god being viewed.
+  // One model per god, models/<god id>.glb: geometry only (positions and indices), about 15k triangles, generated
+  // from a photograph of a real sculpture (see ASSET-LICENSE). Every model is a head or bust and fills the stage by
+  // itself (kind 'bust'). yaw turns it about Y to face the camera; scale and dy nudge the fit; crop is an optional
+  // box in fractions of the model's own extent; eyes are optional glow positions; orient 'winding' trusts the
+  // triangle winding for normals. For tuning, ?yaw=, ?scale=, ?dy= and ?crop= override these for the god being viewed.
   var SCANS = {
-    apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    dionysus: { kind: 'bust', yaw: -Math.PI / 2, scale: 1, dy: 0 },
-    // one head with two faces, shown large and alone (a herm has no shoulders); turn it to see one face frontally
-    janus: { kind: 'bust', yaw: Math.PI / 2 - 0.5, scale: 0.85, dy: 0, crop: { y: [0.12, 1] } },
-    hephaestus: { kind: 'head', yaw: -Math.PI / 2, scale: 1, dy: 0, crop: { y: [0.42, 1], x: [0.25, 0.85] } }, // head only: drops the statue's stray arm and ground
-    atlas: { kind: 'bust', yaw: 0, scale: 0.9, dy: 0 }, // the figure bends forward under the globe: no head is visible in this scan
-    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0, crop: { y: [0.13, 1] } }, // drops the display rod under the bust
-    iris: { kind: 'head', yaw: 0, scale: 1, dy: 0, crop: { y: [0.18, 1] } }, // drops the neck stump
-    plutus: { kind: 'head', yaw: 0, scale: 1, dy: 0 }, // the scan is a head, not a bust
+    apollo: { kind: 'bust', yaw: 0.4, scale: 1, dy: 0 },
+    dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    janus: { kind: 'bust', yaw: 1.35, scale: 1, dy: -0.05 }, // two faces back to back: turned so one face is nearly frontal
+    hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    atlas: { kind: 'bust', yaw: 0, scale: 1.1, dy: 0 }, // the full Farnese figure under the globe
+    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
   };
-
   ['yaw', 'scale', 'dy'].forEach(function (k) {
     var v = parseFloat(new URLSearchParams(window.location.search).get(k));
     if (isFinite(v)) {
@@ -789,6 +786,7 @@
     uB: U.uB,
     uC: U.uC,
     uSpeak: { value: 0 },
+    uSurf: { value: 0 },
   };
   var pm = new THREE.ShaderMaterial({
     uniforms: pu,
@@ -828,7 +826,7 @@
     ].join('\n'),
     fragmentShader: [
       'uniform vec3 uA, uB, uC;',
-      'uniform float uTime, uSpeak, uThink;',
+      'uniform float uTime, uSpeak, uThink, uSurf;',
       'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float d = length(gl_PointCoord - 0.5);',
@@ -840,7 +838,7 @@
       '  col = mix(col, uC, 0.25 + sweep * 0.7);',
       '  col = mix(col, uC, vRim * vT * 0.7);',
       '  float k = mix(1.0 + uThink * 0.5, scan + sweep * 1.5 + uSpeak * 0.25 + vRim * 0.9 + 0.25, vT);',
-      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace * (0.55 + 1.1 * vLit), vT);',
+      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace * (0.55 + 1.1 * vLit) * (1.0 - 0.6 * uSurf), vT);',
       '  gl_FragColor = vec4(col * alpha, alpha);',
       '}',
     ].join('\n'),
@@ -982,6 +980,47 @@
   shoulderWire.position.set(0, -1.1, 0);
   world.add(shoulderWire);
 
+  // shaded hologram surface of the loaded model (fresnel rim, key light, soft scanlines); fades in with the morph
+  var surfMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uA: U.uA, uB: U.uB, uC: U.uC, uShow: { value: 0 }, uSpeak: pu.uSpeak },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    vertexShader: [
+      'varying vec3 vN; varying vec3 vV; varying float vY;',
+      'void main() {',
+      '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+      '  vN = normalize(normalMatrix * normal);',
+      '  vV = -mv.xyz;',
+      '  vY = position.y;',
+      '  gl_Position = projectionMatrix * mv;',
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'uniform vec3 uA, uB, uC;',
+      'uniform float uTime, uShow, uSpeak;',
+      'varying vec3 vN; varying vec3 vV; varying float vY;',
+      'void main() {',
+      '  vec3 n = normalize(vN);',
+      '  vec3 v = normalize(vV);',
+      '  float nd = dot(n, v);',
+      '  float front = step(0.0, nd);',
+      '  float rim = pow(1.0 - abs(nd), 2.5);',
+      '  float lit = max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);',
+      '  float scan = 0.88 + 0.12 * sin(vY * 90.0 - uTime * 2.5);',
+      '  float sweep = exp(-pow(fract(uTime * 0.22) * 2.8 - 1.4 - vY, 2.0) * 30.0);',
+      '  vec3 col = mix(uA, uC, rim * 0.8 + sweep * 0.6);',
+      '  float a = (0.08 + 0.7 * lit * front + 0.7 * rim) * scan + sweep * 0.5 + uSpeak * 0.08;',
+      '  gl_FragColor = vec4(col * a * uShow, a * uShow);',
+      '}',
+    ].join('\n'),
+  });
+  var surfMesh = new THREE.Mesh(new THREE.BufferGeometry(), surfMat);
+  surfMesh.frustumCulled = false;
+  surfMesh.visible = false;
+  world.add(surfMesh);
+
   var attrGroup = new THREE.Group();
   world.add(attrGroup);
 
@@ -1089,8 +1128,52 @@
       cum[i] = total;
     });
     if (!(total > 0) || !isFinite(total)) return null; // all triangles degenerate
+    // the same normalised triangles, kept as a shaded hologram surface (positions and outward face normals)
+    var sp = new Float32Array(tris.length * 9);
+    var sn = new Float32Array(tris.length * 9);
+    var ccos = Math.cos(yaw);
+    var csin = Math.sin(yaw);
+    tris.forEach(function (t, i) {
+      var q = [];
+      for (var k = 0; k < 9; k += 3) {
+        var x0 = (t[k] - cx) * s;
+        var z0 = (t[k + 2] - cz) * s;
+        q.push(x0 * ccos + z0 * csin, (t[k + 1] - oy) * s + cy, -x0 * csin + z0 * ccos);
+      }
+      var ux = q[3] - q[0];
+      var uy = q[4] - q[1];
+      var uz = q[5] - q[2];
+      var wx = q[6] - q[0];
+      var wy = q[7] - q[1];
+      var wz = q[8] - q[2];
+      var fx = uy * wz - uz * wy;
+      var fy = uz * wx - ux * wz;
+      var fz = ux * wy - uy * wx;
+      var fl = Math.hypot(fx, fy, fz) || 1;
+      fx /= fl;
+      fy /= fl;
+      fz /= fl;
+      // outward: away from the middle of the model
+      var mxc = (q[0] + q[3] + q[6]) / 3;
+      var myc = (q[1] + q[4] + q[7]) / 3 - cy;
+      var mzc = (q[2] + q[5] + q[8]) / 3;
+      if (cfg.orient !== 'winding' && fx * mxc + fy * myc + fz * mzc < 0) {
+        fx = -fx;
+        fy = -fy;
+        fz = -fz;
+      }
+      for (var j = 0; j < 9; j += 3) {
+        sp[i * 9 + j] = q[j];
+        sp[i * 9 + j + 1] = q[j + 1];
+        sp[i * 9 + j + 2] = q[j + 2];
+        sn[i * 9 + j] = fx;
+        sn[i * 9 + j + 1] = fy;
+        sn[i * 9 + j + 2] = fz;
+      }
+    });
     var M = CFG.scanPoints;
     var out = new Float32Array(M * 6);
+    out.surf = { p: sp, n: sn };
     for (var i = 0; i < M; i++) {
       var r = ((i + 0.5) / M + (rnd() - 0.5) / M) * total;
       var lo = 0;
@@ -1144,7 +1227,7 @@
       'models/' + id + '.glb',
       function (gltf) {
         var pts = sampleScene(gltf.scene, SCANS[id]);
-        scans[id] = pts ? { pts: pts } : { failed: true };
+        scans[id] = pts ? { pts: pts, surf: pts.surf } : { failed: true };
         scanNote[id] = pts ? 'mesh ' + id : 'empty model ' + id + ', procedural bust';
         if (god.id === id) swapIn();
       },
@@ -1205,6 +1288,13 @@
     pg.attributes.aBust.needsUpdate = true;
     pg.attributes.aNorm.needsUpdate = true;
     usingMesh = !!scan;
+    surfMesh.geometry.dispose();
+    surfMesh.geometry = new THREE.BufferGeometry();
+    surfMesh.visible = !!(scan && scan.surf);
+    if (scan && scan.surf) {
+      surfMesh.geometry.setAttribute('position', new THREE.BufferAttribute(scan.surf.p, 3));
+      surfMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(scan.surf.n, 3));
+    }
     var cfg = SCANS[god.id];
     eyesShown = !scan || !!cfg.eyes;
     if (!scan) {
@@ -1420,6 +1510,8 @@
     coreGlow.scale.setScalar(Math.max(0.2, cs) * (2.1 * (1 - e) + 0.95 * e));
 
     var wireOp = ss(0.35, 1, m);
+    surfMat.uniforms.uShow.value = ss(0.55, 1, m);
+    pu.uSurf.value = surfMesh.visible ? 1 : 0;
     headWire.material.opacity = usingMesh ? 0 : wireOp * 0.16;
     shoulderWire.material.opacity = usingBustMesh ? 0 : wireOp * 0.22;
     attrGroup.traverse(function (c) {
@@ -1604,7 +1696,8 @@
     [pg, headWire.geometry, shoulderWire.geometry, band.geometry].forEach(function (g) {
       g.dispose();
     });
-    [pm, glassMat, hazeBandMat].forEach(function (m) {
+    surfMesh.geometry.dispose();
+    [pm, glassMat, hazeBandMat, surfMat].forEach(function (m) {
       m.dispose();
     });
     sprites.forEach(function (s) {
