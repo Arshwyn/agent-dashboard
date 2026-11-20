@@ -1,5 +1,6 @@
 {
   "agents": [
+    { "id": "arshwyn", "name": "Arshwyn", "role": "Orchestrator", "palette": ["#c9d4e5", "#8aa0c8", "#ffffff"], "motif": "the workspace main session", "chat": "hub" },
     {
       "id": "hephaestus",
       "name": "Hephaestus",

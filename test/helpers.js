@@ -58,4 +58,17 @@ async function get(base, path, headers = {}) {
   return { status: r.status, headers: r.headers, text, json };
 }
 
-module.exports = { TEAM, AUD, OWNER, jwk, other, makeToken, baseEnv, startApp, get };
+const CSRF = { 'X-Hub-Request': '1', 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' };
+
+module.exports = {
+  CSRF,
+  TEAM,
+  AUD,
+  OWNER,
+  jwk,
+  other,
+  makeToken,
+  baseEnv,
+  startApp,
+  get,
+};

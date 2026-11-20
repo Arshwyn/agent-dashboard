@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadConfig } = require('../src/config');
 const { createApp } = require('../src/server');
-const { makeToken, startApp, get, other } = require('./helpers');
+const { makeToken, startApp, get, other, CSRF } = require('./helpers');
 
 const H = () => ({ 'Cf-Access-Jwt-Assertion': makeToken() });
 
@@ -63,7 +63,7 @@ test('an unavailable key source fails closed with 503', async () => {
   }
 });
 
-test('the roster lists the eight agents in one data file, Mercury absent, Apollo as a link-out', async () => {
+test('the roster lists the nine agents (the pilot and the eight gods) in one data file, Mercury absent, Apollo as a link-out', async () => {
   const s = await startApp({ APOLLO_CHAT_URL: 'https://chat.example.com/' });
   try {
     const r = await get(s.base, '/api/roster', H());
@@ -71,6 +71,7 @@ test('the roster lists the eight agents in one data file, Mercury absent, Apollo
     const ids = r.json.agents.map((a) => a.id);
     assert.deepEqual(ids.sort(), [
       'apollo',
+      'arshwyn',
       'atlas',
       'dionysus',
       'hephaestus',
@@ -81,6 +82,7 @@ test('the roster lists the eight agents in one data file, Mercury absent, Apollo
     ]);
     assert.ok(!ids.includes('mercury'));
     for (const a of r.json.agents) {
+      if (a.id === 'arshwyn') continue; // the pilot has no generated figure yet; the viewer uses the procedural bust
       assert.ok(a.name && a.role && Array.isArray(a.palette) && a.palette.length === 3, a.id);
       assert.ok(a.palette.every((c) => /^#[0-9a-f]{6}$/i.test(c)));
       assert.ok(
@@ -135,8 +137,10 @@ test('the shell, assets and per-agent routes are served with security headers', 
 test('non-GET methods, traversal and unknown paths are refused', async () => {
   const s = await startApp();
   try {
-    const post = await fetch(`${s.base}/api/roster`, { method: 'POST', headers: H() });
+    const post = await fetch(`${s.base}/api/roster`, { method: 'POST', headers: { ...H(), ...CSRF } });
     assert.equal(post.status, 405);
+    const noCsrf = await fetch(`${s.base}/api/roster`, { method: 'POST', headers: H() });
+    assert.equal(noCsrf.status, 403);
     assert.equal((await get(s.base, '/api/nope', H())).status, 404);
     assert.equal((await get(s.base, '/..%2fpackage.json', H())).status, 404);
     assert.equal((await get(s.base, '/js/../../package.json', H())).status, 404);
