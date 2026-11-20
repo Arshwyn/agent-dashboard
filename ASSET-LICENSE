@@ -46,7 +46,7 @@ docs/mocks/models/hephaestus.glb
 docs/mocks/models/atlas.glb
     Source photo: "Farnese Atlas (National Archaeological Museum, Naples, 2nd c. CE)". Holder/author: Carlo Raso. Licence: Public Domain Mark (Flickr). URL: Wikimedia Commons file "Farnese Atlas.jpg"
     Generated with TRELLIS.2 (MIT, Microsoft) via ComfyUI, image-to-3D, on 2026-11-20 (retrieved 2026-11-19 or 2026-11-20 from Wikimedia Commons, or the Flickr source for Atlas). The model is a derivative of the photograph.
-    Modified: cropped (loose fragments and base cut), decimated to about 15k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
+    Modified: cropped at the waist (a half figure: globe, shoulders, arms, bowed head), decimated to about 15k triangles, geometry only (textures, materials and normals dropped, metadata stripped).
 docs/mocks/models/themis.glb
     Source photo: "Pentelic Marble Statue of Themis from Rhamnous, c. 300 BC (National Archaeological Museum, Athens)". Holder/author: Gary Todd. Licence: CC0 1.0. URL: https://commons.wikimedia.org/wiki/File:Pentelic_Marble_Statue_of_Themis_from_Rhamnous,_c._300_BC_(27873364654).jpg
     Generated with TRELLIS.2 (MIT, Microsoft) via ComfyUI, image-to-3D, on 2026-11-20 (retrieved 2026-11-19 or 2026-11-20 from Wikimedia Commons, or the Flickr source for Atlas). The model is a derivative of the photograph.
