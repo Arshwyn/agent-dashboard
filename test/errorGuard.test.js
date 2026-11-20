@@ -40,3 +40,15 @@ test('errors spread over time do not trip the guard', () => {
   }
   assert.deepEqual(g.exits, []);
 });
+
+test('a hostile error object cannot break the guard', () => {
+  const g = make();
+  const bad = {
+    get name() {
+      throw new Error('nope');
+    },
+  };
+  g.guard('uncaught error', bad);
+  g.guard('uncaught error', null);
+  assert.equal(g.logs.length, 2);
+});
