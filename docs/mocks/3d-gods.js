@@ -1,6 +1,7 @@
 // 3D prototype for the agent hub bodies: a soft glass orb that expands into a hologram bust on click.
 // Classic script: uses the global THREE from vendor/three.min.js (a subset bundle), so the page needs no build.
-// Everything except the optional scanned heads (models/*.glb, sampled into points) is generated here.
+// The figures come from models/*.glb (sampled into points and drawn as a surface); a procedural bust stands in
+// while a model loads or if it is missing. Everything else is generated here.
 // There is deliberately no flat fallback: without WebGL 2 the stage shows a text message.
 (function () {
   'use strict';
@@ -21,8 +22,8 @@
     scanPoints: 3000, // points sampled per scanned model
   };
 
-  // ---------- the eight gods: palette, scan, attributes, sample chat ----------
-  // Palette tones feed the shaders (a: main, b: second, c: highlight). Attributes are built in code below.
+  // ---------- the eight gods: palette and sample chat ----------
+  // Palette tones feed the shaders (a: main, b: second, c: highlight).
   var GODS = [
     {
       id: 'hephaestus',
@@ -95,39 +96,51 @@
         'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
     },
   ];
-  // One model per god, models/<god id>.glb: geometry only (positions and indices), about 15k triangles, generated
-  // from a photograph of a real sculpture (see ASSET-LICENSE). Every model is a head or bust and fills the stage by
-  // itself (kind 'bust'). yaw turns it about Y to face the camera; scale and dy nudge the fit; crop is an optional
+  // One model per god, models/<god id>.glb: geometry only (positions and indices), about 18k to 28k triangles.
+  // Each model is a half figure that holds its own attribute and fills the stage by itself. Its corrective yaw is
+  // baked into the file (yaw 0 is frontal), so yaw, pitch, roll, scale and dy only nudge the fit; crop is an optional
   // box in fractions of the model's own extent; eyes are optional glow positions; orient 'winding' trusts the
-  // triangle winding for normals. For tuning, ?yaw=, ?scale=, ?dy= and ?crop= override these for the god being viewed.
+  // triangle winding for normals. For tuning, ?yaw=, ?pitch=, ?roll=, ?scale=, ?dy= and ?crop= override these for
+  // the god being viewed (values are clamped; see the query handling below).
   var SCANS = {
     // The corrective yaw is baked into each GLB (yaw 0 is frontal, shoulders parallel to the screen, torso centred
     // on the origin); these numbers only nudge. pitch and roll are optional tilts in radians.
-    apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    janus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // body frontal; the two profile faces are as sculpted
-    hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    atlas: { kind: 'bust', yaw: 0, scale: 0.9, dy: -0.12 }, // cut at mid-chest, sphere held high: a little headroom
-    themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    apollo: { yaw: 0, scale: 1, dy: 0 },
+    dionysus: { yaw: 0, scale: 1, dy: 0 },
+    janus: { yaw: 0, scale: 1, dy: 0 }, // body frontal; the two profile faces are as sculpted
+    hephaestus: { yaw: 0, scale: 1, dy: 0 },
+    atlas: { yaw: 0, scale: 0.9, dy: -0.12 }, // cut at mid-chest, sphere held high: a little headroom
+    themis: { yaw: 0, scale: 1, dy: 0 },
+    iris: { yaw: 0, scale: 1, dy: 0 },
+    plutus: { yaw: 0, scale: 1, dy: 0 },
   };
 
-  ['yaw', 'pitch', 'roll', 'scale', 'dy'].forEach(function (k) {
-    var v = parseFloat(new URLSearchParams(window.location.search).get(k));
-    if (isFinite(v)) {
-      var gid = new URLSearchParams(window.location.search).get('god') || 'hephaestus';
-      if (SCANS[gid]) SCANS[gid][k] = v;
-    }
-  });
-  // ?crop=y0,y1,x0,x1,z0,z1 (fractions 0..1 of the model's box) overrides the crop box while tuning
+  // Tuning overrides from the query string, for the allowlisted god only, clamped to sane ranges.
   (function () {
-    var q = new URLSearchParams(window.location.search).get('crop');
-    var gid = new URLSearchParams(window.location.search).get('god') || 'hephaestus';
-    if (q && SCANS[gid]) {
+    var qs = new URLSearchParams(window.location.search);
+    var gid = qs.get('god') || 'hephaestus';
+    if (!Object.prototype.hasOwnProperty.call(SCANS, gid)) return;
+    var limits = {
+      yaw: [-Math.PI, Math.PI],
+      pitch: [-Math.PI, Math.PI],
+      roll: [-Math.PI, Math.PI],
+      scale: [0.2, 3],
+      dy: [-1, 1],
+    };
+    Object.keys(limits).forEach(function (k) {
+      var v = parseFloat(qs.get(k));
+      if (isFinite(v)) SCANS[gid][k] = Math.min(limits[k][1], Math.max(limits[k][0], v));
+    });
+    var q = qs.get('crop');
+    if (q) {
       var n = q.split(',').map(parseFloat);
-      if (n.length === 6 && n.every(isFinite))
-        SCANS[gid].crop = { y: [n[0], n[1]], x: [n[2], n[3]], z: [n[4], n[5]] };
+      if (n.length === 6 && n.every(isFinite)) {
+        n = n.map(function (x) {
+          return Math.min(1, Math.max(0, x));
+        });
+        if (n[0] < n[1] && n[2] < n[3] && n[4] < n[5])
+          SCANS[gid].crop = { y: [n[0], n[1]], x: [n[2], n[3]], z: [n[4], n[5]] };
+      }
     }
   })();
   var godIdx = 0;
@@ -622,7 +635,6 @@
   var scans = {}; // id -> { pts: Float32Array(M*6) } | { failed: true } | { loading: true }
 
   function sampleScene(gltfScene, cfg) {
-    var kind = cfg.kind;
     var yaw = cfg.yaw;
     var tris = [];
     var minY = Infinity;
@@ -690,12 +702,11 @@
         }
       });
     }
-    var full = kind !== 'head'; // a bust fills the whole figure; a head gets a procedural body
-    var s = ((full ? 2.3 : 1.4) / (maxY - minY || 1)) * (cfg.scale || 1);
+    var s = (2.3 / (maxY - minY || 1)) * (cfg.scale || 1);
     var cx = 0; // the torso is centred on the origin in the baked file
     var cz = 0;
     var oy = (minY + maxY) / 2;
-    var cy = (full ? 0 : 0.5) + (cfg.dy || 0);
+    var cy = cfg.dy || 0;
     var cum = new Float32Array(tris.length);
     var total = 0;
     var cos = Math.cos(yaw);
@@ -861,7 +872,6 @@
   // ---------- build the bust targets for the current god ----------
   var usingMesh = false;
   var eyesShown = true;
-  var usingBustMesh = false;
   function meshPoint(scan) {
     var k = Math.floor(rnd() * CFG.scanPoints) * 6;
     for (var j = 0; j < 6; j++) O[j] = scan.pts[k + j];
@@ -869,14 +879,13 @@
   }
   function rebuildBust() {
     var scan = scans[god.id] && scans[god.id].pts ? scans[god.id] : null;
-    var kind = SCANS[god.id].kind;
     seed = 1234 + godIdx * 77;
     var src;
     for (var i = 0; i < N; i++) {
-      if (scan && kind !== 'head') {
+      if (scan) {
         src = meshPoint(scan);
       } else if (rnd() < 0.5) {
-        src = scan ? meshPoint(scan) : headProc();
+        src = headProc();
       } else {
         src = bodyProc();
       }
@@ -906,13 +915,8 @@
       eyeL.position.set(cfg.eyes[0][0], cfg.eyes[0][1], cfg.eyes[0][2]);
       eyeR.position.set(cfg.eyes[1][0], cfg.eyes[1][1], cfg.eyes[1][2]);
     }
-    usingBustMesh = !!scan && kind !== 'head';
-    rebuildAttrs();
-    requestStatic();
-  }
-
-  function rebuildAttrs() {
     applyPalette();
+    requestStatic();
   }
 
   function applyPalette() {
@@ -1094,7 +1098,7 @@
     surfMat.uniforms.uShow.value = ss(0.55, 1, m);
     pu.uSurf.value = surfMesh.visible ? 1 : 0;
     headWire.material.opacity = usingMesh ? 0 : wireOp * 0.16;
-    shoulderWire.material.opacity = usingBustMesh ? 0 : wireOp * 0.22;
+    shoulderWire.material.opacity = usingMesh ? 0 : wireOp * 0.22;
     var eyeOn = eyesShown ? ss(0.7, 1, m) : 0;
     eyeL.material.opacity = eyeR.material.opacity = eyeOn * (0.8 + 0.2 * speak);
     eyeL.scale.setScalar(0.14 + 0.05 * speak);
