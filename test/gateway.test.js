@@ -341,23 +341,101 @@ test('the kill switch ends a run that is already in progress, and frees the slot
   }
 });
 
+/** Dead means gone or a zombie (an unreaped child, as in a container without an init, still answers kill -0). */
+function isDead(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'Z';
+  } catch (e) {
+    if (e.code !== 'ENOENT' && e.code !== 'ESRCH') {
+      try {
+        process.kill(pid, 0); // no /proc: kill -0 semantics
+      } catch {
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+}
+
+async function waitDead(pid, ms = 3000) {
+  const t0 = Date.now();
+  while (!isDead(pid) && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 40));
+  return isDead(pid);
+}
+
 test('a background child left behind by a finished run is swept with its group', async () => {
   const g = await startGateway();
   try {
     const exit = await g.client.run(req({ prompt: 'stray' }));
     assert.equal(exit.code, 0);
     const pid = Number(fs.readFileSync(path.join(g.home, 'stray.pid'), 'utf8'));
-    let alive = true;
-    for (let i = 0; i < 50 && alive; i++) {
+    assert.equal(await waitDead(pid), true);
+  } finally {
+    await g.stop();
+  }
+});
+
+test('a stray process outside the group that holds the pipe open cannot hold the slot or fake a timeout', async () => {
+  const g = await startGateway({ EXIT_GRACE_MS: '300', RUN_TIMEOUT_MS: '1500' });
+  let pid = 0;
+  try {
+    const t0 = Date.now();
+    const exit = await g.client.run(req({ prompt: 'escape' }));
+    pid = Number(fs.readFileSync(path.join(g.home, 'escape.pid'), 'utf8'));
+    assert.ok(Date.now() - t0 < 1400, 'finished by the exit grace, not by the run timeout');
+    assert.equal(exit.code, 0);
+    assert.equal(exit.timedOut, false);
+    assert.equal((await g.client.status()).busy, false);
+    const run = g
+      .audit()
+      .filter((a) => a.event === 'run')
+      .pop();
+    assert.equal(run.timedOut, false);
+    await new Promise((r) => setTimeout(r, 1500)); // past the run timeout: still not reported as one
+    assert.equal(g.audit().filter((a) => a.event === 'run').length, 1);
+  } finally {
+    if (pid) {
       try {
-        process.kill(pid, 0);
-        await new Promise((r) => setTimeout(r, 40));
+        process.kill(pid, 'SIGKILL'); // the sleeper this test started (pid written by the fake)
       } catch {
-        alive = false;
+        // gone
       }
     }
-    assert.equal(alive, false);
+    await g.stop();
+  }
+});
+
+test('a run that already ended is never reported as switched off', async () => {
+  const g = await startGateway({ KILL_POLL_MS: '50', EXIT_GRACE_MS: '1200' });
+  let pid = 0;
+  try {
+    // the sleeper keeps the pipe open for the exit grace; the kill switch is set in that window
+    const p = g.client.run(req({ prompt: 'escape' }));
+    const t0 = Date.now();
+    while (!fs.existsSync(path.join(g.home, 'escape.pid')) && Date.now() - t0 < 3000)
+      await new Promise((r) => setTimeout(r, 20));
+    pid = Number(fs.readFileSync(path.join(g.home, 'escape.pid'), 'utf8'));
+    await new Promise((r) => setTimeout(r, 150));
+    fs.writeFileSync(g.cfg.killSwitchFile, '');
+    const exit = await p;
+    assert.equal(exit.switchedOff, false);
+    assert.equal(
+      g
+        .audit()
+        .filter((a) => a.event === 'run')
+        .pop().switched_off,
+      false,
+    );
   } finally {
+    if (pid) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // gone
+      }
+    }
     await g.stop();
   }
 });

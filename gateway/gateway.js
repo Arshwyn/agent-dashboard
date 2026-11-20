@@ -79,6 +79,7 @@ function loadGatewayConfig(env = process.env) {
     maxOutBytes: int('MAX_OUT_BYTES', 8 * 1024 * 1024),
     killGraceMs: int('KILL_GRACE_MS', 3000),
     killPollMs: int('KILL_POLL_MS', 1000),
+    exitGraceMs: int('EXIT_GRACE_MS', 2000),
   };
 }
 
@@ -281,6 +282,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
 
     let finished = false;
     const timer = setTimeout(() => {
+      if (state.exited) return; // the run already ended; only a pipe held open by a stray process is left
       state.timedOut = true;
       state.kill(cfg.killGraceMs);
     }, cfg.runTimeoutMs);
@@ -293,7 +295,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     });
     // The kill switch also applies to a run in progress: watched while the run lives, then the run is ended.
     const watch = setInterval(() => {
-      if (!isDisabled(cfg)) return;
+      if (state.exited || !isDisabled(cfg)) return; // a run that already ended is never reported as switched off
       state.switchedOff = true;
       state.kill(cfg.killGraceMs);
     }, cfg.killPollMs);
@@ -302,6 +304,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       if (finished) return;
       finished = true;
       clearTimeout(timer);
+      clearTimeout(exitTimer);
       clearInterval(watch);
       if (buf && !state.tooBig) send(sock, { type: 'line', data: buf });
       active.delete(run.runId);
@@ -337,6 +340,18 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
         tokens_out: tokensOut,
       });
     };
+    // `close` waits for the output pipes to close. A process that escaped the group (setsid) and kept the pipe
+    // open would hold the one slot forever, so shortly after `exit` the pipes are destroyed and the run is finished.
+    let exitTimer = null;
+    child.once('exit', (code, signal) => {
+      state.exited = true;
+      exitTimer = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        finish(code, signal);
+      }, cfg.exitGraceMs);
+      exitTimer.unref();
+    });
     child.on('error', () => finish(null, null));
     child.on('close', finish);
   }
