@@ -120,6 +120,7 @@ a {
 }
 
 .seg button {
+  border-radius: 999px;
   min-height: var(--tap);
   min-width: var(--tap);
   padding: 0 var(--s-3);
