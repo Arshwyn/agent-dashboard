@@ -27,12 +27,17 @@ test('missing or malformed Access settings fail closed', () => {
 });
 
 test('the dev bypass needs loopback and is refused in production or with a bad value', () => {
-  const c = loadConfig({ DEV_AUTH_BYPASS: '1' });
+  const c = loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: 'development' });
   assert.equal(c.devBypass, true);
   assert.equal(startupWarnings(c).length, 1);
-  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: 'production' }), /production/);
-  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: '1', HOST: '0.0.0.0' }), /loopback/);
-  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: 'yes' }), /DEV_AUTH_BYPASS/);
+  const dev = { DEV_AUTH_BYPASS: '1', NODE_ENV: 'development' };
+  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: 'production' }), /NODE_ENV/);
+  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: ' Production ' }), /NODE_ENV/);
+  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: '1' }), /NODE_ENV/, 'unset NODE_ENV is refused');
+  assert.throws(() => loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: 'staging' }), /NODE_ENV/);
+  assert.equal(loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: ' Test ' }).devBypass, true);
+  assert.throws(() => loadConfig({ ...dev, HOST: '0.0.0.0' }), /loopback/);
+  assert.throws(() => loadConfig({ ...dev, DEV_AUTH_BYPASS: 'yes' }), /DEV_AUTH_BYPASS/);
   assert.equal(loadConfig(baseEnv({ DEV_AUTH_BYPASS: '0' })).devBypass, false);
   assert.equal(startupWarnings(loadConfig(baseEnv())).length, 0);
 });
@@ -45,4 +50,13 @@ test('APOLLO_CHAT_URL must be https (or loopback http) and is optional', () => {
   assert.throws(() => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'http://chat.example.com' })), /APOLLO_CHAT_URL/);
   assert.throws(() => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'javascript:alert(1)' })), /APOLLO_CHAT_URL/);
   assert.throws(() => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'nope' })), /APOLLO_CHAT_URL/);
+  assert.throws(
+    () => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'https://user:pw@chat.example.com/' })),
+    /credentials/,
+  );
+  assert.throws(
+    () => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'https://user@chat.example.com/' })),
+    /credentials/,
+  );
+  assert.throws(() => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'ftp://chat.example.com/' })), /APOLLO_CHAT_URL/);
 });

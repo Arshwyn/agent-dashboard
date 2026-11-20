@@ -148,7 +148,7 @@ test('non-GET methods, traversal and unknown paths are refused', async () => {
 });
 
 test('the dev bypass serves loopback requests without a token and is announced by /api/me', async () => {
-  const config = loadConfig({ DEV_AUTH_BYPASS: '1' });
+  const config = loadConfig({ DEV_AUTH_BYPASS: '1', NODE_ENV: 'development' });
   const app = createApp(config);
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -157,6 +157,13 @@ test('the dev bypass serves loopback requests without a token and is announced b
     assert.equal(me.status, 200);
     assert.equal(me.json.email, 'dev@localhost.invalid');
     assert.equal((await get(base, '/api/roster')).status, 200);
+    for (const h of [
+      { 'X-Forwarded-For': '203.0.113.9' },
+      { 'Cf-Connecting-Ip': '203.0.113.9' },
+      { 'Cf-Ray': 'x' },
+    ]) {
+      assert.equal((await get(base, '/api/roster', h)).status, 403, Object.keys(h)[0]);
+    }
   } finally {
     await app.close();
   }
@@ -169,6 +176,32 @@ test('the old dashboard is gone: no login, stream or data routes', async () => {
       const r = await get(s.base, p, H());
       assert.ok(r.status === 404, `${p} ${r.status}`);
     }
+  } finally {
+    await s.stop();
+  }
+});
+
+test('odd request targets cannot be routed as another host, and auth still comes first', async () => {
+  const s = await startApp();
+  try {
+    const raw = (target, headers = {}) =>
+      new Promise((resolve) => {
+        const net = require('node:net');
+        const sock = net.connect(s.app.server.address().port, '127.0.0.1', () => {
+          const h = Object.entries(headers)
+            .map(([k, v]) => `${k}: ${v}\r\n`)
+            .join('');
+          sock.write(`GET ${target} HTTP/1.1\r\nHost: x\r\n${h}Connection: close\r\n\r\n`);
+        });
+        let data = '';
+        sock.on('data', (d) => (data += d));
+        sock.on('close', () => resolve(Number(/^HTTP\/1\.1 (\d+)/.exec(data)[1])));
+      });
+    for (const t of ['//example.com/api/roster', '//api/roster', '/\\example.com/api/roster', '//healthz']) {
+      assert.equal(await raw(t), 401, `${t} without a token`);
+      assert.equal(await raw(t, { 'Cf-Access-Jwt-Assertion': makeToken() }), 400, `${t} with a token`);
+    }
+    assert.equal(await raw('/healthz'), 200);
   } finally {
     await s.stop();
   }
