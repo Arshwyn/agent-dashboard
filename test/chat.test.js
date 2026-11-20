@@ -452,6 +452,53 @@ test('one failed write after a successful run is retried and the reply is saved 
   }
 });
 
+test('a reply whose write fails twice is never left streaming: the row ends as an error and keeps its text', async () => {
+  const st = createMemoryStore();
+  const real = st.updateMessage;
+  st.updateMessage = (id, f) => {
+    if (f.status !== 'error') throw new Error('disk');
+    return real(id, f);
+  };
+  const s = await app(fakeGateway({ run: okRun }), {}, st);
+  try {
+    const c = await newChat(s);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+    assert.equal(sse(r.text).pop()[1].unsaved, true);
+    const m = st.listMessages(c.id)[1];
+    assert.deepEqual([m.status, m.error_code, m.text], ['error', 'failed', 'fine']);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a stop that lands between a failed first attempt and its retry cancels the retry', async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const gw = fakeGateway({
+    async run(r, onLine, g) {
+      await gate;
+      return failRun(r, onLine, g);
+    },
+  });
+  gw.cancel = async () => false; // the first attempt's process is already gone
+  const s = await app(gw);
+  try {
+    const c = await newChat(s);
+    const first = api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'x' });
+    for (let i = 0; i < 100 && gw.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await api(s, 'POST', `/api/chats/${c.id}/stop`)).status, 202);
+    release();
+    const r = await first;
+    assert.equal(gw.calls.length, 1, 'no retry after a stop');
+    const last = sse(r.text).pop();
+    assert.equal(last[0], 'done');
+    assert.equal(last[1].cancelled, true);
+    assert.equal(s.app.chat.running.size, 0);
+  } finally {
+    await s.stop();
+  }
+});
+
 test('a run that used a tool and then failed is never retried (no repeated side effects)', async () => {
   const toolThenFail = async (_r, onLine) => {
     onLine(init);
@@ -506,11 +553,13 @@ test('a cancelled, timed-out or switched-off run is not retried', async () => {
   }
 });
 
-test('stop answers 409 when the gateway had nothing to cancel', async () => {
+test('stop answers 409 when the gateway had nothing to cancel (the run is past its retry decision)', async () => {
   let release;
   const gate = new Promise((r) => (release = r));
+  let n = 0;
   const gw = fakeGateway({
-    async run(_r, onLine) {
+    async run(r, onLine, g) {
+      if (n++ === 0) return failRun(r, onLine, g); // the retry then blocks
       onLine(init);
       await gate;
       return { type: 'exit', code: 0, cancelled: false, timedOut: false };
@@ -521,7 +570,7 @@ test('stop answers 409 when the gateway had nothing to cancel', async () => {
   try {
     const c = await newChat(s);
     const first = api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'x' });
-    for (let i = 0; i < 100 && gw.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 100 && gw.calls.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
     assert.equal((await api(s, 'POST', `/api/chats/${c.id}/stop`)).status, 409);
     release();
     await first;
