@@ -1,5 +1,6 @@
-// 3D prototype for the agent hub bodies: a soft glass orb that expands into a hologram bust on click.
-// Classic script: uses the global THREE from vendor/three.min.js (a subset bundle), so the page needs no build.
+// Agent hub bodies: a soft glass orb that expands into a hologram half figure on click.
+// Classic script: uses the global THREE from /vendor/three.min.js (a subset bundle), so the app needs no build.
+// Reads window.HUB_ROSTER (set by app.js) and exposes window.HubViewer.
 // The figures come from models/*.glb (sampled into points and drawn as a surface); a procedural bust stands in
 // while a model loads or if it is missing. Everything else is generated here.
 // There is deliberately no flat fallback: without WebGL 2 the stage shows a text message.
@@ -9,6 +10,7 @@
   var stage = document.getElementById('stage3d');
   var canvas = stage.querySelector('canvas');
   var perfEl = document.getElementById('perf');
+  perfEl.hidden = !new URLSearchParams(window.location.search).has('perf'); // frame-time readout: add ?perf
   var hintEl = document.getElementById('hint');
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   var params = new URLSearchParams(window.location.search);
@@ -22,80 +24,10 @@
     scanPoints: 3000, // points sampled per scanned model
   };
 
-  // ---------- the eight gods: palette and sample chat ----------
-  // Palette tones feed the shaders (a: main, b: second, c: highlight).
-  var GODS = [
-    {
-      id: 'hephaestus',
-      name: 'Hephaestus',
-      role: 'Builder',
-      pal: ['#ff9a1f', '#ff5a1f', '#ffd08a'],
-      you: 'Is the dashboard change ready for review?',
-      reply:
-        'Built and pushed on its own branch. Tests green, lint clean, three small commits. Passing it to the gate now.',
-    },
-    {
-      id: 'themis',
-      name: 'Themis',
-      role: 'Quality gate',
-      pal: ['#9bb8ff', '#e9c46a', '#f2f6ff'],
-      you: 'Did the checks pass?',
-      reply: 'Every check ran and held. One naming note is logged for later; nothing blocks the merge.',
-    },
-    {
-      id: 'janus',
-      name: 'Janus',
-      role: 'Gatekeeper',
-      pal: ['#5ad1d6', '#c27bf0', '#e8eef7'],
-      you: 'Anything blocking the merge?',
-      reply:
-        'Both doors checked. No critical findings; one medium goes to the backlog. The gate cleared this same commit, so I may open the way.',
-    },
-    {
-      id: 'atlas',
-      name: 'Atlas',
-      role: 'Operator',
-      pal: ['#6aa0ff', '#3b5bd6', '#e0ecff'],
-      you: 'Is the new version running?',
-      reply: 'It is. Deployed, the health check is green, and the previous version is kept in reserve.',
-    },
-    {
-      id: 'plutus',
-      name: 'Plutus',
-      role: 'Finance',
-      pal: ['#3fbf7a', '#d6a82a', '#eaffd8'],
-      you: 'How are the savings tracking this month?',
-      reply:
-        'Steady. Spending stayed under plan and nothing needs moving today. I would not trade on a hunch.',
-    },
-    {
-      id: 'apollo',
-      name: 'Apollo',
-      role: 'Coach',
-      pal: ['#ffd24a', '#8fbf6a', '#fff3bd'],
-      you: 'How did recovery look this week?',
-      reply:
-        'A calm week. Rest held steady and effort stayed in range. Keep tomorrow easy and let the daylight do some of the work.',
-    },
-    {
-      id: 'iris',
-      name: 'Iris',
-      role: 'Mail and calendar',
-      pal: ['#ff7ac8', '#5ad1ff', '#ffe27a'],
-      you: 'What is on tomorrow?',
-      reply:
-        'A light day: two meetings and one draft reply waiting for your approval. Nothing is sent until you say so.',
-    },
-    {
-      id: 'dionysus',
-      name: 'Dionysus',
-      role: 'Travel and food',
-      pal: ['#b04ad6', '#e0456a', '#f0d0ff'],
-      you: 'Where should we eat on Friday?',
-      reply:
-        'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
-    },
-  ];
+  // ---------- the roster: id, name, role and palette (a: main, b: second, c: highlight) ----------
+  var GODS = (window.HUB_ROSTER || []).map(function (a) {
+    return { id: a.id, name: a.name, role: a.role, pal: a.palette };
+  });
   // One model per god, models/<god id>.glb: geometry only (positions and indices), about 18k to 28k triangles.
   // Each model is a half figure that holds its own attribute and fills the stage by itself. Its corrective yaw is
   // baked into the file (yaw 0 is frontal), so yaw, pitch, roll, scale and dy only nudge the fit; crop is an optional
@@ -268,13 +200,7 @@
     }
   }
 
-  // chrome (rail, labels, chat, theme) works with or without WebGL
-  var rootEl = document.documentElement;
-  function setText(sel, text) {
-    document.querySelectorAll(sel).forEach(function (el) {
-      el.textContent = text;
-    });
-  }
+  // The shell (app.js) owns the rail, labels, chat and theme; the viewer only reports activity labels.
   var STATE_LABEL = { idle: 'Idle', thinking: 'Thinking', speaking: 'Speaking' };
   function stateOk(st) {
     return typeof st === 'string' && Object.prototype.hasOwnProperty.call(STATE_LABEL, st); // not 'constructor' and friends
@@ -284,41 +210,9 @@
       el.setAttribute('data-now', st);
       el.textContent = stateOk(st) ? STATE_LABEL[st] : 'Idle';
     });
-    document.querySelectorAll('[data-state-set]').forEach(function (b) {
-      b.setAttribute('aria-pressed', b.getAttribute('data-state-set') === st ? 'true' : 'false');
-    });
-  }
-  function bindChrome(onGod, onState) {
-    document.querySelectorAll('[data-god]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        onGod(b.getAttribute('data-god'));
-      });
-    });
-    document.querySelectorAll('[data-state-set]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        onState(b.getAttribute('data-state-set'));
-      });
-    });
-    document.querySelectorAll('[data-theme-set]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var v = b.getAttribute('data-theme-set');
-        if (v === 'auto') rootEl.removeAttribute('data-theme');
-        else rootEl.setAttribute('data-theme', v);
-        b.parentNode.querySelectorAll('button').forEach(function (x) {
-          x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
-        });
-      });
-    });
   }
   function chrome() {
-    setText('[data-god-name]', god.name);
-    setText('[data-god-role]', god.role);
-    setText('[data-god-you]', god.you);
-    setText('[data-god-reply]', god.reply);
-    document.title = god.name + ' 3D prototype (layout B)';
-    document.querySelectorAll('[data-god]').forEach(function (b) {
-      b.setAttribute('aria-pressed', b.getAttribute('data-god') === god.id ? 'true' : 'false');
-    });
+    document.dispatchEvent(new CustomEvent('hub:god', { detail: { id: god.id } }));
   }
 
   // No WebGL 2, or the context was lost: a text message and a stage that is no longer a button.
@@ -332,14 +226,14 @@
 
   if (typeof THREE === 'undefined' || !webglOk() || params.has('nogl')) {
     noGl();
-    var pick = function (id) {
-      god = GODS.filter(function (g) {
-        return g.id === id;
-      })[0];
-      chrome();
+    window.HubViewer = {
+      select: function (id) {
+        god = GODS.filter(function (g) {
+          return g.id === id;
+        })[0];
+        chrome();
+      },
     };
-    bindChrome(pick, setStateLabel);
-    chrome();
     return;
   }
   stage.setAttribute('data-gl', 'ok');
@@ -841,9 +735,9 @@
   function loadScan(id) {
     if (scans[id]) return;
     scans[id] = { loading: true };
-    scanNote[id] = 'loading models/' + id + '.glb';
+    scanNote[id] = 'loading model ' + id;
     new THREE.GLTFLoader().load(
-      'models/' + id + '.glb',
+      '/models/' + id + '.glb',
       function (gltf) {
         var pts = sampleScene(gltf.scene, SCANS[id]);
         scans[id] = pts ? { pts: pts, surf: pts.surf } : { failed: true };
@@ -853,7 +747,7 @@
       undefined,
       function () {
         scans[id] = { failed: true };
-        scanNote[id] = 'procedural bust (models/' + id + '.glb not available)';
+        scanNote[id] = 'procedural bust (model ' + id + ' not available)';
       },
     );
   }
@@ -1277,21 +1171,10 @@
   }
   window.addEventListener('pagehide', dispose);
 
-  bindChrome(selectGod, function (st) {
-    stage.setAttribute('data-state', st);
-  });
   ready = true;
-  var startGod = params.get('god');
-  selectGod(
-    GODS.some(function (g) {
-      return g.id === startGod;
-    })
-      ? startGod
-      : 'hephaestus',
-  );
+  window.HubViewer = { select: selectGod };
   var startState = params.get('state');
   setActivity(stateOk(startState) ? startState : 'idle');
-  if (params.get('open') === '1') setExpanded(true);
   resize();
   startLoop();
 })();
