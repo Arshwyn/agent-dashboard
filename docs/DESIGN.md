@@ -1,0 +1,63 @@
+# Design
+
+This is the identity of the agent hub: a private page for talking with a small set of AI agents. It is its own design, not a template; the rules below are the universal ones plus what is specific to this app.
+
+## Purpose and audience
+
+One owner, signed in through Cloudflare Access, reaches each agent and chats with it as text. The look should make each agent feel like a distinct presence without getting in the way of reading and typing. Text chat only for now; no voice, no video.
+
+## Mood
+
+Quiet, dark glass, a little theatrical. The default is dark: a near-black page with a lit stage, so the glowing bodies are the brightest thing on screen. A designed light set exists for daytime use; it follows the system preference unless the owner picks Dark or Light in the header. The light set re-tones the page chrome (surfaces, text, accent) but the stage stays dark glass in both themes, like a display.
+
+## The body
+
+- **Primary look: the orb.** Each agent is a soft glass sphere: a low-alpha fresnel rim, a glowing interior, a wide haze band, a particle shell and core, one orbiting soft mote, and gentle pointer parallax. No hard ring lines or outlines.
+- **Expanded look: a half figure.** Clicking the orb (or pressing Enter or Space when it is focused) dissolves the particles into the agent's half figure, a hologram drawn with a fresnel rim, a key light, soft scanlines and a rising scan sweep. Clicking again, or pressing Esc, collapses it back to the orb. Choosing another agent always starts as the orb.
+- **The figures.** Eight generated half figures (head to waist), each holding its own attribute: a stylised reference image was generated with Google Gemini (Nano Banana) by the repository owner and turned into a 3D model with TRELLIS.2 (MIT, Microsoft) through ComfyUI; the models are CC0 1.0, dedicated by the owner (see `ASSET-LICENSE`). Geometry only, about 25k triangles each, 2.4 MB in total. Each model has its fit (yaw, scale, offset) in the viewer; a replacement mesh needs only those numbers.
+- **States.** Idle, thinking and speaking come from the stage's `data-state`. Thinking contracts and quickens the orb and speeds the scan sweep; speaking adds a pulse glow and a flicker. The chat will drive these later.
+- **WebGL 2 is required.** There is no flat or 2D fallback. Without WebGL 2 the stage shows the plain text "3D view needs WebGL 2". Performance step-down lowers particle count, pixel ratio and glow, never to a flat look.
+
+## Layout
+
+Layout B, a persistent side rail: the roster of agents on the left (a row of tiles on a phone), the stage above the chat in the main column. One agent is selected at a time and has its own route, `/agent/<id>`. The rail is the roster tile for every agent: a small glowing dot in the agent's palette and its name.
+
+Apollo's card shows the same body but its chat panel is a link-out to the separate chat app (`APOLLO_CHAT_URL`), which keeps its own sign-in and per-user separation. The longer-term goal is a unified view where Apollo is simultaneous with the others; that needs the owner's approval first.
+
+## Palette roles
+
+Each agent has three tones: a main tone (rim, rings, panels), a second tone (inner glow, accents) and a highlight (scan sweep, eyes, mote). They live in `public/roster.json` with the agent's name, role line and motif.
+
+| Agent      | Role              | Tones                               |
+| ---------- | ----------------- | ----------------------------------- |
+| Hephaestus | Builder           | forge amber, ember, pale gold       |
+| Themis     | Quality gate      | cool silver-blue, brass, near white |
+| Janus      | Gatekeeper        | teal, violet, pale blue-white       |
+| Atlas      | Operator          | sky blue, deep blue, pale blue      |
+| Plutus     | Finance           | emerald, gold, pale green           |
+| Apollo     | Coach             | sun gold, laurel green, pale gold   |
+| Iris       | Mail and calendar | rose, sky, pale yellow              |
+| Dionysus   | Travel and food   | grape purple, wine red, pale lilac  |
+
+## Type, shape and spacing
+
+- A serif display face (system Georgia stack) for names and headings, the system sans for body text, a monospace for the optional frame-time readout. No web fonts, no CDN.
+- Colours, sizes, spacing and radii are named custom properties defined once in `public/css/app.css`; components use roles such as surface, text and accent, never raw values. Dark is the base set; the light set is a designed second set, not an inversion.
+- Rounded, soft shapes: a large radius on the stage, rail and chat, pill shaped controls and hints.
+- Mobile first. Touch targets are at least 44 px, nothing scrolls sideways, the main task (pick an agent, read, type) works one-handed on a phone.
+
+## Motion
+
+Only transform and opacity animate in CSS; the stage animates through WebGL. `prefers-reduced-motion` is respected: CSS animation and transitions are off, the 3D scene draws a single static frame per state (still WebGL, never flat art), expanding snaps between the orb and the figure, and parallax and idle drift stop. The orb and figure remain clearly different without motion. The loop also pauses when the tab is hidden or the stage is off screen.
+
+## Interaction and accessibility
+
+- The stage is a button: pointer cursor, hover and focus glow, a visible focus ring, `aria-expanded`, Enter and Space to toggle, Esc to collapse, and a first-view hint pill.
+- The rail is a list of links with `aria-current` on the selected agent; each agent has a real URL.
+- Status (Idle, Thinking, Speaking) is text as well as colour.
+- The chat panel is clearly marked as not connected until the backend exists: a visible notice, a disabled input and no invented replies.
+- Light and dark both keep text contrast at a readable level; the stage uses its own dark tokens in both.
+
+## What this is not
+
+No mascots or cartoon art, no pixel art, no dashboards of pipeline metrics, no flat fallback, no chat bubbles with made-up content.
