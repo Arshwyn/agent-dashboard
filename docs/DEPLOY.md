@@ -33,6 +33,8 @@ How the gateway reaches the orchestrator: it starts `claude` with the workspace 
 3. The tunnel or proxy in front must pass the original `Host` header through (the CSRF check compares it with the `Origin` header) and must not buffer or cut `text/event-stream` responses; the app sends a comment line every 15 seconds so an idle-timeout proxy keeps the stream open.
 4. In the Access application: one policy, one allowed email, a short session. The app checks the Access token itself, so a misconfigured policy still fails closed.
 
+The app container must run with `restart: unless-stopped` (the compose file sets it): if uncaught errors loop (more than 5 in 60 seconds) the app logs the error name and exits non-zero, and the restart policy brings it back.
+
 ## Kill switch
 
 - **Instant, no restart:** `touch /path/to/hub-gateway/DISABLED` refuses every new web run **and ends a run in progress** within about a second (`KILL_POLL_MS`, default 1000; SIGINT, then SIGTERM, then SIGKILL on the run's process group). The page shows a notice and "switched off during this reply". `rm` the file to turn chat back on.
