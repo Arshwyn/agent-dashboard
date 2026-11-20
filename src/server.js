@@ -130,7 +130,7 @@ function createApp(config, opts = {}) {
     req.on('error', () => {});
   }
   const chat = createChat(
-    { config, store: opts.store, gateway: opts.gateway, now: opts.now },
+    { config, store: opts.store, gateway: opts.gateway, now: opts.now, keepaliveMs: opts.keepaliveMs },
     {
       json: send,
       readJson,
