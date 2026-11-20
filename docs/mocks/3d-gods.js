@@ -101,15 +101,16 @@
   // box in fractions of the model's own extent; eyes are optional glow positions; orient 'winding' trusts the
   // triangle winding for normals. For tuning, ?yaw=, ?scale=, ?dy= and ?crop= override these for the god being viewed.
   var SCANS = {
-    apollo: { kind: 'bust', yaw: 0.4, scale: 1, dy: 0 },
-    dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    janus: { kind: 'bust', yaw: 1.35, scale: 1, dy: -0.05 }, // two faces back to back: turned so one face is nearly frontal
+    apollo: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // laurel and cloak are in the model; the lyre is a prop
+    dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0, crop: { y: [0.04, 1] } }, // drops the thin base disc
+    janus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // two profile faces back to back, seen from the side
     hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    atlas: { kind: 'bust', yaw: 0, scale: 1.1, dy: 0 }, // the Farnese figure cropped at the waist
+    atlas: { kind: 'bust', yaw: 0, scale: 0.78, dy: -0.12 }, // raised arms: leave room above them for the globe
     themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0, anchors: { rainbow: [0, -1.2, -0.6] } },
     plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
   };
+
   ['yaw', 'scale', 'dy'].forEach(function (k) {
     var v = parseFloat(new URLSearchParams(window.location.search).get(k));
     if (isFinite(v)) {
@@ -781,9 +782,6 @@
     );
     return g;
   }
-  function leaf(x, y, z, ry, rz, s) {
-    return xf(new THREE.SphereGeometry(1, 6, 4), [x, y, z], [0, ry, rz], [0.075 * s, 0.014 * s, 0.045 * s]);
-  }
   function anchor(name, def) {
     var a = SCANS[god.id].anchors;
     return a && a[name] ? a[name] : def;
@@ -849,22 +847,6 @@
       });
       part(beam, 'b', bg, 1);
       part(beam, 'a', pans, 1);
-      var hd = anchor('eyes', [0, 0.6, 0.02]);
-      var rg = grp(root, '', hd);
-      part(
-        rg,
-        'b',
-        [
-          xf(
-            new THREE.TorusGeometry(anchor('eyesR', [0.23])[0], 0.034, 8, 28),
-            [0, 0, 0],
-            [PI / 2, 0, 0],
-            [1, 1.1, 1],
-          ),
-          xf(new THREE.SphereGeometry(0.05, 8, 6), [0, 0, -anchor('eyesR', [0.23])[0]]),
-        ],
-        1,
-      );
     },
     // a doorway arch with depth and a key
     janus: function (root) {
@@ -910,8 +892,9 @@
     },
     // glowing constellation rings around the globe of the mesh
     atlas: function (root) {
-      var gl = grp(root, 'spin', anchor('globe', [0, 0.7, 0]));
-      var R = anchor('globeR', [0.95])[0];
+      var gl = grp(root, 'spin', anchor('globe', [0, 0.92, 0]));
+      part(gl, 'a', [new THREE.SphereGeometry(anchor('globeR', [0.5])[0], 24, 16)], 1.1);
+      var R = anchor('globeR', [0.5])[0] * 1.2;
       var tilt = grp(gl, '');
       tilt.rotation.x = 1.15;
       part(tilt, 'a', [new THREE.TorusGeometry(R, 0.03, 6, 56)], 1);
@@ -1013,19 +996,6 @@
       for (var i = 0; i < 5; i++)
         st.push(new THREE.CylinderGeometry(0.006, 0.006, 0.9, 4).translate(-0.12 + i * 0.06, 0.02, 0));
       part(ly, 'c', st, 0.9, 'strings');
-      var wr = grp(root, '', anchor('wreath', [0, 1.02, -0.02]));
-      var R = anchor('wreathR', [0.36])[0];
-      var lv = [];
-      for (var k = 0; k < 24; k++) {
-        var a = (k / 24) * PI * 2;
-        lv.push(leaf(Math.cos(a) * R, 0, Math.sin(a) * R * 1.1, -a, k % 2 ? 0.5 : -0.5, 2.2));
-      }
-      part(
-        wr,
-        'a',
-        lv.concat([xf(new THREE.TorusGeometry(R, 0.012, 5, 30), 0, [PI / 2, 0, 0], [1, 1.1, 1])]),
-        1,
-      );
     },
     // a banded rainbow of thick translucent tubes, and a flowing veil
     iris: function (root) {
@@ -1037,17 +1007,6 @@
       ].forEach(function (b) {
         part(rb, b[0], [new THREE.TorusGeometry(b[1], 0.06, 8, 48, PI)], 0.75);
       });
-      var vl = grp(root, 'sway', anchor('veil', [0, -0.1, -0.35]));
-      var pl = new THREE.PlaneGeometry(1.6, 1.3, 12, 14);
-      var p = pl.attributes.position;
-      for (var i = 0; i < p.count; i++) {
-        var x = p.getX(i);
-        var y = p.getY(i);
-        p.setZ(i, 0.07 * Math.sin(y * 5 + x * 3) - 0.1 * (x * x));
-        p.setX(i, x * (1 + 0.2 * (0.7 - y)));
-      }
-      pl.computeVertexNormals();
-      part(vl, 'c', [pl], 0.5);
     },
     // a thyrsus with a pine cone and ribbons, ivy vines with leaves, a cluster of grapes
     dionysus: function (root) {
@@ -1083,38 +1042,6 @@
         );
       }
       part(th, 'a', rib, 1);
-      var iv = grp(root, '', anchor('ivy', [0, 0, 0]));
-      var vines = [];
-      var leaves = [];
-      [-1, 1].forEach(function (sx) {
-        var pts = [
-          [sx * 0.32, 1.0, 0.0],
-          [sx * 0.52, 0.72, 0.12],
-          [sx * 0.58, 0.3, 0.2],
-          [sx * 0.5, -0.15, 0.25],
-        ];
-        vines.push(
-          sweep(
-            pts,
-            function (t) {
-              return 0.022 - 0.01 * t;
-            },
-            16,
-            5,
-          ),
-        );
-        var cv = new THREE.CatmullRomCurve3(
-          pts.map(function (q) {
-            return new THREE.Vector3(q[0], q[1], q[2]);
-          }),
-        );
-        for (var j = 1; j <= 7; j++) {
-          var c = cv.getPointAt(j / 8);
-          leaves.push(leaf(c.x + sx * 0.04, c.y, c.z + 0.03, j * 0.8, sx * (0.4 + (j % 2) * 0.6), 1.5));
-        }
-      });
-      part(iv, 'a', vines, 1);
-      part(iv, 'b', leaves, 1);
       var gr = grp(root, 'bob', anchor('grapes', [-1.05, -0.4, 0.3, 0.8]));
       var gs = [];
       for (var g = 0; g < 16; g++) {
@@ -1431,7 +1358,7 @@
 
   function rebuildAttrs() {
     disposeGroup(attrGroup);
-    if (PROPS[god.id]) PROPS[god.id](attrGroup);
+    if (PROPS[god.id] && !params.has('noprops')) PROPS[god.id](attrGroup);
     applyPalette();
   }
 
