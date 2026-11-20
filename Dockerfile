@@ -1,16 +1,11 @@
 # Pinned by exact tag and digest (multi-arch index for node:24.22.2-trixie-slim, resolved 2026-10-31). Refresh periodically.
-FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-# better-sqlite3 13.x ships prebuilt binaries, so no compiler toolchain is needed.
-RUN npm ci --omit=dev
-
 FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+# The app has no runtime dependencies (plain Node, no native modules), so there is no install step and no
+# build tools. Dev tools (eslint, prettier) are not installed in the image.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 COPY public ./public
