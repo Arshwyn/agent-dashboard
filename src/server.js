@@ -125,7 +125,12 @@ function createApp(config, opts = {}) {
       } catch {
         return send(res, 400, { error: 'invalid JSON' });
       }
-      cb(body);
+      try {
+        cb(body);
+      } catch {
+        if (!res.headersSent) send(res, 500, { error: 'internal error' });
+        else res.end();
+      }
     });
     req.on('error', () => {});
   }

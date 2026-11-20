@@ -1,6 +1,7 @@
 'use strict';
 
-const test = require('node:test');
+const nodeTest = require('node:test');
+const test = nodeTest;
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -10,7 +11,8 @@ const { createMemoryStore, openStore, cleanTitle } = require('../src/store');
 // SQLite needs Node 22 or later (better-sqlite3 13); on older Node only the memory store is exercised.
 const sqliteOk = Number(process.versions.node.split('.')[0]) >= 22;
 
-function contract(name, make) {
+function contract(name, make, skip = false) {
+  const test = (n, f) => nodeTest(n, { skip }, f);
   test(`${name}: conversations and messages round-trip`, () => {
     const { store, done } = make();
     try {
@@ -84,18 +86,21 @@ function contract(name, make) {
 }
 
 contract('memory store', () => ({ store: createMemoryStore(), done() {} }));
-contract('sqlite store', () => {
-  if (!sqliteOk) return { store: createMemoryStore(), done() {} };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-db-'));
-  const store = openStore(path.join(dir, 'h.db'));
-  return {
-    store,
-    done() {
-      store.close();
-      fs.rmSync(dir, { recursive: true, force: true });
-    },
-  };
-});
+contract(
+  'sqlite store',
+  () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-db-'));
+    const store = openStore(path.join(dir, 'h.db'));
+    return {
+      store,
+      done() {
+        store.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  },
+  !sqliteOk && 'needs Node 22+ for better-sqlite3',
+);
 
 test(
   'sqlite store: data survives a reopen and only parameters reach SQL',

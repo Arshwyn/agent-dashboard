@@ -123,7 +123,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     const c = known(id);
     const run = c && running.get(c.agent);
     if (!c || !run || run.conversationId !== c.id) return h.json(res, 404, { error: 'not running' });
-    await gateway.cancel(run.runId);
+    if (!(await gateway.cancel(run.runId))) return h.json(res, 409, { error: 'nothing to cancel' });
     return h.json(res, 202, { ok: true });
   }
 
@@ -144,56 +144,29 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       if (running.has(c.agent)) return h.json(res, 409, { error: 'busy' });
       const wait = rateWait();
       if (wait) return h.json(res, 429, { error: 'rate limited' }, { 'Retry-After': String(wait) });
-      return stream(req, res, c, text);
+      return stream(req, res, c, text).catch(() => {});
     });
   }
 
-  async function stream(req, res, c, text) {
+  // One run of the gateway for this conversation. `resume` picks --resume or --session-id.
+  async function attempt(c, text, resume, emit) {
     const runId = crypto.randomBytes(18).toString('base64url');
-    const first = store.listMessages(c.id).length === 0;
-    store.addMessage(c.id, 'user', text, 'done', now());
-    const asstId = store.addMessage(c.id, 'assistant', '', 'streaming', now());
-    if (first && c.title === 'New chat') store.renameConversation(c.id, text.slice(0, 60), now());
     running.set(c.agent, { runId, conversationId: c.id });
-
-    let gone = false;
-    res.on('close', () => {
-      gone = true;
-    });
-    res.writeHead(200, h.sseHeaders());
-    const emit = (event, data) => {
-      if (!gone) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
-    emit('start', { message_id: asstId });
-    emit('thinking', {});
-    // A silent stretch (a long tool call) would let a proxy in front drop the idle stream; a comment line is ignored by
-    // the browser and keeps it open.
-    const keepalive = setInterval(() => {
-      if (!gone) res.write(': keepalive\n\n');
-    }, keepaliveMs);
-
     const mapper = createStreamMapper();
     let result = null;
-    let sawSession = false;
+    let sawText = false;
     let exit = null;
     let gwError = null;
     try {
       exit = await gateway.run(
-        {
-          agent: c.agent,
-          conversation_id: c.id,
-          resume: c.session_started === true,
-          prompt: text,
-          run_id: runId,
-        },
+        { agent: c.agent, conversation_id: c.id, resume, prompt: text, run_id: runId },
         {
           onLine(line) {
             for (const ev of mapper.push(line)) {
-              if (ev.kind === 'session') {
-                sawSession = true;
-                store.markSessionStarted(c.id);
-              } else if (ev.kind === 'delta') emit('delta', { text: ev.text });
-              else if (ev.kind === 'interim') emit('interim', { text: ev.text });
+              if (ev.kind === 'delta') {
+                sawText = true;
+                emit('delta', { text: ev.text });
+              } else if (ev.kind === 'interim') emit('interim', { text: ev.text });
               else if (ev.kind === 'tool') emit('tool', { label: ev.label });
               else if (ev.kind === 'result') result = ev;
             }
@@ -203,28 +176,87 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     } catch (e) {
       gwError = e instanceof GatewayError ? e.code : 'unavailable';
     }
+    return { exit, result, gwError, sawText, mapper };
+  }
 
-    clearInterval(keepalive);
-    let statusName = 'done';
-    let errorCode = null;
-    if (gwError) {
-      statusName = 'error';
-      errorCode = ['busy', 'disabled', 'not_enabled', 'too_large'].includes(gwError)
-        ? gwError
-        : 'unavailable';
-    } else if (exit.cancelled) statusName = 'cancelled';
-    else if (exit.timedOut) [statusName, errorCode] = ['error', 'timeout'];
-    else if (exit.tooBig) [statusName, errorCode] = ['error', 'too_large'];
-    else if ((result && result.isError) || exit.code !== 0) [statusName, errorCode] = ['error', 'failed'];
-    const finalText = mapper.finalText().trim() || (result && !result.isError ? result.text : '');
-    store.updateMessage(asstId, { text: finalText, status: statusName, errorCode });
-    running.delete(c.agent);
-    if (statusName === 'done') emit('done', { message_id: asstId, text: finalText });
-    else if (statusName === 'cancelled')
-      emit('done', { message_id: asstId, text: finalText, cancelled: true });
-    else emit('error', { code: errorCode, message_id: asstId });
-    if (!gone) res.end();
-    return sawSession;
+  async function stream(req, res, c, text) {
+    let gone = false;
+    let started = false;
+    let keepalive = null;
+    let asstId = null;
+    const emit = (event, data) => {
+      if (started && !gone) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    try {
+      store.addMessage(c.id, 'user', text, 'done', now());
+      asstId = store.addMessage(c.id, 'assistant', '', 'streaming', now());
+      if (store.listMessages(c.id).length === 2 && c.title === 'New chat')
+        store.renameConversation(c.id, text.slice(0, 60), now());
+      res.on('close', () => {
+        gone = true;
+      });
+      res.writeHead(200, h.sseHeaders());
+      started = true;
+      emit('start', { message_id: asstId });
+      emit('thinking', {});
+      // A silent stretch (a long tool call) would let a proxy in front drop the idle stream; a comment line is
+      // ignored by the browser and keeps it open.
+      keepalive = setInterval(() => {
+        if (!gone) res.write(': keepalive\n\n');
+      }, keepaliveMs);
+
+      // The session may exist or not, whatever the hub's flag says (a first run can die after the session was
+      // created; a session file can be gone). A run that fails without producing any text is retried once in the
+      // other mode, and the flag is only set after a successful run. The hub's history is untouched either way.
+      let resume = c.session_started === true;
+      let r = await attempt(c, text, resume, emit);
+      const failed = (x) =>
+        !x.gwError &&
+        !x.exit.cancelled &&
+        !x.exit.timedOut &&
+        !x.exit.tooBig &&
+        !x.exit.switchedOff &&
+        !x.sawText &&
+        ((x.result && x.result.isError) || x.exit.code !== 0);
+      if (failed(r) && !gone) {
+        resume = !resume;
+        r = await attempt(c, text, resume, emit);
+      }
+      const { exit, result, gwError, mapper } = r;
+
+      let statusName = 'done';
+      let errorCode = null;
+      if (gwError) {
+        statusName = 'error';
+        errorCode = ['busy', 'disabled', 'not_enabled', 'too_large'].includes(gwError)
+          ? gwError
+          : 'unavailable';
+      } else if (exit.switchedOff) [statusName, errorCode] = ['error', 'switched_off'];
+      else if (exit.cancelled) statusName = 'cancelled';
+      else if (exit.timedOut) [statusName, errorCode] = ['error', 'timeout'];
+      else if (exit.tooBig) [statusName, errorCode] = ['error', 'too_large'];
+      else if ((result && result.isError) || exit.code !== 0) [statusName, errorCode] = ['error', 'failed'];
+      if (statusName === 'done' && result) store.markSessionStarted(c.id);
+      const finalText = mapper.finalText().trim() || (result && !result.isError ? result.text : '');
+      store.updateMessage(asstId, { text: finalText, status: statusName, errorCode });
+      if (statusName === 'done') emit('done', { message_id: asstId, text: finalText });
+      else if (statusName === 'cancelled')
+        emit('done', { message_id: asstId, text: finalText, cancelled: true });
+      else emit('error', { code: errorCode, message_id: asstId });
+    } catch {
+      // a store or stream failure: generic answer, and the slot is always released below
+      if (!started) h.json(res, 500, { error: 'internal error' });
+      else emit('error', { code: 'failed', message_id: asstId });
+      try {
+        if (asstId !== null) store.updateMessage(asstId, { text: '', status: 'error', errorCode: 'failed' });
+      } catch {
+        // the store is what failed; the next start marks it interrupted
+      }
+    } finally {
+      clearInterval(keepalive);
+      running.delete(c.agent);
+      if (started && !gone) res.end();
+    }
   }
 
   /** Called at startup: runs that were in flight when the app stopped can never finish. */

@@ -363,6 +363,192 @@ test('a silent stretch keeps the stream open with comment lines the client ignor
   }
 });
 
+const okRun = async (_r, onLine) => {
+  onLine(init);
+  onLine(delta('fine'));
+  onLine(result('fine'));
+  return { type: 'exit', code: 0, cancelled: false, timedOut: false };
+};
+const failRun = async (_r, onLine) => {
+  onLine(init);
+  onLine(result('boom', true));
+  return { type: 'exit', code: 1, cancelled: false, timedOut: false };
+};
+
+test('the session flag is set only after a successful run, never on the init event', async () => {
+  const gw = fakeGateway({ run: failRun });
+  const s = await app(gw);
+  try {
+    const c = await newChat(s);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+    assert.equal(sse(r.text).pop()[0], 'error');
+    assert.equal(s.store.getConversation(c.id).session_started, false);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a failed resume is retried once with a fresh session, and the hub history is kept', async () => {
+  const modes = [];
+  const gw = fakeGateway({
+    async run(r, onLine, g) {
+      modes.push(r.resume);
+      return (r.resume ? failRun : okRun)(r, onLine, g);
+    },
+  });
+  const s = await app(gw);
+  try {
+    const c = await newChat(s);
+    s.store.markSessionStarted(c.id);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'again' });
+    assert.deepEqual(modes, [true, false]);
+    assert.equal(sse(r.text).pop()[0], 'done');
+    assert.equal(s.store.getConversation(c.id).session_started, true);
+    assert.equal(s.store.listMessages(c.id).length, 2);
+    assert.notEqual(gw.calls[0].run_id, gw.calls[1].run_id);
+    assert.equal(s.app.chat.running.size, 0);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a first run that died after the session was created is retried by resuming it', async () => {
+  const modes = [];
+  const gw = fakeGateway({
+    async run(r, onLine, g) {
+      modes.push(r.resume);
+      return (r.resume ? okRun : failRun)(r, onLine, g);
+    },
+  });
+  const s = await app(gw);
+  try {
+    const c = await newChat(s);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+    assert.deepEqual(modes, [false, true]);
+    assert.equal(sse(r.text).pop()[0], 'done');
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a cancelled, timed-out or switched-off run is not retried', async () => {
+  for (const exit of [
+    { code: 143, cancelled: true },
+    { code: 143, timedOut: true },
+    { code: 143, switchedOff: true },
+  ]) {
+    const gw = fakeGateway({
+      async run(_r, onLine) {
+        onLine(init);
+        return { type: 'exit', cancelled: false, timedOut: false, ...exit };
+      },
+    });
+    const s = await app(gw);
+    try {
+      const c = await newChat(s);
+      const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+      assert.equal(gw.calls.length, 1, JSON.stringify(exit));
+      if (exit.switchedOff)
+        assert.deepEqual(sse(r.text).pop(), ['error', { code: 'switched_off', message_id: 2 }]);
+    } finally {
+      await s.stop();
+    }
+  }
+});
+
+test('stop answers 409 when the gateway had nothing to cancel', async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const gw = fakeGateway({
+    async run(_r, onLine) {
+      onLine(init);
+      await gate;
+      return { type: 'exit', code: 0, cancelled: false, timedOut: false };
+    },
+  });
+  gw.cancel = async () => false;
+  const s = await app(gw);
+  try {
+    const c = await newChat(s);
+    const first = api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'x' });
+    for (let i = 0; i < 100 && gw.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await api(s, 'POST', `/api/chats/${c.id}/stop`)).status, 409);
+    release();
+    await first;
+  } finally {
+    await s.stop();
+  }
+});
+
+function throwingStore(which) {
+  const st = createMemoryStore();
+  const real = st[which];
+  st.armed = true;
+  st[which] = (...a) => {
+    if (st.armed) throw new Error('disk full SECRET-DETAIL');
+    return real(...a);
+  };
+  return st;
+}
+
+test('a store failure becomes a generic 500, never leaks detail and never leaves the slot taken', async () => {
+  const st = throwingStore('addMessage');
+  const s = await app(fakeGateway({ run: okRun }), {}, st);
+  try {
+    const c = await newChat(s);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+    assert.equal(r.status, 500);
+    assert.deepEqual(r.json, { error: 'internal error' });
+    assert.ok(!r.text.includes('SECRET'));
+    assert.equal(s.app.chat.running.size, 0);
+    st.armed = false;
+    assert.equal(
+      sse((await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'again' })).text).pop()[0],
+      'done',
+    );
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a store failure after the run finished still releases the slot and ends the stream', async () => {
+  const st = createMemoryStore();
+  const real = st.updateMessage;
+  let armed = true;
+  st.updateMessage = (...a) => {
+    if (armed) throw new Error('disk full');
+    return real(...a);
+  };
+  const s = await app(fakeGateway({ run: okRun }), {}, st);
+  try {
+    const c = await newChat(s);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+    assert.equal(r.status, 200);
+    assert.equal(sse(r.text).pop()[0], 'error');
+    assert.equal(s.app.chat.running.size, 0);
+    armed = false;
+    assert.equal(
+      sse((await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'again' })).text).pop()[0],
+      'done',
+    );
+  } finally {
+    await s.stop();
+  }
+});
+
+test('an exception in a body callback is a generic 500 and the process keeps serving', async () => {
+  const st = throwingStore('createConversation');
+  const s = await app(fakeGateway({ run: okRun }), {}, st);
+  try {
+    const r = await api(s, 'POST', '/api/chats', { agent: 'arshwyn' });
+    assert.equal(r.status, 500);
+    assert.deepEqual(r.json, { error: 'internal error' });
+    assert.equal((await api(s, 'GET', '/api/chat/status')).status, 200);
+  } finally {
+    await s.stop();
+  }
+});
+
 test('the per-minute message limit answers 429 with Retry-After', async () => {
   let t = Date.now();
   const s = await startApp(
