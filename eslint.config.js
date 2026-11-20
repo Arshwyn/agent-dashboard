@@ -5,15 +5,7 @@ const globals = require('globals');
 
 module.exports = [
   {
-    ignores: [
-      'node_modules/**',
-      'data/**',
-      'coverage/**',
-      'test-results/**',
-      'e2e-artifacts/**',
-      'playwright-report/**',
-      'docs/mocks/vendor/**',
-    ],
+    ignores: ['node_modules/**', 'data/**', 'coverage/**', 'test-results/**', 'public/vendor/**'],
   },
   js.configs.recommended,
   {
@@ -22,21 +14,8 @@ module.exports = [
     rules: { 'no-unused-vars': ['error', { argsIgnorePattern: '^_' }] },
   },
   {
-    files: ['public/**/*.js'],
-    languageOptions: { sourceType: 'module', globals: { ...globals.browser } },
-  },
-  {
-    // Mock stage scripts: classic browser scripts, not modules.
-    files: ['docs/mocks/**/*.js'],
+    // Browser scripts: classic scripts (not modules); THREE comes from public/vendor/three.min.js.
+    files: ['public/js/**/*.js'],
     languageOptions: { sourceType: 'script', globals: { ...globals.browser, THREE: 'readonly' } },
-  },
-  {
-    // Playwright specs: node (commonjs) plus browser globals for page.evaluate() callbacks.
-    files: ['e2e/**/*.js'],
-    languageOptions: { globals: { ...globals.node, ...globals.browser } },
-  },
-  {
-    files: ['eslint.config.js'],
-    languageOptions: { sourceType: 'commonjs' },
   },
 ];
