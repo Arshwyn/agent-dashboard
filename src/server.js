@@ -1,0 +1,167 @@
+'use strict';
+
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { AccessVerifier } = require('./access');
+
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.glb': 'model/gltf-binary',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+};
+const SECURITY_HEADERS = {
+  'Content-Security-Policy':
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'CDN-Cache-Control': 'no-store',
+  'Cloudflare-CDN-Cache-Control': 'no-store',
+};
+const ROSTER = JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR, 'roster.json'), 'utf8')).agents;
+const AGENT_IDS = new Set(ROSTER.map((a) => a.id));
+const STATIC_OK = /^\/(roster\.json|css\/[\w.-]+|js\/[\w.-]+|vendor\/[\w.-]+|models\/[\w.-]+)$/;
+
+function createApp(config, opts = {}) {
+  const verifier = config.devBypass
+    ? null
+    : new AccessVerifier({
+        teamDomain: config.accessTeamDomain,
+        aud: config.accessAud,
+        ownerEmail: config.ownerEmail,
+        fetchJson: opts.fetchJson,
+        now: opts.now,
+      });
+  const hsts = config.production ? { 'Strict-Transport-Security': 'max-age=31536000' } : {};
+
+  function send(res, status, body, headers = {}) {
+    const isObj = typeof body === 'object' && body !== null;
+    res.writeHead(status, {
+      ...SECURITY_HEADERS,
+      ...hsts,
+      'Content-Type': isObj ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...headers,
+    });
+    res.end(isObj ? JSON.stringify(body) : String(body ?? ''));
+  }
+
+  // The dev bypass trusts only a loopback peer, on top of the config rule that it needs a loopback host.
+  function isLoopbackPeer(req) {
+    const a = req.socket.remoteAddress || '';
+    return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+  }
+
+  async function authenticate(req) {
+    if (config.devBypass) {
+      return isLoopbackPeer(req)
+        ? { ok: true, email: 'dev@localhost.invalid' }
+        : { ok: false, status: 403, reason: 'bypass is loopback only' };
+    }
+    const h = req.headers['cf-access-jwt-assertion'];
+    return verifier.verify(Array.isArray(h) ? h[0] : h);
+  }
+
+  // /event is a stub that keeps hooks configured elsewhere from erroring: it drains the body and stores nothing.
+  function handleEventStub(req, res) {
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > config.maxBodyBytes) req.destroy();
+    });
+    req.on('end', () => {
+      res.writeHead(204, { ...SECURITY_HEADERS, ...hsts, 'Cache-Control': 'no-store' });
+      res.end();
+    });
+    req.on('error', () => {});
+  }
+
+  function roster() {
+    return ROSTER.map((a) => ({
+      ...a,
+      link: a.chat === 'link' && config.apolloChatUrl ? config.apolloChatUrl : null,
+    }));
+  }
+
+  function sendFile(req, res, file, type) {
+    fs.readFile(file, (err, data) => {
+      if (err) return send(res, 404, 'not found');
+      const etag = `"${crypto.createHash('sha256').update(data).digest('hex').slice(0, 32)}"`;
+      const headers = {
+        ...SECURITY_HEADERS,
+        ...hsts,
+        'Content-Type': type,
+        'Cache-Control': 'private, no-cache',
+        ETag: etag,
+      };
+      if (req.headers['if-none-match'] === etag) {
+        delete headers['Content-Type'];
+        res.writeHead(304, headers);
+        return res.end();
+      }
+      res.writeHead(200, headers);
+      res.end(req.method === 'HEAD' ? undefined : data);
+    });
+  }
+
+  function handleStatic(req, res, p) {
+    if (p === '/' || p.startsWith('/agent/')) {
+      if (p !== '/' && !AGENT_IDS.has(p.slice('/agent/'.length))) return send(res, 404, 'not found');
+      return sendFile(req, res, path.join(PUBLIC_DIR, 'index.html'), MIME['.html']);
+    }
+    if (!STATIC_OK.test(p)) return send(res, 404, 'not found');
+    const file = path.join(PUBLIC_DIR, p);
+    if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 404, 'not found');
+    return sendFile(req, res, file, MIME[path.extname(file)] || 'application/octet-stream');
+  }
+
+  const server = http.createServer((req, res) => {
+    (async () => {
+      const p = new URL(req.url, 'http://localhost').pathname;
+      const m = req.method;
+      if (p === '/healthz' && (m === 'GET' || m === 'HEAD')) return send(res, 200, 'ok');
+      if (p === '/event') {
+        if (m !== 'POST') return send(res, 405, { error: 'method not allowed' }, { Allow: 'POST' });
+        return handleEventStub(req, res);
+      }
+      const auth = await authenticate(req);
+      if (!auth.ok) {
+        const msg = auth.status === 401 ? 'unauthorized' : auth.status === 403 ? 'forbidden' : 'unavailable';
+        return send(res, auth.status, { error: msg });
+      }
+      if (m !== 'GET' && m !== 'HEAD')
+        return send(res, 405, { error: 'method not allowed' }, { Allow: 'GET, HEAD' });
+      if (p === '/api/roster') return send(res, 200, { agents: roster() });
+      if (p === '/api/me') return send(res, 200, { email: auth.email });
+      if (p.startsWith('/api/')) return send(res, 404, { error: 'not found' });
+      return handleStatic(req, res, p);
+    })().catch(() => {
+      if (!res.headersSent) send(res, 500, { error: 'internal error' });
+      else res.end();
+    });
+  });
+  server.keepAliveTimeout = 5000;
+  server.headersTimeout = 10000;
+  server.requestTimeout = 15000;
+
+  function close() {
+    return new Promise((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections?.();
+    });
+  }
+  return { server, close };
+}
+
+module.exports = { createApp };
