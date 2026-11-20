@@ -62,10 +62,13 @@ function loadGatewayConfig(env = process.env) {
   const model = env.GATEWAY_MODEL || null;
   if (model !== null && !/^[A-Za-z0-9._-]{1,64}$/.test(model)) throw new Error('GATEWAY_MODEL is invalid');
   const dataDir = need('GATEWAY_DATA_DIR');
+  const socketPath = env.GATEWAY_SOCKET ? need('GATEWAY_SOCKET') : path.join(dataDir, 'gateway.sock');
+  // sun_path is about 108 bytes on Linux; a longer path fails at bind with a confusing error
+  if (Buffer.byteLength(socketPath) > 100) throw new Error('the socket path is too long (100 bytes at most)');
   return {
     workspaceDir: fs.realpathSync(need('WORKSPACE_DIR')),
     dataDir,
-    socketPath: env.GATEWAY_SOCKET ? need('GATEWAY_SOCKET') : path.join(dataDir, 'gateway.sock'),
+    socketPath,
     killSwitchFile: env.KILL_SWITCH_FILE ? need('KILL_SWITCH_FILE') : path.join(dataDir, 'DISABLED'),
     auditLog: env.AUDIT_LOG ? need('AUDIT_LOG') : path.join(dataDir, 'audit.log'),
     claudeBin: env.CLAUDE_BIN || 'claude',
@@ -176,6 +179,8 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     child.once('exit', () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      // anything the run left behind in its process group (a shell it started) goes with it
+      sig('SIGKILL');
     });
   }
 
@@ -256,12 +261,18 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     child.stdin.on('error', () => {});
     child.stdin.end(run.prompt);
 
+    let finished = false;
     const timer = setTimeout(() => {
       state.timedOut = true;
       killGroup(child, cfg.killGraceMs);
     }, cfg.runTimeoutMs);
 
-    let finished = false;
+    // The hub going away (restart, crash) ends the run: nobody is left to read it, and it would hold the one slot.
+    sock.on('close', () => {
+      if (finished) return;
+      state.cancelled = true;
+      killGroup(child, cfg.killGraceMs);
+    });
     const finish = (code, signal) => {
       if (finished) return;
       finished = true;
