@@ -68,6 +68,32 @@ process.stdin.on('end', () => {
     delta('ok');
     result('ok');
     process.exit(0);
+  } else if (p.startsWith('escape')) {
+    // a sleeper in its own session that keeps our stdout open after we exit
+    const kid = require('node:child_process').spawn('sleep', ['30'], {
+      detached: true,
+      stdio: ['ignore', 'inherit', 'ignore'],
+    });
+    fs.writeFileSync(path.join(process.env.HOME, 'escape.pid'), String(kid.pid));
+    kid.unref();
+    init();
+    delta('ok');
+    result('ok');
+    process.exit(0);
+  } else if (p.startsWith('toolfail')) {
+    init();
+    out({
+      type: 'stream_event',
+      event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 'tf1', name: 'Bash' } },
+    });
+    out({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result: 'boom',
+      session_id: sid,
+    });
+    process.exit(1);
   } else if (p.startsWith('stubborn')) {
     init();
     process.on('SIGINT', () => {});
