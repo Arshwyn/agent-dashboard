@@ -268,7 +268,7 @@
       });
     }
 
-    function loadList(selectId) {
+    function loadList(selectId, keepLog) {
       return api('GET', '/api/chats?agent=' + encodeURIComponent(a.id))
         .then(function (r) {
           return r.json();
@@ -285,6 +285,7 @@
           chat_.conv = pick;
           fillSelect();
           lock(false);
+          if (keepLog) return;
           return pick ? openConv(pick.id) : drawMessages([]);
         });
     }
@@ -335,46 +336,28 @@
       var reader = r.body.getReader();
       var dec = new TextDecoder();
       var buf = '';
-      var text = '';
-      var spoke = false;
+      var ss = window.HubStreamState.create();
+      chat_.keepLog = false;
       function handle(ev, data) {
-        if (ev === 'thinking') setStageState('thinking');
-        else if (ev === 'delta') {
-          if (!spoke) {
-            spoke = true;
-            setStageState('speaking');
-            tool.textContent = '';
-          }
-          text += data.text;
-          live.textContent = text;
-          log.scrollTop = log.scrollHeight;
-        } else if (ev === 'interim') {
-          // narration before a tool call: keep it as a muted note and start the live text again
-          live.insertAdjacentElement('beforebegin', addMsg('assistant', data.text.trim(), 'note'));
-          text = '';
-          live.textContent = '';
-          spoke = false;
-          setStageState('thinking');
-        } else if (ev === 'tool') {
-          tool.textContent = data.label + '...';
-          setStageState('thinking');
-        } else if (ev === 'done') {
-          live.textContent = data.text || text;
-          if (data.cancelled) live.appendChild(el('small', { class: 'err' }, 'Stopped.'));
-          if (data.unsaved)
-            live.appendChild(el('small', { class: 'err' }, 'This reply could not be saved to the history.'));
-          tool.remove();
-          log.scrollTop = log.scrollHeight;
-          announce(data.cancelled ? 'Stopped.' : 'Reply from ' + a.name + ' complete.');
-          setStageState('idle');
-        } else if (ev === 'error') {
-          tool.remove();
-          live.appendChild(el('small', { class: 'err' }, ERROR_TEXT[data.code] || ERROR_TEXT.failed));
+        var o = ss.apply(ev, data);
+        chat_.keepLog = ss.keepLog();
+        if (o.interim) live.insertAdjacentElement('beforebegin', addMsg('assistant', o.interim, 'note'));
+        if (o.tool !== undefined) tool.textContent = o.tool;
+        if (o.liveText !== undefined) live.textContent = o.liveText;
+        o.notes.forEach(function (n) {
+          live.appendChild(el('small', { class: 'err' }, n));
+        });
+        if (o.removeTool) tool.remove();
+        if (o.errorCode) {
+          var msg = ERROR_TEXT[o.errorCode] || ERROR_TEXT.failed;
+          live.appendChild(el('small', { class: 'err' }, msg));
           live.classList.add('is-error');
-          log.scrollTop = log.scrollHeight;
-          announce(ERROR_TEXT[data.code] || ERROR_TEXT.failed);
-          setStageState('error');
+          announce(msg);
         }
+        if (o.announce)
+          announce(o.announce === 'stopped' ? 'Stopped.' : 'Reply from ' + a.name + ' complete.');
+        log.scrollTop = log.scrollHeight;
+        if (o.stage) setStageState(o.stage);
       }
       function pump() {
         return reader.read().then(function (chunk) {
@@ -449,7 +432,10 @@
         })
         .then(function () {
           if (token !== chat_.token) return;
-          return loadList(chat_.conv && chat_.conv.id);
+          // an unsaved reply exists only on screen: refresh the list but keep the log as it is
+          var keep = chat_.keepLog;
+          chat_.keepLog = false;
+          return loadList(chat_.conv && chat_.conv.id, keep);
         });
     }
 
