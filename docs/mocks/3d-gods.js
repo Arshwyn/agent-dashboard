@@ -1,6 +1,7 @@
 // 3D prototype for the agent hub bodies: a soft glass orb that expands into a hologram bust on click.
 // Classic script: uses the global THREE from vendor/three.min.js (a subset bundle), so the page needs no build.
-// Everything except the optional scanned heads (models/*.glb, sampled into points) is generated here.
+// The figures come from models/*.glb (sampled into points and drawn as a surface); a procedural bust stands in
+// while a model loads or if it is missing. Everything else is generated here.
 // There is deliberately no flat fallback: without WebGL 2 the stage shows a text message.
 (function () {
   'use strict';
@@ -21,16 +22,14 @@
     scanPoints: 3000, // points sampled per scanned model
   };
 
-  // ---------- the eight gods: palette, scan, attributes, sample chat ----------
-  // Palette tones feed the shaders (a: main, b: second, c: highlight). Attributes are built in code below.
+  // ---------- the eight gods: palette and sample chat ----------
+  // Palette tones feed the shaders (a: main, b: second, c: highlight).
   var GODS = [
     {
       id: 'hephaestus',
       name: 'Hephaestus',
       role: 'Builder',
       pal: ['#ff9a1f', '#ff5a1f', '#ffd08a'],
-      attrs: [],
-      fallback: ['cap', 'beard', 'anvil', 'hammer'], // only while no scan is loaded: the Vulcan statue carries its own
       you: 'Is the dashboard change ready for review?',
       reply:
         'Built and pushed on its own branch. Tests green, lint clean, three small commits. Passing it to the gate now.',
@@ -40,7 +39,6 @@
       name: 'Themis',
       role: 'Quality gate',
       pal: ['#9bb8ff', '#e9c46a', '#f2f6ff'],
-      attrs: ['band', 'scales'],
       you: 'Did the checks pass?',
       reply: 'Every check ran and held. One naming note is logged for later; nothing blocks the merge.',
     },
@@ -49,7 +47,6 @@
       name: 'Janus',
       role: 'Gatekeeper',
       pal: ['#5ad1d6', '#c27bf0', '#e8eef7'],
-      attrs: ['door', 'key'],
       you: 'Anything blocking the merge?',
       reply:
         'Both doors checked. No critical findings; one medium goes to the backlog. The gate cleared this same commit, so I may open the way.',
@@ -59,8 +56,6 @@
       name: 'Atlas',
       role: 'Operator',
       pal: ['#6aa0ff', '#3b5bd6', '#e0ecff'],
-      attrs: [],
-      fallback: ['sky'], // the Atlas scan carries its own globe
       you: 'Is the new version running?',
       reply: 'It is. Deployed, the health check is green, and the previous version is kept in reserve.',
     },
@@ -69,7 +64,6 @@
       name: 'Plutus',
       role: 'Finance',
       pal: ['#3fbf7a', '#d6a82a', '#eaffd8'],
-      attrs: ['crown', 'coin'],
       you: 'How are the savings tracking this month?',
       reply:
         'Steady. Spending stayed under plan and nothing needs moving today. I would not trade on a hunch.',
@@ -79,7 +73,6 @@
       name: 'Apollo',
       role: 'Coach',
       pal: ['#ffd24a', '#8fbf6a', '#fff3bd'],
-      attrs: ['laurel', 'lyre'],
       you: 'How did recovery look this week?',
       reply:
         'A calm week. Rest held steady and effort stayed in range. Keep tomorrow easy and let the daylight do some of the work.',
@@ -89,7 +82,6 @@
       name: 'Iris',
       role: 'Mail and calendar',
       pal: ['#ff7ac8', '#5ad1ff', '#ffe27a'],
-      attrs: ['veil', 'rainbow'],
       you: 'What is on tomorrow?',
       reply:
         'A light day: two meetings and one draft reply waiting for your approval. Nothing is sent until you say so.',
@@ -99,27 +91,58 @@
       name: 'Dionysus',
       role: 'Travel and food',
       pal: ['#b04ad6', '#e0456a', '#f0d0ff'],
-      attrs: [],
-      fallback: ['ivy'], // the Bacchus scan carries its own vine
       you: 'Where should we eat on Friday?',
       reply:
         'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
     },
   ];
-  // One scan per god, models/<god id>.glb. kind: head = a head only (a procedural body is added);
-  // bust = head and shoulders as scanned; statue = a full statue cut to a bust at crop (the top fraction of its height).
-  // up: 'y' or 'z' (the model's up axis); yaw turns it about Y to face the camera; scale and dy nudge the fit;
-  // eyes are optional glow positions in bust space. These are placeholders until the real files are in.
+  // One model per god, models/<god id>.glb: geometry only (positions and indices), about 18k to 28k triangles.
+  // Each model is a half figure that holds its own attribute and fills the stage by itself. Its corrective yaw is
+  // baked into the file (yaw 0 is frontal), so yaw, pitch, roll, scale and dy only nudge the fit; crop is an optional
+  // box in fractions of the model's own extent; eyes are optional glow positions; orient 'winding' trusts the
+  // triangle winding for normals. For tuning, ?yaw=, ?pitch=, ?roll=, ?scale=, ?dy= and ?crop= override these for
+  // the god being viewed (values are clamped; see the query handling below).
   var SCANS = {
-    apollo: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    dionysus: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    janus: { kind: 'head', up: 'y', yaw: 0, scale: 1, dy: 0 }, // one head with two faces: no duplicate
-    hephaestus: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    atlas: { kind: 'statue', crop: 0.3, up: 'y', yaw: 0, scale: 1, dy: 0 },
-    themis: { kind: 'bust', up: 'y', yaw: 0, scale: 1, dy: 0 },
-    iris: { kind: 'head', up: 'y', yaw: 0, scale: 1, dy: 0 },
-    plutus: { kind: 'bust', up: 'y', yaw: 0, scale: 1, dy: 0 },
+    // The corrective yaw is baked into each GLB (yaw 0 is frontal, shoulders parallel to the screen, torso centred
+    // on the origin); these numbers only nudge. pitch and roll are optional tilts in radians.
+    apollo: { yaw: 0, scale: 1, dy: 0 },
+    dionysus: { yaw: 0, scale: 1, dy: 0 },
+    janus: { yaw: 0, scale: 1, dy: 0 }, // body frontal; the two profile faces are as sculpted
+    hephaestus: { yaw: 0, scale: 1, dy: 0 },
+    atlas: { yaw: 0, scale: 0.9, dy: -0.12 }, // cut at mid-chest, sphere held high: a little headroom
+    themis: { yaw: 0, scale: 1, dy: 0 },
+    iris: { yaw: 0, scale: 1, dy: 0 },
+    plutus: { yaw: 0, scale: 1, dy: 0 },
   };
+
+  // Tuning overrides from the query string, for the allowlisted god only, clamped to sane ranges.
+  (function () {
+    var qs = new URLSearchParams(window.location.search);
+    var gid = qs.get('god') || 'hephaestus';
+    if (!Object.prototype.hasOwnProperty.call(SCANS, gid)) return;
+    var limits = {
+      yaw: [-Math.PI, Math.PI],
+      pitch: [-Math.PI, Math.PI],
+      roll: [-Math.PI, Math.PI],
+      scale: [0.2, 3],
+      dy: [-1, 1],
+    };
+    Object.keys(limits).forEach(function (k) {
+      var v = parseFloat(qs.get(k));
+      if (isFinite(v)) SCANS[gid][k] = Math.min(limits[k][1], Math.max(limits[k][0], v));
+    });
+    var q = qs.get('crop');
+    if (q) {
+      var n = q.split(',').map(parseFloat);
+      if (n.length === 6 && n.every(isFinite)) {
+        n = n.map(function (x) {
+          return Math.min(1, Math.max(0, x));
+        });
+        if (n[0] < n[1] && n[2] < n[3] && n[4] < n[5])
+          SCANS[gid].crop = { y: [n[0], n[1]], x: [n[2], n[3]], z: [n[4], n[5]] };
+      }
+    }
+  })();
   var godIdx = 0;
   var god = GODS[0];
 
@@ -131,9 +154,6 @@
     var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-  function gauss() {
-    return ((rnd() + rnd() + rnd()) / 3) * 2 - 1;
   }
   function hexRgb(h) {
     var n = parseInt(h.slice(1), 16);
@@ -160,28 +180,6 @@
     O[1] = c[1] + v[1] * r[1];
     O[2] = c[2] + v[2] * r[2];
     setN(v[0] / r[0], v[1] / r[1], v[2] / r[2]);
-    return O;
-  }
-  function radial(x, y, z, c) {
-    O[0] = x;
-    O[1] = y;
-    O[2] = z;
-    setN(x - c[0], y - c[1], z - c[2]);
-    return O;
-  }
-  function boxSurface(c, h) {
-    var f = Math.floor(rnd() * 6);
-    var ax = f >> 1;
-    var p = [0, 0, 0];
-    p[ax] = f & 1 ? 1 : -1;
-    p[(ax + 1) % 3] = rnd() * 2 - 1;
-    p[(ax + 2) % 3] = rnd() * 2 - 1;
-    O[0] = c[0] + p[0] * h[0];
-    O[1] = c[1] + p[1] * h[1];
-    O[2] = c[2] + p[2] * h[2];
-    var n = [0, 0, 0];
-    n[ax] = p[ax];
-    setN(n[0], n[1], n[2]);
     return O;
   }
   var HEAD_C = [0, 0.64, -0.02];
@@ -254,370 +252,6 @@
     }
     return ellip([rnd() < 0.5 ? -0.84 : 0.84, -0.76, 0], [0.17, 0.2, 0.2]);
   }
-
-  // ---------- attributes (built in code) ----------
-  function zig(a, n) {
-    var f = (a / (Math.PI * 2)) * n;
-    return Math.abs(f - Math.floor(f) - 0.5) * 2;
-  }
-  function circlePts(cx, cy, cz, r, n) {
-    var pts = [];
-    for (var i = 0; i < n; i++) {
-      var a = (i / n) * Math.PI * 2;
-      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, cz]);
-    }
-    return pts;
-  }
-  function arcPts(cx, cy, r, a0, a1, n) {
-    var pts = [];
-    for (var i = 0; i <= n; i++) {
-      var a = a0 + ((a1 - a0) * i) / n;
-      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, 0]);
-    }
-    return pts;
-  }
-  function wreathPoint() {
-    var a = rnd() * Math.PI * 2;
-    return radial(
-      Math.cos(a) * 0.45 + gauss() * 0.03,
-      0.98 + gauss() * 0.03,
-      Math.sin(a) * 0.48 - 0.02 + gauss() * 0.03,
-      [0, 0.5, -0.02],
-    );
-  }
-
-  // pt() returns extra surface points; wire(group) adds line work. edgeObj and lineObj are defined with the scene.
-  var ATTRS = {
-    cap: {
-      pt: function () {
-        for (var i = 0; i < 8; i++) {
-          var p = ellip(HEAD_C, [0.45, 0.55, 0.49]);
-          if (p[1] > 0.95) return p;
-        }
-        return radial(0, 1.2, 0, HEAD_C);
-      },
-    },
-    beard: {
-      pt: function () {
-        for (var i = 0; i < 12; i++) {
-          var p = ellip(HEAD_C, [0.44, 0.54, 0.47]);
-          if (p[2] > 0.08 && p[1] < 0.42 && p[1] > 0.0) return p;
-        }
-        return radial(0, 0.3, 0.4, HEAD_C);
-      },
-    },
-    anvil: {
-      pt: function () {
-        var b = [
-          [
-            [0, -0.97, 0.4],
-            [0.46, 0.06, 0.2],
-          ],
-          [
-            [0, -0.86, 0.4],
-            [0.14, 0.07, 0.15],
-          ],
-          [
-            [0, -0.72, 0.4],
-            [0.58, 0.08, 0.18],
-          ],
-        ][Math.floor(rnd() * 3)];
-        return boxSurface(b[0], b[1]);
-      },
-      wire: function (g) {
-        [
-          [0.46, 0.06, 0.2, -0.97],
-          [0.14, 0.07, 0.15, -0.86],
-          [0.58, 0.08, 0.18, -0.72],
-        ].forEach(function (s) {
-          var w = edgeObj(new THREE.BoxGeometry(s[0] * 2, s[1] * 2, s[2] * 2), 'c', 0.7);
-          w.position.set(0, s[3], 0.4);
-          g.add(w);
-        });
-      },
-    },
-    hammer: {
-      wire: function (g) {
-        var h = new THREE.Group();
-        var handle = edgeObj(new THREE.CylinderGeometry(0.035, 0.035, 0.9, 8), 'b', 0.55);
-        var head = edgeObj(new THREE.BoxGeometry(0.42, 0.2, 0.2), 'b', 0.55);
-        head.position.y = 0.5;
-        h.add(handle);
-        h.add(head);
-        h.position.set(1.3, 0.1, 0.2);
-        h.rotation.z = -0.5;
-        h.userData.anim = 'hammer';
-        g.add(h);
-      },
-    },
-    laurel: { pt: wreathPoint },
-    ivy: {
-      pt: function () {
-        if (rnd() < 0.6) return wreathPoint();
-        var s = rnd() < 0.5 ? -1 : 1; // a vine hanging at each side
-        var t = rnd();
-        return radial(
-          s * (0.47 + 0.06 * Math.sin(t * 9)),
-          0.95 - t * 0.9 + gauss() * 0.02,
-          -0.08 + gauss() * 0.04,
-          [0, 0.5, 0],
-        );
-      },
-    },
-    lyre: {
-      wire: function (g) {
-        var l = new THREE.Group();
-        l.add(
-          lineObj(
-            [
-              [-1.5, 0.05, 0.1],
-              [-1.62, -0.25, 0.1],
-              [-1.5, -0.55, 0.1],
-              [-1.35, -0.62, 0.1],
-            ],
-            false,
-            'a',
-            0.8,
-          ),
-        );
-        l.add(
-          lineObj(
-            [
-              [-1.0, 0.05, 0.1],
-              [-0.88, -0.25, 0.1],
-              [-1.0, -0.55, 0.1],
-              [-1.15, -0.62, 0.1],
-            ],
-            false,
-            'a',
-            0.8,
-          ),
-        );
-        l.add(
-          lineObj(
-            [
-              [-1.52, 0.05, 0.1],
-              [-0.98, 0.05, 0.1],
-            ],
-            false,
-            'a',
-            0.8,
-          ),
-        );
-        for (var i = 0; i < 4; i++)
-          l.add(
-            lineObj(
-              [
-                [-1.4 + i * 0.1, 0.05, 0.1],
-                [-1.4 + i * 0.1, -0.55, 0.1],
-              ],
-              false,
-              'c',
-              0.5,
-            ),
-          );
-        g.add(l);
-      },
-    },
-    door: {
-      wire: function (g) {
-        var pts = [
-          [-0.98, -1.0, -0.1],
-          [-0.98, 0.7, -0.1],
-        ];
-        for (var i = 0; i <= 24; i++) {
-          var a = Math.PI - (i / 24) * Math.PI;
-          pts.push([Math.cos(a) * 0.98, 0.7 + Math.sin(a) * 0.55, -0.1]);
-        }
-        pts.push([0.98, -1.0, -0.1]);
-        g.add(lineObj(pts, false, 'a', 0.55));
-      },
-    },
-    key: {
-      wire: function (g) {
-        var k = new THREE.Group();
-        k.add(lineObj(circlePts(-0.18, -0.96, 0.46, 0.1, 18), true, 'a', 0.8));
-        k.add(
-          lineObj(
-            [
-              [-0.08, -0.96, 0.46],
-              [0.34, -0.96, 0.46],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        k.add(
-          lineObj(
-            [
-              [0.26, -0.96, 0.46],
-              [0.26, -1.08, 0.46],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        k.add(
-          lineObj(
-            [
-              [0.33, -0.96, 0.46],
-              [0.33, -1.04, 0.46],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        g.add(k);
-      },
-    },
-    sky: {
-      pt: function () {
-        var a = Math.PI * (0.05 + 0.9 * rnd());
-        var r = 1.35 + gauss() * 0.04;
-        return radial(Math.cos(a) * r, Math.sin(a) * r * 0.9 + gauss() * 0.04, gauss() * 0.06, [0, 0, 0]);
-      },
-      wire: function (g) {
-        var pts = [];
-        for (var i = 0; i <= 40; i++) {
-          var a = Math.PI * (0.03 + 0.94 * (i / 40));
-          pts.push([Math.cos(a) * 1.42, Math.sin(a) * 1.28, 0]);
-        }
-        g.add(lineObj(pts, false, 'a', 0.4));
-      },
-    },
-    crown: {
-      pt: function () {
-        var a = rnd() * Math.PI * 2;
-        return radial(
-          Math.cos(a) * 0.43,
-          1.06 + 0.16 * zig(a, 5) + gauss() * 0.01,
-          Math.sin(a) * 0.47 - 0.02,
-          [0, 0.9, 0],
-        );
-      },
-      wire: function (g) {
-        var pts = [];
-        for (var i = 0; i <= 60; i++) {
-          var a = (i / 60) * Math.PI * 2;
-          pts.push([Math.cos(a) * 0.43, 1.06 + 0.16 * zig(a, 5), Math.sin(a) * 0.47 - 0.02]);
-        }
-        g.add(lineObj(pts, true, 'b', 0.8));
-      },
-    },
-    coin: {
-      pt: function () {
-        var a = rnd() * Math.PI * 2;
-        return radial(1.2 + Math.cos(a) * 0.3, 0.1 + Math.sin(a) * 0.3, 0.2, [1.2, 0.1, 0.2]);
-      },
-      wire: function (g) {
-        var c = new THREE.Group();
-        c.add(lineObj(circlePts(0, 0, 0, 0.3, 36), true, 'b', 0.8));
-        c.add(lineObj(circlePts(0, 0, 0, 0.22, 36), true, 'b', 0.4));
-        c.position.set(1.2, 0.1, 0.2);
-        c.userData.anim = 'coin';
-        g.add(c);
-      },
-    },
-    band: {
-      pt: function () {
-        var a = rnd() * Math.PI * 2;
-        return radial(
-          Math.cos(a) * 0.435,
-          0.69 + gauss() * 0.045,
-          Math.sin(a) * 0.48 - 0.02,
-          [0, 0.69, -0.02],
-        );
-      },
-    },
-    scales: {
-      wire: function (g) {
-        var s = new THREE.Group();
-        s.add(
-          lineObj(
-            [
-              [0, -0.9, 0],
-              [0, 0.2, 0],
-            ],
-            false,
-            'b',
-            0.6,
-          ),
-        );
-        var beam = new THREE.Group();
-        beam.add(
-          lineObj(
-            [
-              [-0.45, 0.2, 0],
-              [0.45, 0.2, 0],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        [-0.45, 0.45].forEach(function (x) {
-          beam.add(
-            lineObj(
-              [
-                [x, 0.2, 0],
-                [x - 0.18, -0.15, 0],
-              ],
-              false,
-              'a',
-              0.5,
-            ),
-          );
-          beam.add(
-            lineObj(
-              [
-                [x, 0.2, 0],
-                [x + 0.18, -0.15, 0],
-              ],
-              false,
-              'a',
-              0.5,
-            ),
-          );
-          beam.add(lineObj(arcPts(x, -0.15, 0.18, Math.PI, Math.PI * 2, 14), false, 'a', 0.8));
-        });
-        beam.userData.anim = 'sway';
-        s.add(beam);
-        s.position.set(1.25, 0, 0.15);
-        g.add(s);
-      },
-    },
-    veil: {
-      pt: function () {
-        var x = gauss() * 0.6;
-        var t = rnd();
-        return radial(
-          x,
-          1.05 - t * 1.5,
-          -0.3 - 0.12 * (1 - Math.abs(x) / 0.6) - 0.03 * Math.sin(t * 9 + x * 6),
-          [0, 0.5, 0.2],
-        );
-      },
-    },
-    rainbow: {
-      wire: function (g) {
-        [
-          ['a', 1.25],
-          ['b', 1.35],
-          ['c', 1.45],
-        ].forEach(function (s) {
-          var pts = [];
-          for (var i = 0; i <= 40; i++) {
-            var a = Math.PI * (i / 40);
-            pts.push([Math.cos(a) * s[1], -0.45 + Math.sin(a) * s[1], -0.25]);
-          }
-          g.add(lineObj(pts, false, s[0], 0.7));
-        });
-      },
-    },
-  };
 
   // ---------- capability check: no flat fallback, just a message ----------
   function webglOk() {
@@ -766,6 +400,7 @@
     uB: U.uB,
     uC: U.uC,
     uSpeak: { value: 0 },
+    uSurf: { value: 0 },
   };
   var pm = new THREE.ShaderMaterial({
     uniforms: pu,
@@ -777,7 +412,7 @@
       'attribute vec3 aNorm;',
       'attribute vec4 aRnd;',
       'uniform float uMorph, uTime, uPx, uThink, uSpeak;',
-      'varying float vMix, vT, vY, vDepth, vRim, vFace;',
+      'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float t = clamp((uMorph - aRnd.x * 0.45) / 0.55, 0.0, 1.0);',
       '  t = t * t * (3.0 - 2.0 * t);',
@@ -797,6 +432,7 @@
       '  float nd = dot(n, normalize(-mv.xyz));',
       '  vRim = pow(1.0 - abs(nd), 2.2);',
       '  vFace = nd > 0.0 ? 1.0 : 0.35;',
+      '  vLit = max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);',
       '  gl_PointSize = aRnd.y * uPx / -mv.z * (1.0 + mid * 0.5) * (1.0 - 0.15 * t);',
       '  gl_Position = projectionMatrix * mv;',
       '  vMix = aRnd.z; vT = t; vY = p.y; vDepth = clamp(1.25 - (-mv.z - 3.0) * 0.28, 0.35, 1.3);',
@@ -804,8 +440,8 @@
     ].join('\n'),
     fragmentShader: [
       'uniform vec3 uA, uB, uC;',
-      'uniform float uTime, uSpeak, uThink;',
-      'varying float vMix, vT, vY, vDepth, vRim, vFace;',
+      'uniform float uTime, uSpeak, uThink, uSurf;',
+      'varying float vMix, vT, vY, vDepth, vRim, vFace, vLit;',
       'void main() {',
       '  float d = length(gl_PointCoord - 0.5);',
       '  if (d > 0.5) discard;',
@@ -816,7 +452,7 @@
       '  col = mix(col, uC, 0.25 + sweep * 0.7);',
       '  col = mix(col, uC, vRim * vT * 0.7);',
       '  float k = mix(1.0 + uThink * 0.5, scan + sweep * 1.5 + uSpeak * 0.25 + vRim * 0.9 + 0.25, vT);',
-      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace, vT);',
+      '  float alpha = soft * vDepth * (0.9 - 0.15 * vT) * k * mix(1.0, vFace * (0.55 + 1.1 * vLit) * (1.0 - 0.6 * uSurf), vT);',
       '  gl_FragColor = vec4(col * alpha, alpha);',
       '}',
     ].join('\n'),
@@ -933,21 +569,6 @@
     m.userData.base = base;
     return m;
   }
-  function lineObj(pts, closed, slot, base) {
-    var arr = [];
-    for (var i = 0; i < pts.length - 1; i++)
-      arr.push(pts[i][0], pts[i][1], pts[i][2], pts[i + 1][0], pts[i + 1][1], pts[i + 1][2]);
-    if (closed) {
-      var l = pts[pts.length - 1];
-      arr.push(l[0], l[1], l[2], pts[0][0], pts[0][1], pts[0][2]);
-    }
-    var g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
-    var m = new THREE.LineSegments(g, wireMat(slot));
-    m.userData.base = base;
-    return m;
-  }
-
   // procedural head and shoulder wire shells (hidden when a scanned head or bust is in use)
   var headWire = edgeObj(new THREE.SphereGeometry(1, 20, 14), 'a', 0.16);
   headWire.scale.set(0.4, 0.5, 0.45);
@@ -958,8 +579,46 @@
   shoulderWire.position.set(0, -1.1, 0);
   world.add(shoulderWire);
 
-  var attrGroup = new THREE.Group();
-  world.add(attrGroup);
+  // shaded hologram surface of the loaded model (fresnel rim, key light, soft scanlines); fades in with the morph
+  var surfMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uA: U.uA, uB: U.uB, uC: U.uC, uShow: { value: 0 }, uSpeak: pu.uSpeak },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    vertexShader: [
+      'varying vec3 vN; varying vec3 vV; varying float vY;',
+      'void main() {',
+      '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+      '  vN = normalize(normalMatrix * normal);',
+      '  vV = -mv.xyz;',
+      '  vY = position.y;',
+      '  gl_Position = projectionMatrix * mv;',
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'uniform vec3 uA, uB, uC;',
+      'uniform float uTime, uShow, uSpeak;',
+      'varying vec3 vN; varying vec3 vV; varying float vY;',
+      'void main() {',
+      '  vec3 n = normalize(vN);',
+      '  vec3 v = normalize(vV);',
+      '  float nd = dot(n, v);',
+      '  float front = step(0.0, nd);',
+      '  float rim = pow(1.0 - abs(nd), 2.5);',
+      '  float lit = max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);',
+      '  float scan = 0.88 + 0.12 * sin(vY * 90.0 - uTime * 2.5);',
+      '  float sweep = exp(-pow(fract(uTime * 0.22) * 2.8 - 1.4 - vY, 2.0) * 30.0);',
+      '  vec3 col = mix(uA, uC, rim * 0.8 + sweep * 0.6);',
+      '  float a = (0.08 + 0.7 * lit * front + 0.7 * rim) * scan + sweep * 0.5 + uSpeak * 0.08;',
+      '  gl_FragColor = vec4(col * a * uShow, a * uShow);',
+      '}',
+    ].join('\n'),
+  });
+  var surfMesh = new THREE.Mesh(new THREE.BufferGeometry(), surfMat);
+  surfMesh.frustumCulled = false;
+  surfMesh.visible = false;
+  world.add(surfMesh);
 
   // eyes (procedural head only) and the speaking glow
   var eyeL = glowSprite('c', 0.16, 0);
@@ -976,7 +635,6 @@
   var scans = {}; // id -> { pts: Float32Array(M*6) } | { failed: true } | { loading: true }
 
   function sampleScene(gltfScene, cfg) {
-    var kind = cfg.kind;
     var yaw = cfg.yaw;
     var tris = [];
     var minY = Infinity;
@@ -993,9 +651,14 @@
       var count = idx ? idx.count : pos.count;
       var v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       for (var f = 0; f + 2 < count; f += 3) {
+        var ok = true;
         for (var k = 0; k < 3; k++) {
           v[k].fromBufferAttribute(pos, idx ? idx.getX(f + k) : f + k).applyMatrix4(o.matrixWorld);
           if (cfg.up === 'z') v[k].set(v[k].x, v[k].z, -v[k].y); // Z-up export: turn it upright
+          ok = ok && isFinite(v[k].x + v[k].y + v[k].z); // skip NaN or infinite vertices
+        }
+        if (!ok) continue;
+        for (k = 0; k < 3; k++) {
           minX = Math.min(minX, v[k].x);
           maxX = Math.max(maxX, v[k].x);
           minY = Math.min(minY, v[k].y);
@@ -1007,32 +670,43 @@
       }
     });
     if (!tris.length) return null;
-    if (kind === 'statue') {
-      // keep only the top fraction of a full statue (head and shoulders), then fit that
-      var cut = maxY - cfg.crop * (maxY - minY);
+    if (cfg.crop) {
+      // keep the triangles whose centre lies in a box given as fractions of the model's own extent
+      var bx = [minX, maxX];
+      var by = [minY, maxY];
+      var bz = [minZ, maxZ];
+      var cr = cfg.crop;
+      var lim = function (b, r) {
+        return [b[0] + (r ? r[0] : 0) * (b[1] - b[0]), b[0] + (r ? r[1] : 1) * (b[1] - b[0])];
+      };
+      var lx = lim(bx, cr.x);
+      var ly = lim(by, cr.y);
+      var lz = lim(bz, cr.z);
       tris = tris.filter(function (t) {
-        return (t[1] + t[4] + t[7]) / 3 >= cut;
+        var cx2 = (t[0] + t[3] + t[6]) / 3;
+        var cy2 = (t[1] + t[4] + t[7]) / 3;
+        var cz2 = (t[2] + t[5] + t[8]) / 3;
+        return cx2 >= lx[0] && cx2 <= lx[1] && cy2 >= ly[0] && cy2 <= ly[1] && cz2 >= lz[0] && cz2 <= lz[1];
       });
       if (!tris.length) return null;
       minX = minY = minZ = Infinity;
       maxX = maxY = maxZ = -Infinity;
       tris.forEach(function (t) {
-        for (var k = 0; k < 9; k += 3) {
-          minX = Math.min(minX, t[k]);
-          maxX = Math.max(maxX, t[k]);
-          minY = Math.min(minY, t[k + 1]);
-          maxY = Math.max(maxY, t[k + 1]);
-          minZ = Math.min(minZ, t[k + 2]);
-          maxZ = Math.max(maxZ, t[k + 2]);
+        for (var q = 0; q < 9; q += 3) {
+          minX = Math.min(minX, t[q]);
+          maxX = Math.max(maxX, t[q]);
+          minY = Math.min(minY, t[q + 1]);
+          maxY = Math.max(maxY, t[q + 1]);
+          minZ = Math.min(minZ, t[q + 2]);
+          maxZ = Math.max(maxZ, t[q + 2]);
         }
       });
     }
-    var full = kind !== 'head'; // bust and cropped statue fill the whole figure; a head gets a procedural body
-    var s = ((full ? 2.3 : 1.08) / (maxY - minY || 1)) * (cfg.scale || 1);
-    var cx = (minX + maxX) / 2;
-    var cz = (minZ + maxZ) / 2;
+    var s = (2.3 / (maxY - minY || 1)) * (cfg.scale || 1);
+    var cx = 0; // the torso is centred on the origin in the baked file
+    var cz = 0;
     var oy = (minY + maxY) / 2;
-    var cy = (full ? 0 : HEAD_C[1]) + (cfg.dy || 0);
+    var cy = cfg.dy || 0;
     var cum = new Float32Array(tris.length);
     var total = 0;
     var cos = Math.cos(yaw);
@@ -1047,8 +721,53 @@
       total += 0.5 * Math.hypot(uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx);
       cum[i] = total;
     });
+    if (!(total > 0) || !isFinite(total)) return null; // all triangles degenerate
+    // the same normalised triangles, kept as a shaded hologram surface (positions and outward face normals)
+    var sp = new Float32Array(tris.length * 9);
+    var sn = new Float32Array(tris.length * 9);
+    var ccos = Math.cos(yaw);
+    var csin = Math.sin(yaw);
+    tris.forEach(function (t, i) {
+      var q = [];
+      for (var k = 0; k < 9; k += 3) {
+        var x0 = (t[k] - cx) * s;
+        var z0 = (t[k + 2] - cz) * s;
+        q.push(x0 * ccos + z0 * csin, (t[k + 1] - oy) * s + cy, -x0 * csin + z0 * ccos);
+      }
+      var ux = q[3] - q[0];
+      var uy = q[4] - q[1];
+      var uz = q[5] - q[2];
+      var wx = q[6] - q[0];
+      var wy = q[7] - q[1];
+      var wz = q[8] - q[2];
+      var fx = uy * wz - uz * wy;
+      var fy = uz * wx - ux * wz;
+      var fz = ux * wy - uy * wx;
+      var fl = Math.hypot(fx, fy, fz) || 1;
+      fx /= fl;
+      fy /= fl;
+      fz /= fl;
+      // outward: away from the middle of the model
+      var mxc = (q[0] + q[3] + q[6]) / 3;
+      var myc = (q[1] + q[4] + q[7]) / 3 - cy;
+      var mzc = (q[2] + q[5] + q[8]) / 3;
+      if (cfg.orient !== 'winding' && fx * mxc + fy * myc + fz * mzc < 0) {
+        fx = -fx;
+        fy = -fy;
+        fz = -fz;
+      }
+      for (var j = 0; j < 9; j += 3) {
+        sp[i * 9 + j] = q[j];
+        sp[i * 9 + j + 1] = q[j + 1];
+        sp[i * 9 + j + 2] = q[j + 2];
+        sn[i * 9 + j] = fx;
+        sn[i * 9 + j + 1] = fy;
+        sn[i * 9 + j + 2] = fz;
+      }
+    });
     var M = CFG.scanPoints;
     var out = new Float32Array(M * 6);
+    out.surf = { p: sp, n: sn };
     for (var i = 0; i < M; i++) {
       var r = ((i + 0.5) / M + (rnd() - 0.5) / M) * total;
       var lo = 0;
@@ -1072,7 +791,7 @@
       var ny = (t[5] - t[2]) * (t[6] - t[0]) - (t[3] - t[0]) * (t[8] - t[2]);
       var nz = (t[3] - t[0]) * (t[7] - t[1]) - (t[4] - t[1]) * (t[6] - t[0]);
       // scans can have either winding: point every normal away from the middle of the model
-      if (nx * (px - cx) + ny * (py - oy) + nz * (pz - cz) < 0) {
+      if (cfg.orient !== 'winding' && nx * (px - cx) + ny * (py - oy) + nz * (pz - cz) < 0) {
         nx = -nx;
         ny = -ny;
         nz = -nz;
@@ -1089,6 +808,31 @@
       out[i * 6 + 4] = ny / nl;
       out[i * 6 + 5] = -mx * sin + mz * cos;
     }
+    if (cfg.pitch || cfg.roll) {
+      // optional tilt about the figure's centre: pitch about X, then roll about Z
+      var cp = Math.cos(cfg.pitch || 0);
+      var sP = Math.sin(cfg.pitch || 0);
+      var cRoll = Math.cos(cfg.roll || 0);
+      var sR = Math.sin(cfg.roll || 0);
+      var tiltAt = function (arr, o, dy) {
+        var y0 = arr[o + 1] - dy;
+        var z0 = arr[o + 2];
+        var y1 = y0 * cp - z0 * sP;
+        var z1 = y0 * sP + z0 * cp;
+        var x1 = arr[o];
+        arr[o] = x1 * cRoll - y1 * sR;
+        arr[o + 1] = x1 * sR + y1 * cRoll + dy;
+        arr[o + 2] = z1;
+      };
+      for (var u = 0; u < sp.length; u += 3) {
+        tiltAt(sp, u, cy);
+        tiltAt(sn, u, 0);
+      }
+      for (var w = 0; w < M; w++) {
+        tiltAt(out, w * 6, cy);
+        tiltAt(out, w * 6 + 3, 0);
+      }
+    }
     return out;
   }
 
@@ -1102,7 +846,7 @@
       'models/' + id + '.glb',
       function (gltf) {
         var pts = sampleScene(gltf.scene, SCANS[id]);
-        scans[id] = pts ? { pts: pts } : { failed: true };
+        scans[id] = pts ? { pts: pts, surf: pts.surf } : { failed: true };
         scanNote[id] = pts ? 'mesh ' + id : 'empty model ' + id + ', procedural bust';
         if (god.id === id) swapIn();
       },
@@ -1128,7 +872,6 @@
   // ---------- build the bust targets for the current god ----------
   var usingMesh = false;
   var eyesShown = true;
-  var usingBustMesh = false;
   function meshPoint(scan) {
     var k = Math.floor(rnd() * CFG.scanPoints) * 6;
     for (var j = 0; j < 6; j++) O[j] = scan.pts[k + j];
@@ -1136,20 +879,13 @@
   }
   function rebuildBust() {
     var scan = scans[god.id] && scans[god.id].pts ? scans[god.id] : null;
-    var kind = SCANS[god.id].kind;
-    var defs = god.attrs.concat(scan ? [] : god.fallback || []).filter(function (n) {
-      return ATTRS[n] && ATTRS[n].pt;
-    });
-    var ashare = defs.length ? 0.2 : 0;
     seed = 1234 + godIdx * 77;
     var src;
     for (var i = 0; i < N; i++) {
-      if (rnd() < ashare) {
-        src = ATTRS[defs[Math.floor(rnd() * defs.length)]].pt();
-      } else if (scan && kind !== 'head') {
+      if (scan) {
         src = meshPoint(scan);
       } else if (rnd() < 0.5) {
-        src = scan ? meshPoint(scan) : headProc();
+        src = headProc();
       } else {
         src = bodyProc();
       }
@@ -1163,6 +899,13 @@
     pg.attributes.aBust.needsUpdate = true;
     pg.attributes.aNorm.needsUpdate = true;
     usingMesh = !!scan;
+    surfMesh.geometry.dispose();
+    surfMesh.geometry = new THREE.BufferGeometry();
+    surfMesh.visible = !!(scan && scan.surf);
+    if (scan && scan.surf) {
+      surfMesh.geometry.setAttribute('position', new THREE.BufferAttribute(scan.surf.p, 3));
+      surfMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(scan.surf.n, 3));
+    }
     var cfg = SCANS[god.id];
     eyesShown = !scan || !!cfg.eyes;
     if (!scan) {
@@ -1172,34 +915,8 @@
       eyeL.position.set(cfg.eyes[0][0], cfg.eyes[0][1], cfg.eyes[0][2]);
       eyeR.position.set(cfg.eyes[1][0], cfg.eyes[1][1], cfg.eyes[1][2]);
     }
-    usingBustMesh = !!scan && kind !== 'head';
-    rebuildAttrs();
-    requestStatic();
-  }
-
-  function rebuildAttrs() {
-    disposeGroup(attrGroup);
-    var list = god.attrs.concat(usingMesh ? [] : god.fallback || []);
-    list.forEach(function (n) {
-      if (ATTRS[n] && ATTRS[n].wire) ATTRS[n].wire(attrGroup);
-    });
     applyPalette();
-  }
-
-  function disposeGroup(grp) {
-    while (grp.children.length) {
-      var c = grp.children[0];
-      grp.remove(c);
-      if (c.children && c.children.length) disposeGroup(c);
-      if (c.geometry) c.geometry.dispose();
-      if (c.material) {
-        var idx = wireObjs.findIndex(function (w) {
-          return w[0] === c.material;
-        });
-        if (idx >= 0) wireObjs.splice(idx, 1);
-        c.material.dispose();
-      }
-    }
+    requestStatic();
   }
 
   function applyPalette() {
@@ -1320,7 +1037,8 @@
     camera.aspect = w / h;
     camera.userData.dist = Math.max(4.3, 2.3 / (camera.aspect * Math.tan((CFG.fov * Math.PI) / 360)));
     camera.updateProjectionMatrix();
-    pu.uPx.value = (h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360));
+    // small stages get bigger points so a bust stays readable (the camera also sits further back there)
+    pu.uPx.value = ((h * dpr) / (2 * Math.tan((CFG.fov * Math.PI) / 360))) * (w < 600 ? 2.1 : 1);
     requestStatic();
   }
 
@@ -1377,23 +1095,10 @@
     coreGlow.scale.setScalar(Math.max(0.2, cs) * (2.1 * (1 - e) + 0.95 * e));
 
     var wireOp = ss(0.35, 1, m);
+    surfMat.uniforms.uShow.value = ss(0.55, 1, m);
+    pu.uSurf.value = surfMesh.visible ? 1 : 0;
     headWire.material.opacity = usingMesh ? 0 : wireOp * 0.16;
-    shoulderWire.material.opacity = usingBustMesh ? 0 : wireOp * 0.22;
-    attrGroup.traverse(function (c) {
-      if (c.material && c.userData.base) c.material.opacity = wireOp * c.userData.base;
-    });
-    attrGroup.traverse(function (c) {
-      var an = c.userData.anim;
-      if (an === 'hammer') {
-        c.rotation.z = -0.5 + (anim ? Math.sin(time * 1.3) * 0.12 : 0) - speak * 0.15;
-        c.position.y = 0.1 + (anim ? Math.sin(time * 1.1) * 0.05 : 0);
-      } else if (an === 'coin') {
-        c.rotation.y = anim ? time * 1.2 : 0.5;
-      } else if (an === 'sway') {
-        c.rotation.z = anim ? Math.sin(time * 1.1) * 0.07 : 0;
-      }
-    });
-
+    shoulderWire.material.opacity = usingMesh ? 0 : wireOp * 0.22;
     var eyeOn = eyesShown ? ss(0.7, 1, m) : 0;
     eyeL.material.opacity = eyeR.material.opacity = eyeOn * (0.8 + 0.2 * speak);
     eyeL.scale.setScalar(0.14 + 0.05 * speak);
@@ -1557,11 +1262,11 @@
 
   function dispose() {
     stopLoop();
-    disposeGroup(attrGroup);
     [pg, headWire.geometry, shoulderWire.geometry, band.geometry].forEach(function (g) {
       g.dispose();
     });
-    [pm, glassMat, hazeBandMat].forEach(function (m) {
+    surfMesh.geometry.dispose();
+    [pm, glassMat, hazeBandMat, surfMat].forEach(function (m) {
       m.dispose();
     });
     sprites.forEach(function (s) {
