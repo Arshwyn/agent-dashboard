@@ -107,7 +107,7 @@
     dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     janus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 }, // body frontal; the two profile faces are as sculpted
     hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    atlas: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
+    atlas: { kind: 'bust', yaw: 0, scale: 0.9, dy: -0.12 }, // cut at mid-chest, sphere held high: a little headroom
     themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
