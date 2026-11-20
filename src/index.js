@@ -21,6 +21,8 @@ function main() {
   let gateway = null;
   if (config.gatewaySocket) {
     fs.mkdirSync(path.dirname(path.resolve(config.dbPath)), { recursive: true });
+    // the history is private: create the file 0600 before SQLite does (its -wal and -shm files follow its mode)
+    fs.closeSync(fs.openSync(config.dbPath, 'a', 0o600));
     store = openStore(config.dbPath);
     gateway = createGatewayClient({ socketPath: config.gatewaySocket });
   }
