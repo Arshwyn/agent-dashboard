@@ -48,7 +48,11 @@ function createStreamMapper() {
         if (e.type === 'content_block_start' && e.content_block?.type === 'text' && hadText) {
           current += '\n\n';
           out.push({ kind: 'delta', text: '\n\n' });
-        } else if (e.type === 'content_block_start' && e.content_block?.type === 'tool_use') {
+        } else if (
+          e.type === 'content_block_start' &&
+          typeof e.content_block?.type === 'string' &&
+          e.content_block.type.endsWith('tool_use')
+        ) {
           tool(e.content_block.id, e.content_block.name);
         } else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta' && e.delta.text) {
           hadText = true;
@@ -56,7 +60,8 @@ function createStreamMapper() {
           out.push({ kind: 'delta', text: e.delta.text });
         }
       } else if (o.type === 'assistant' && Array.isArray(o.message?.content)) {
-        for (const c of o.message.content) if (c && c.type === 'tool_use') tool(c.id, c.name);
+        for (const c of o.message.content)
+          if (c && typeof c.type === 'string' && c.type.endsWith('tool_use')) tool(c.id, c.name);
       } else if (o.type === 'result') {
         out.push({
           kind: 'result',

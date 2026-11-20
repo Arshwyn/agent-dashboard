@@ -89,3 +89,24 @@ test('an error result is flagged', () => {
     { kind: 'result', isError: true, text: 'x' },
   ]);
 });
+
+test('server and connector tool blocks count as tool events too', () => {
+  for (const type of ['tool_use', 'server_tool_use', 'mcp_tool_use']) {
+    const m = createStreamMapper();
+    const out = m.push(
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: type, id: 'x1', name: 'anything' } },
+      }),
+    );
+    assert.equal(out.filter((e) => e.kind === 'tool').length, 1, type);
+    const m2 = createStreamMapper();
+    const out2 = m2.push(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: type, id: 'x2', name: 'n', input: { a: 1 } }] },
+      }),
+    );
+    assert.equal(out2.filter((e) => e.kind === 'tool').length, 1, type);
+  }
+});
