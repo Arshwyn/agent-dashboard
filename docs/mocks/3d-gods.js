@@ -29,8 +29,6 @@
       name: 'Hephaestus',
       role: 'Builder',
       pal: ['#ff9a1f', '#ff5a1f', '#ffd08a'],
-      attrs: [],
-      fallback: ['cap', 'beard', 'anvil', 'hammer'], // only while no scan is loaded: the Vulcan statue carries its own
       you: 'Is the dashboard change ready for review?',
       reply:
         'Built and pushed on its own branch. Tests green, lint clean, three small commits. Passing it to the gate now.',
@@ -40,7 +38,6 @@
       name: 'Themis',
       role: 'Quality gate',
       pal: ['#9bb8ff', '#e9c46a', '#f2f6ff'],
-      attrs: ['scales'],
       you: 'Did the checks pass?',
       reply: 'Every check ran and held. One naming note is logged for later; nothing blocks the merge.',
     },
@@ -49,7 +46,6 @@
       name: 'Janus',
       role: 'Gatekeeper',
       pal: ['#5ad1d6', '#c27bf0', '#e8eef7'],
-      attrs: ['door', 'key'],
       you: 'Anything blocking the merge?',
       reply:
         'Both doors checked. No critical findings; one medium goes to the backlog. The gate cleared this same commit, so I may open the way.',
@@ -59,8 +55,6 @@
       name: 'Atlas',
       role: 'Operator',
       pal: ['#6aa0ff', '#3b5bd6', '#e0ecff'],
-      attrs: [],
-      fallback: ['sky'], // the Atlas scan carries its own globe
       you: 'Is the new version running?',
       reply: 'It is. Deployed, the health check is green, and the previous version is kept in reserve.',
     },
@@ -69,7 +63,6 @@
       name: 'Plutus',
       role: 'Finance',
       pal: ['#3fbf7a', '#d6a82a', '#eaffd8'],
-      attrs: ['coin'],
       you: 'How are the savings tracking this month?',
       reply:
         'Steady. Spending stayed under plan and nothing needs moving today. I would not trade on a hunch.',
@@ -79,7 +72,6 @@
       name: 'Apollo',
       role: 'Coach',
       pal: ['#ffd24a', '#8fbf6a', '#fff3bd'],
-      attrs: ['lyre'], // the generated head carries its own hair; no wreath
       you: 'How did recovery look this week?',
       reply:
         'A calm week. Rest held steady and effort stayed in range. Keep tomorrow easy and let the daylight do some of the work.',
@@ -89,7 +81,6 @@
       name: 'Iris',
       role: 'Mail and calendar',
       pal: ['#ff7ac8', '#5ad1ff', '#ffe27a'],
-      attrs: ['rainbow'],
       you: 'What is on tomorrow?',
       reply:
         'A light day: two meetings and one draft reply waiting for your approval. Nothing is sent until you say so.',
@@ -99,8 +90,6 @@
       name: 'Dionysus',
       role: 'Travel and food',
       pal: ['#b04ad6', '#e0456a', '#f0d0ff'],
-      attrs: [],
-      fallback: ['ivy'], // the Bacchus scan carries its own vine
       you: 'Where should we eat on Friday?',
       reply:
         'A small place with a long table and a short menu. I have two to choose from; nothing is booked.',
@@ -116,7 +105,7 @@
     dionysus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     janus: { kind: 'bust', yaw: 1.35, scale: 1, dy: -0.05 }, // two faces back to back: turned so one face is nearly frontal
     hephaestus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
-    atlas: { kind: 'bust', yaw: 0, scale: 1.1, dy: 0 }, // the full Farnese figure under the globe
+    atlas: { kind: 'bust', yaw: 0, scale: 1.1, dy: 0 }, // the Farnese figure cropped at the waist
     themis: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     iris: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
     plutus: { kind: 'bust', yaw: 0, scale: 1, dy: 0 },
@@ -150,9 +139,6 @@
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
-  function gauss() {
-    return ((rnd() + rnd() + rnd()) / 3) * 2 - 1;
-  }
   function hexRgb(h) {
     var n = parseInt(h.slice(1), 16);
     return [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
@@ -178,28 +164,6 @@
     O[1] = c[1] + v[1] * r[1];
     O[2] = c[2] + v[2] * r[2];
     setN(v[0] / r[0], v[1] / r[1], v[2] / r[2]);
-    return O;
-  }
-  function radial(x, y, z, c) {
-    O[0] = x;
-    O[1] = y;
-    O[2] = z;
-    setN(x - c[0], y - c[1], z - c[2]);
-    return O;
-  }
-  function boxSurface(c, h) {
-    var f = Math.floor(rnd() * 6);
-    var ax = f >> 1;
-    var p = [0, 0, 0];
-    p[ax] = f & 1 ? 1 : -1;
-    p[(ax + 1) % 3] = rnd() * 2 - 1;
-    p[(ax + 2) % 3] = rnd() * 2 - 1;
-    O[0] = c[0] + p[0] * h[0];
-    O[1] = c[1] + p[1] * h[1];
-    O[2] = c[2] + p[2] * h[2];
-    var n = [0, 0, 0];
-    n[ax] = p[ax];
-    setN(n[0], n[1], n[2]);
     return O;
   }
   var HEAD_C = [0, 0.64, -0.02];
@@ -272,372 +236,6 @@
     }
     return ellip([rnd() < 0.5 ? -0.84 : 0.84, -0.76, 0], [0.17, 0.2, 0.2]);
   }
-
-  // ---------- attributes (built in code) ----------
-  function zig(a, n) {
-    var f = (a / (Math.PI * 2)) * n;
-    return Math.abs(f - Math.floor(f) - 0.5) * 2;
-  }
-  function circlePts(cx, cy, cz, r, n) {
-    var pts = [];
-    for (var i = 0; i < n; i++) {
-      var a = (i / n) * Math.PI * 2;
-      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, cz]);
-    }
-    return pts;
-  }
-  function arcPts(cx, cy, r, a0, a1, n) {
-    var pts = [];
-    for (var i = 0; i <= n; i++) {
-      var a = a0 + ((a1 - a0) * i) / n;
-      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, 0]);
-    }
-    return pts;
-  }
-  function wreathPoint() {
-    var a = rnd() * Math.PI * 2;
-    return radial(
-      Math.cos(a) * 0.45 + gauss() * 0.03,
-      0.98 + gauss() * 0.03,
-      Math.sin(a) * 0.48 - 0.02 + gauss() * 0.03,
-      [0, 0.5, -0.02],
-    );
-  }
-
-  // pt() returns extra surface points; wire(group) adds line work. edgeObj and lineObj are defined with the scene.
-  var ATTRS = {
-    cap: {
-      pt: function () {
-        for (var i = 0; i < 8; i++) {
-          var p = ellip(HEAD_C, [0.45, 0.55, 0.49]);
-          if (p[1] > 0.95) return p;
-        }
-        return radial(0, 1.2, 0, HEAD_C);
-      },
-    },
-    beard: {
-      pt: function () {
-        for (var i = 0; i < 12; i++) {
-          var p = ellip(HEAD_C, [0.44, 0.54, 0.47]);
-          if (p[2] > 0.08 && p[1] < 0.42 && p[1] > 0.0) return p;
-        }
-        return radial(0, 0.3, 0.4, HEAD_C);
-      },
-    },
-    anvil: {
-      pt: function () {
-        var b = [
-          [
-            [0, -0.97, 0.4],
-            [0.46, 0.06, 0.2],
-          ],
-          [
-            [0, -0.86, 0.4],
-            [0.14, 0.07, 0.15],
-          ],
-          [
-            [0, -0.72, 0.4],
-            [0.58, 0.08, 0.18],
-          ],
-        ][Math.floor(rnd() * 3)];
-        return boxSurface(b[0], b[1]);
-      },
-      wire: function (g) {
-        [
-          [0.46, 0.06, 0.2, -0.97],
-          [0.14, 0.07, 0.15, -0.86],
-          [0.58, 0.08, 0.18, -0.72],
-        ].forEach(function (s) {
-          var w = edgeObj(new THREE.BoxGeometry(s[0] * 2, s[1] * 2, s[2] * 2), 'c', 0.7);
-          w.position.set(0, s[3], 0.4);
-          g.add(w);
-        });
-      },
-    },
-    hammer: {
-      wire: function (g) {
-        var h = new THREE.Group();
-        var handle = edgeObj(new THREE.CylinderGeometry(0.035, 0.035, 0.9, 8), 'b', 0.55);
-        var head = edgeObj(new THREE.BoxGeometry(0.42, 0.2, 0.2), 'b', 0.55);
-        head.position.y = 0.5;
-        h.add(handle);
-        h.add(head);
-        h.position.set(1.3, 0.1, 0.2);
-        h.rotation.z = -0.5;
-        h.userData.anim = 'hammer';
-        g.add(h);
-      },
-    },
-    laurel: { pt: wreathPoint },
-    ivy: {
-      pt: function () {
-        if (rnd() < 0.6) return wreathPoint();
-        var s = rnd() < 0.5 ? -1 : 1; // a vine hanging at each side
-        var t = rnd();
-        return radial(
-          s * (0.47 + 0.06 * Math.sin(t * 9)),
-          0.95 - t * 0.9 + gauss() * 0.02,
-          -0.08 + gauss() * 0.04,
-          [0, 0.5, 0],
-        );
-      },
-    },
-    lyre: {
-      wire: function (g) {
-        var l = new THREE.Group();
-        l.add(
-          lineObj(
-            [
-              [-1.5, 0.05, 0.1],
-              [-1.62, -0.25, 0.1],
-              [-1.5, -0.55, 0.1],
-              [-1.35, -0.62, 0.1],
-            ],
-            false,
-            'a',
-            0.8,
-          ),
-        );
-        l.add(
-          lineObj(
-            [
-              [-1.0, 0.05, 0.1],
-              [-0.88, -0.25, 0.1],
-              [-1.0, -0.55, 0.1],
-              [-1.15, -0.62, 0.1],
-            ],
-            false,
-            'a',
-            0.8,
-          ),
-        );
-        l.add(
-          lineObj(
-            [
-              [-1.52, 0.05, 0.1],
-              [-0.98, 0.05, 0.1],
-            ],
-            false,
-            'a',
-            0.8,
-          ),
-        );
-        for (var i = 0; i < 4; i++)
-          l.add(
-            lineObj(
-              [
-                [-1.4 + i * 0.1, 0.05, 0.1],
-                [-1.4 + i * 0.1, -0.55, 0.1],
-              ],
-              false,
-              'c',
-              0.5,
-            ),
-          );
-        g.add(l);
-      },
-    },
-    door: {
-      wire: function (g) {
-        var pts = [
-          [-0.98, -1.0, -0.1],
-          [-0.98, 0.7, -0.1],
-        ];
-        for (var i = 0; i <= 24; i++) {
-          var a = Math.PI - (i / 24) * Math.PI;
-          pts.push([Math.cos(a) * 0.98, 0.7 + Math.sin(a) * 0.55, -0.1]);
-        }
-        pts.push([0.98, -1.0, -0.1]);
-        g.add(lineObj(pts, false, 'a', 0.55));
-      },
-    },
-    key: {
-      wire: function (g) {
-        var k = new THREE.Group();
-        k.add(lineObj(circlePts(-0.18, 0, 0.46, 0.1, 18), true, 'a', 0.8));
-        k.add(
-          lineObj(
-            [
-              [-0.08, 0, 0.46],
-              [0.34, 0, 0.46],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        k.add(
-          lineObj(
-            [
-              [0.26, 0, 0.46],
-              [0.26, -0.12, 0.46],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        k.add(
-          lineObj(
-            [
-              [0.33, 0, 0.46],
-              [0.33, -0.08, 0.46],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        k.position.set(1.2, -0.3, 0.2);
-        k.rotation.z = Math.PI / 2;
-        g.add(k);
-      },
-    },
-    sky: {
-      pt: function () {
-        var a = Math.PI * (0.05 + 0.9 * rnd());
-        var r = 1.35 + gauss() * 0.04;
-        return radial(Math.cos(a) * r, Math.sin(a) * r * 0.9 + gauss() * 0.04, gauss() * 0.06, [0, 0, 0]);
-      },
-      wire: function (g) {
-        var pts = [];
-        for (var i = 0; i <= 40; i++) {
-          var a = Math.PI * (0.03 + 0.94 * (i / 40));
-          pts.push([Math.cos(a) * 1.42, Math.sin(a) * 1.28, 0]);
-        }
-        g.add(lineObj(pts, false, 'a', 0.4));
-      },
-    },
-    crown: {
-      pt: function () {
-        var a = rnd() * Math.PI * 2;
-        return radial(
-          Math.cos(a) * 0.43,
-          1.06 + 0.16 * zig(a, 5) + gauss() * 0.01,
-          Math.sin(a) * 0.47 - 0.02,
-          [0, 0.9, 0],
-        );
-      },
-      wire: function (g) {
-        var pts = [];
-        for (var i = 0; i <= 60; i++) {
-          var a = (i / 60) * Math.PI * 2;
-          pts.push([Math.cos(a) * 0.43, 1.06 + 0.16 * zig(a, 5), Math.sin(a) * 0.47 - 0.02]);
-        }
-        g.add(lineObj(pts, true, 'b', 0.8));
-      },
-    },
-    coin: {
-      pt: function () {
-        var a = rnd() * Math.PI * 2;
-        return radial(1.2 + Math.cos(a) * 0.3, 0.1 + Math.sin(a) * 0.3, 0.2, [1.2, 0.1, 0.2]);
-      },
-      wire: function (g) {
-        var c = new THREE.Group();
-        c.add(lineObj(circlePts(0, 0, 0, 0.3, 36), true, 'b', 0.8));
-        c.add(lineObj(circlePts(0, 0, 0, 0.22, 36), true, 'b', 0.4));
-        c.position.set(1.2, 0.1, 0.2);
-        c.userData.anim = 'coin';
-        g.add(c);
-      },
-    },
-    band: {
-      pt: function () {
-        var a = rnd() * Math.PI * 2;
-        return radial(
-          Math.cos(a) * 0.435,
-          0.69 + gauss() * 0.045,
-          Math.sin(a) * 0.48 - 0.02,
-          [0, 0.69, -0.02],
-        );
-      },
-    },
-    scales: {
-      wire: function (g) {
-        var s = new THREE.Group();
-        s.add(
-          lineObj(
-            [
-              [0, -0.9, 0],
-              [0, 0.2, 0],
-            ],
-            false,
-            'b',
-            0.6,
-          ),
-        );
-        var beam = new THREE.Group();
-        beam.add(
-          lineObj(
-            [
-              [-0.45, 0.2, 0],
-              [0.45, 0.2, 0],
-            ],
-            false,
-            'b',
-            0.8,
-          ),
-        );
-        [-0.45, 0.45].forEach(function (x) {
-          beam.add(
-            lineObj(
-              [
-                [x, 0.2, 0],
-                [x - 0.18, -0.15, 0],
-              ],
-              false,
-              'a',
-              0.5,
-            ),
-          );
-          beam.add(
-            lineObj(
-              [
-                [x, 0.2, 0],
-                [x + 0.18, -0.15, 0],
-              ],
-              false,
-              'a',
-              0.5,
-            ),
-          );
-          beam.add(lineObj(arcPts(x, -0.15, 0.18, Math.PI, Math.PI * 2, 14), false, 'a', 0.8));
-        });
-        beam.userData.anim = 'sway';
-        s.add(beam);
-        s.position.set(1.25, 0, 0.15);
-        g.add(s);
-      },
-    },
-    veil: {
-      pt: function () {
-        var x = gauss() * 0.6;
-        var t = rnd();
-        return radial(
-          x,
-          1.05 - t * 1.5,
-          -0.3 - 0.12 * (1 - Math.abs(x) / 0.6) - 0.03 * Math.sin(t * 9 + x * 6),
-          [0, 0.5, 0.2],
-        );
-      },
-    },
-    rainbow: {
-      wire: function (g) {
-        [
-          ['a', 1.25],
-          ['b', 1.35],
-          ['c', 1.45],
-        ].forEach(function (s) {
-          var pts = [];
-          for (var i = 0; i <= 40; i++) {
-            var a = Math.PI * (i / 40);
-            pts.push([Math.cos(a) * s[1], -0.45 + Math.sin(a) * s[1], -0.25]);
-          }
-          g.add(lineObj(pts, false, s[0], 0.7));
-        });
-      },
-    },
-  };
 
   // ---------- capability check: no flat fallback, just a message ----------
   function webglOk() {
@@ -955,21 +553,6 @@
     m.userData.base = base;
     return m;
   }
-  function lineObj(pts, closed, slot, base) {
-    var arr = [];
-    for (var i = 0; i < pts.length - 1; i++)
-      arr.push(pts[i][0], pts[i][1], pts[i][2], pts[i + 1][0], pts[i + 1][1], pts[i + 1][2]);
-    if (closed) {
-      var l = pts[pts.length - 1];
-      arr.push(l[0], l[1], l[2], pts[0][0], pts[0][1], pts[0][2]);
-    }
-    var g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
-    var m = new THREE.LineSegments(g, wireMat(slot));
-    m.userData.base = base;
-    return m;
-  }
-
   // procedural head and shoulder wire shells (hidden when a scanned head or bust is in use)
   var headWire = edgeObj(new THREE.SphereGeometry(1, 20, 14), 'a', 0.16);
   headWire.scale.set(0.4, 0.5, 0.45);
@@ -1023,6 +606,549 @@
 
   var attrGroup = new THREE.Group();
   world.add(attrGroup);
+
+  // ---------- props: volumetric 3D objects that share the hologram surface look ----------
+  // Built from three.js primitives, one merged mesh per tone slot, anchored in bust space (the figure is about 2.3
+  // tall, centred on the origin). Anchors come from SCANS[god].anchors, so a new mesh only needs new numbers.
+  var PI = Math.PI;
+  var propMats = {};
+  var propMatList = [];
+  var slotUniform = { a: U.uA, b: U.uB, c: U.uC };
+  function propMat(slot, alpha, uniq) {
+    var key = slot + (alpha || 1) + (uniq || '');
+    if (propMats[key]) return propMats[key];
+    var m = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: U.uTime,
+        uCol: slotUniform[slot],
+        uShow: { value: 0 },
+        uAlpha: { value: alpha || 1 },
+        uSpeak: pu.uSpeak,
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      vertexShader: [
+        'varying vec3 vN; varying vec3 vV; varying float vWY;',
+        'void main() {',
+        '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '  vN = normalize(normalMatrix * normal);',
+        '  vV = -mv.xyz;',
+        '  vWY = (modelMatrix * vec4(position, 1.0)).y;',
+        '  gl_Position = projectionMatrix * mv;',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uCol;',
+        'uniform float uTime, uShow, uAlpha, uSpeak;',
+        'varying vec3 vN; varying vec3 vV; varying float vWY;',
+        'void main() {',
+        '  vec3 n = normalize(vN);',
+        '  float nd = dot(n, normalize(vV));',
+        '  float rim = pow(1.0 - abs(nd), 2.2);',
+        '  float lit = max(dot(n * sign(nd), normalize(vec3(-0.35, 0.5, 0.8))), 0.0);',
+        '  float scan = 0.9 + 0.1 * sin(vWY * 80.0 - uTime * 2.2);',
+        '  float a = (0.1 + 0.42 * lit + 0.75 * rim + uSpeak * 0.08) * scan * uAlpha;',
+        '  vec3 col = mix(uCol, vec3(1.0), rim * 0.35);',
+        '  gl_FragColor = vec4(col * a * uShow, a * uShow);',
+        '}',
+      ].join('\n'),
+    });
+    propMats[key] = m;
+    propMatList.push(m);
+    return m;
+  }
+
+  function xf(geom, p, r, s) {
+    var m = new THREE.Matrix4().compose(
+      new THREE.Vector3(p ? p[0] : 0, p ? p[1] : 0, p ? p[2] : 0),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(r ? r[0] : 0, r ? r[1] : 0, r ? r[2] : 0)),
+      new THREE.Vector3(s ? s[0] : 1, s ? s[1] : 1, s ? s[2] : 1),
+    );
+    geom.applyMatrix4(m);
+    return geom;
+  }
+  function mergeGeoms(list) {
+    var P = [];
+    var Nn = [];
+    list.forEach(function (g) {
+      var ng = g.index ? g.toNonIndexed() : g;
+      P.push(ng.attributes.position.array);
+      Nn.push(ng.attributes.normal.array);
+      if (ng !== g) ng.dispose();
+      g.dispose();
+    });
+    var cat = function (arrs) {
+      var len = arrs.reduce(function (t, a) {
+        return t + a.length;
+      }, 0);
+      var out = new Float32Array(len);
+      var o = 0;
+      arrs.forEach(function (a) {
+        out.set(a, o);
+        o += a.length;
+      });
+      return out;
+    };
+    var g2 = new THREE.BufferGeometry();
+    g2.setAttribute('position', new THREE.BufferAttribute(cat(P), 3));
+    g2.setAttribute('normal', new THREE.BufferAttribute(cat(Nn), 3));
+    return g2;
+  }
+  function part(parent, slot, geoms, alpha, uniq) {
+    var m = new THREE.Mesh(mergeGeoms(geoms), propMat(slot, alpha, uniq));
+    m.frustumCulled = false;
+    m.userData.shared = true;
+    if (uniq === 'strings') m.material.userData.shimmer = true;
+    parent.add(m);
+    return m;
+  }
+  function grp(parent, anim, pos) {
+    var g = new THREE.Group();
+    if (pos) g.position.set(pos[0], pos[1], pos[2]);
+    if (pos && pos[3]) g.scale.setScalar(pos[3]); // optional fourth number: scale
+    g.userData.anim = anim || '';
+    parent.add(g);
+    return g;
+  }
+  // a thick bevelled box, centred
+  function bevBox(w, h, d, b) {
+    var sh = new THREE.Shape();
+    sh.moveTo(-w / 2 + b, -h / 2 + b);
+    sh.lineTo(w / 2 - b, -h / 2 + b);
+    sh.lineTo(w / 2 - b, h / 2 - b);
+    sh.lineTo(-w / 2 + b, h / 2 - b);
+    sh.closePath();
+    var g = new THREE.ExtrudeGeometry(sh, {
+      depth: d - 2 * b,
+      bevelEnabled: true,
+      bevelSize: b,
+      bevelThickness: b,
+      bevelSegments: 2,
+      curveSegments: 4,
+    });
+    g.translate(0, 0, -(d - 2 * b) / 2);
+    return g;
+  }
+  // a tube along a curve with a radius that changes along its length
+  function sweep(pts, rad, segs, radial) {
+    var curve = new THREE.CatmullRomCurve3(
+      pts.map(function (p) {
+        return new THREE.Vector3(p[0], p[1], p[2]);
+      }),
+    );
+    var fr = curve.computeFrenetFrames(segs, false);
+    var pos = [];
+    var nor = [];
+    var idx = [];
+    for (var i = 0; i <= segs; i++) {
+      var c = curve.getPointAt(i / segs);
+      var r = rad(i / segs);
+      for (var j = 0; j < radial; j++) {
+        var a = (j / radial) * PI * 2;
+        var nx = fr.normals[i].x * Math.cos(a) + fr.binormals[i].x * Math.sin(a);
+        var ny = fr.normals[i].y * Math.cos(a) + fr.binormals[i].y * Math.sin(a);
+        var nz = fr.normals[i].z * Math.cos(a) + fr.binormals[i].z * Math.sin(a);
+        pos.push(c.x + nx * r, c.y + ny * r, c.z + nz * r);
+        nor.push(nx, ny, nz);
+      }
+    }
+    for (var s = 0; s < segs; s++) {
+      for (var k = 0; k < radial; k++) {
+        var a0 = s * radial + k;
+        var b0 = s * radial + ((k + 1) % radial);
+        idx.push(a0, a0 + radial, b0, b0, a0 + radial, b0 + radial);
+      }
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setIndex(idx);
+    return g;
+  }
+  function cylBetween(a, b, r, seg) {
+    var d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    var len = d.length();
+    var g = new THREE.CylinderGeometry(r, r, len, seg || 6, 1);
+    var q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    g.applyMatrix4(
+      new THREE.Matrix4().compose(
+        new THREE.Vector3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2),
+        q,
+        new THREE.Vector3(1, 1, 1),
+      ),
+    );
+    return g;
+  }
+  function leaf(x, y, z, ry, rz, s) {
+    return xf(new THREE.SphereGeometry(1, 6, 4), [x, y, z], [0, ry, rz], [0.075 * s, 0.014 * s, 0.045 * s]);
+  }
+  function anchor(name, def) {
+    var a = SCANS[god.id].anchors;
+    return a && a[name] ? a[name] : def;
+  }
+
+  var PROPS = {
+    // anvil with a horn, a hammer drifting beside it, sparks rising
+    hephaestus: function (root) {
+      var an = grp(root, '', anchor('anvil', [1.0, -0.85, 0.35, 0.5]));
+      var s = [
+        xf(bevBox(0.95, 0.16, 0.5, 0.03), [0, 0, 0]),
+        xf(bevBox(0.42, 0.3, 0.34, 0.03), [0, 0.22, 0]),
+        xf(bevBox(1.05, 0.17, 0.46, 0.04), [0, 0.45, 0]),
+        xf(new THREE.ConeGeometry(0.2, 0.5, 8), [0.77, 0.45, 0], [0, 0, -PI / 2]),
+      ];
+      part(an, 'c', s, 1);
+      part(an, 'b', [xf(new THREE.SphereGeometry(0.1, 8, 6), [0, 0.6, 0], 0, [1.6, 0.5, 1])], 0.8);
+      var sp = grp(an, 'sparks', [0, 0.6, 0]);
+      var dots = [];
+      for (var i = 0; i < 9; i++)
+        dots.push(
+          xf(new THREE.SphereGeometry(0.022, 5, 4), [
+            Math.sin(i * 2.4) * 0.28,
+            (i % 3) * 0.14,
+            Math.cos(i * 1.7) * 0.15,
+          ]),
+        );
+      part(sp, 'b', dots, 1);
+      var hm = grp(root, 'drift', anchor('hammer', [-1.0, 0.1, 0.35, 0.65]));
+      part(
+        hm,
+        'b',
+        [new THREE.CylinderGeometry(0.036, 0.04, 0.95, 8), xf(bevBox(0.46, 0.22, 0.22, 0.04), [0, 0.5, 0])],
+        1,
+      );
+      part(hm, 'c', [xf(new THREE.TorusGeometry(0.045, 0.012, 5, 10), [0, -0.4, 0], [PI / 2, 0, 0])], 1);
+    },
+    // scales on a post with two pans on chains, and a blindfold ring
+    themis: function (root) {
+      var sc = grp(root, '', anchor('scales', [1.2, -0.2, 0.25, 0.7]));
+      part(
+        sc,
+        'c',
+        [
+          xf(new THREE.CylinderGeometry(0.026, 0.034, 1.05, 8), [0, -0.05, 0]),
+          xf(new THREE.CylinderGeometry(0.2, 0.24, 0.06, 12), [0, -0.58, 0]),
+          xf(new THREE.SphereGeometry(0.06, 8, 6), [0, 0.5, 0]),
+        ],
+        1,
+      );
+      var beam = grp(sc, 'sway', [0, 0.45, 0]);
+      var bg = [xf(new THREE.CylinderGeometry(0.02, 0.02, 0.98, 6), [0, 0, 0], [0, 0, PI / 2])];
+      var pans = [];
+      [-0.49, 0.49].forEach(function (x) {
+        bg.push(
+          cylBetween([x, 0, 0], [x - 0.19, -0.42, 0], 0.008, 4),
+          cylBetween([x, 0, 0], [x + 0.19, -0.42, 0], 0.008, 4),
+          cylBetween([x, 0, 0], [x, -0.42, 0.18], 0.008, 4),
+        );
+        pans.push(
+          xf(new THREE.SphereGeometry(0.2, 12, 5, 0, PI * 2, PI / 2, PI / 2), [x, -0.42, 0], 0, [1, 0.45, 1]),
+        );
+      });
+      part(beam, 'b', bg, 1);
+      part(beam, 'a', pans, 1);
+      var hd = anchor('eyes', [0, 0.6, 0.02]);
+      var rg = grp(root, '', hd);
+      part(
+        rg,
+        'b',
+        [
+          xf(
+            new THREE.TorusGeometry(anchor('eyesR', [0.23])[0], 0.034, 8, 28),
+            [0, 0, 0],
+            [PI / 2, 0, 0],
+            [1, 1.1, 1],
+          ),
+          xf(new THREE.SphereGeometry(0.05, 8, 6), [0, 0, -anchor('eyesR', [0.23])[0]]),
+        ],
+        1,
+      );
+    },
+    // a doorway arch with depth and a key
+    janus: function (root) {
+      var ar = grp(root, '', anchor('arch', [0, -0.2, -0.6]));
+      var w = 1.05;
+      var sh = new THREE.Shape();
+      sh.moveTo(-w, -1.0);
+      sh.lineTo(-w, 0.55);
+      sh.absarc(0, 0.55, w, PI, 0, true);
+      sh.lineTo(w, -1.0);
+      sh.lineTo(w - 0.13, -1.0);
+      sh.lineTo(w - 0.13, 0.55);
+      sh.absarc(0, 0.55, w - 0.13, 0, PI, false);
+      sh.lineTo(-w + 0.13, -1.0);
+      sh.closePath();
+      part(
+        ar,
+        'a',
+        [
+          new THREE.ExtrudeGeometry(sh, {
+            depth: 0.1,
+            bevelEnabled: true,
+            bevelSize: 0.025,
+            bevelThickness: 0.025,
+            bevelSegments: 2,
+            curveSegments: 20,
+          }),
+        ],
+        1.2,
+      );
+      var ky = grp(root, 'spin', anchor('key', [1.15, -0.3, 0.3, 0.6]));
+      part(ky, 'a', [xf(new THREE.TorusGeometry(0.14, 0.036, 8, 18), [0, 0.38, 0])], 1);
+      part(
+        ky,
+        'b',
+        [
+          new THREE.CylinderGeometry(0.03, 0.03, 0.72, 8),
+          xf(bevBox(0.16, 0.07, 0.05, 0.015), [0.09, -0.3, 0]),
+          xf(bevBox(0.12, 0.07, 0.05, 0.015), [0.07, -0.18, 0]),
+        ],
+        1,
+      );
+    },
+    // glowing constellation rings around the globe of the mesh
+    atlas: function (root) {
+      var gl = grp(root, 'spin', anchor('globe', [0, 0.7, 0]));
+      var R = anchor('globeR', [0.95])[0];
+      var tilt = grp(gl, '');
+      tilt.rotation.x = 1.15;
+      part(tilt, 'a', [new THREE.TorusGeometry(R, 0.03, 6, 56)], 1);
+      var stars = [];
+      for (var i = 0; i < 14; i++)
+        stars.push(
+          xf(new THREE.SphereGeometry(0.035, 6, 4), [
+            Math.cos((i / 14) * PI * 2) * R,
+            Math.sin((i / 14) * PI * 2) * R,
+            0,
+          ]),
+        );
+      part(tilt, 'c', stars, 1);
+      var t2 = grp(gl, '');
+      t2.rotation.set(-0.5, 0, 0.9);
+      part(t2, 'b', [new THREE.TorusGeometry(R * 1.12, 0.022, 6, 56)], 1);
+    },
+    // a cornucopia spilling coins, and a spinning coin
+    plutus: function (root) {
+      var hn = grp(root, '', anchor('horn', [0.9, -0.7, 0.3, 0.6]));
+      part(
+        hn,
+        'b',
+        [
+          sweep(
+            [
+              [0, 0, 0],
+              [0.28, 0.12, 0],
+              [0.5, 0.5, 0.05],
+              [0.42, 0.95, 0.1],
+            ],
+            function (t) {
+              return 0.03 + 0.17 * t * t;
+            },
+            14,
+            10,
+          ),
+        ],
+        1,
+      );
+      part(
+        hn,
+        'a',
+        [xf(new THREE.TorusGeometry(0.18, 0.025, 6, 16), [0.42, 0.97, 0.1], [PI / 2 - 0.2, 0, 0])],
+        1,
+      );
+      var cs = [];
+      for (var i = 0; i < 6; i++)
+        cs.push(
+          xf(
+            new THREE.CylinderGeometry(0.07, 0.07, 0.02, 12),
+            [0.42 + Math.sin(i * 2) * 0.16, 1.1 + (i % 3) * 0.08, 0.1 + Math.cos(i * 2) * 0.1],
+            [i, 0.3, i * 0.5],
+          ),
+        );
+      part(hn, 'b', cs, 1);
+      var co = grp(root, 'spin', anchor('coin', [-1.05, 0.1, 0.3, 0.8]));
+      part(
+        co,
+        'a',
+        [
+          xf(new THREE.CylinderGeometry(0.22, 0.22, 0.04, 20), 0, [PI / 2, 0, 0]),
+          xf(new THREE.TorusGeometry(0.22, 0.018, 6, 24), [0, 0, 0]),
+        ],
+        1,
+      );
+      part(co, 'b', [xf(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 14), 0, [PI / 2, 0, 0])], 0.6);
+    },
+    // a lyre with arms, a yoke, a sound box and shimmering strings; a laurel ring of leaves
+    apollo: function (root) {
+      var ly = grp(root, '', anchor('lyre', [-1.1, -0.2, 0.3, 0.7]));
+      var arm = function (sx) {
+        return sweep(
+          [
+            [sx * 0.12, -0.45, 0],
+            [sx * 0.3, -0.12, 0],
+            [sx * 0.26, 0.32, 0],
+            [sx * 0.13, 0.5, 0],
+          ],
+          function () {
+            return 0.03;
+          },
+          12,
+          6,
+        );
+      };
+      part(
+        ly,
+        'a',
+        [
+          arm(-1),
+          arm(1),
+          xf(new THREE.CylinderGeometry(0.025, 0.025, 0.36, 6), [0, 0.5, 0], [0, 0, PI / 2]),
+          xf(new THREE.SphereGeometry(1, 10, 8), [0, -0.5, 0], 0, [0.2, 0.15, 0.09]),
+        ],
+        1,
+      );
+      var st = [];
+      for (var i = 0; i < 5; i++)
+        st.push(new THREE.CylinderGeometry(0.006, 0.006, 0.9, 4).translate(-0.12 + i * 0.06, 0.02, 0));
+      part(ly, 'c', st, 0.9, 'strings');
+      var wr = grp(root, '', anchor('wreath', [0, 1.02, -0.02]));
+      var R = anchor('wreathR', [0.36])[0];
+      var lv = [];
+      for (var k = 0; k < 24; k++) {
+        var a = (k / 24) * PI * 2;
+        lv.push(leaf(Math.cos(a) * R, 0, Math.sin(a) * R * 1.1, -a, k % 2 ? 0.5 : -0.5, 2.2));
+      }
+      part(
+        wr,
+        'a',
+        lv.concat([xf(new THREE.TorusGeometry(R, 0.012, 5, 30), 0, [PI / 2, 0, 0], [1, 1.1, 1])]),
+        1,
+      );
+    },
+    // a banded rainbow of thick translucent tubes, and a flowing veil
+    iris: function (root) {
+      var rb = grp(root, '', anchor('rainbow', [0, -1.0, -0.5]));
+      [
+        ['a', 1.3],
+        ['b', 1.43],
+        ['c', 1.56],
+      ].forEach(function (b) {
+        part(rb, b[0], [new THREE.TorusGeometry(b[1], 0.06, 8, 48, PI)], 0.75);
+      });
+      var vl = grp(root, 'sway', anchor('veil', [0, -0.1, -0.35]));
+      var pl = new THREE.PlaneGeometry(1.6, 1.3, 12, 14);
+      var p = pl.attributes.position;
+      for (var i = 0; i < p.count; i++) {
+        var x = p.getX(i);
+        var y = p.getY(i);
+        p.setZ(i, 0.07 * Math.sin(y * 5 + x * 3) - 0.1 * (x * x));
+        p.setX(i, x * (1 + 0.2 * (0.7 - y)));
+      }
+      pl.computeVertexNormals();
+      part(vl, 'c', [pl], 0.5);
+    },
+    // a thyrsus with a pine cone and ribbons, ivy vines with leaves, a cluster of grapes
+    dionysus: function (root) {
+      var th = grp(root, '', anchor('thyrsus', [1.15, -0.1, 0.3, 0.75]));
+      part(th, 'c', [new THREE.CylinderGeometry(0.028, 0.034, 2.0, 8).translate(0, 0.05, 0)], 1);
+      var cone = new THREE.LatheGeometry(
+        [
+          [0.001, 0],
+          [0.09, 0.05],
+          [0.15, 0.2],
+          [0.09, 0.36],
+          [0.001, 0.42],
+        ].map(function (q) {
+          return new THREE.Vector2(q[0], q[1]);
+        }),
+        10,
+      ).translate(0, 1.05, 0);
+      part(th, 'b', [cone], 1);
+      var rib = [];
+      for (var s = 0; s < 2; s++) {
+        var pts = [];
+        for (var i = 0; i <= 16; i++)
+          pts.push([Math.cos(i * 0.9 + s * PI) * 0.07, 0.2 + i * 0.05, Math.sin(i * 0.9 + s * PI) * 0.07]);
+        rib.push(
+          sweep(
+            pts,
+            function () {
+              return 0.012;
+            },
+            24,
+            5,
+          ),
+        );
+      }
+      part(th, 'a', rib, 1);
+      var iv = grp(root, '', anchor('ivy', [0, 0, 0]));
+      var vines = [];
+      var leaves = [];
+      [-1, 1].forEach(function (sx) {
+        var pts = [
+          [sx * 0.32, 1.0, 0.0],
+          [sx * 0.52, 0.72, 0.12],
+          [sx * 0.58, 0.3, 0.2],
+          [sx * 0.5, -0.15, 0.25],
+        ];
+        vines.push(
+          sweep(
+            pts,
+            function (t) {
+              return 0.022 - 0.01 * t;
+            },
+            16,
+            5,
+          ),
+        );
+        var cv = new THREE.CatmullRomCurve3(
+          pts.map(function (q) {
+            return new THREE.Vector3(q[0], q[1], q[2]);
+          }),
+        );
+        for (var j = 1; j <= 7; j++) {
+          var c = cv.getPointAt(j / 8);
+          leaves.push(leaf(c.x + sx * 0.04, c.y, c.z + 0.03, j * 0.8, sx * (0.4 + (j % 2) * 0.6), 1.5));
+        }
+      });
+      part(iv, 'a', vines, 1);
+      part(iv, 'b', leaves, 1);
+      var gr = grp(root, 'bob', anchor('grapes', [-1.05, -0.4, 0.3, 0.8]));
+      var gs = [];
+      for (var g = 0; g < 16; g++) {
+        var row = Math.floor(Math.sqrt(g));
+        gs.push(
+          xf(new THREE.SphereGeometry(0.065, 8, 6), [
+            Math.sin(g * 2.4) * (0.17 - row * 0.03),
+            -row * 0.1,
+            Math.cos(g * 2.4) * (0.12 - row * 0.02),
+          ]),
+        );
+      }
+      part(gr, 'b', gs, 1);
+      part(
+        gr,
+        'a',
+        [
+          sweep(
+            [
+              [0, 0.05, 0],
+              [0.05, 0.18, 0],
+              [0.12, 0.3, 0],
+            ],
+            function () {
+              return 0.014;
+            },
+            6,
+            5,
+          ),
+        ],
+        1,
+      );
+    },
+  };
 
   // eyes (procedural head only) and the speaking glow
   var eyeL = glowSprite('c', 0.16, 0);
@@ -1262,16 +1388,10 @@
   function rebuildBust() {
     var scan = scans[god.id] && scans[god.id].pts ? scans[god.id] : null;
     var kind = SCANS[god.id].kind;
-    var defs = god.attrs.concat(scan ? [] : god.fallback || []).filter(function (n) {
-      return ATTRS[n] && ATTRS[n].pt;
-    });
-    var ashare = defs.length ? 0.2 : 0;
     seed = 1234 + godIdx * 77;
     var src;
     for (var i = 0; i < N; i++) {
-      if (rnd() < ashare) {
-        src = ATTRS[defs[Math.floor(rnd() * defs.length)]].pt();
-      } else if (scan && kind !== 'head') {
+      if (scan && kind !== 'head') {
         src = meshPoint(scan);
       } else if (rnd() < 0.5) {
         src = scan ? meshPoint(scan) : headProc();
@@ -1311,10 +1431,7 @@
 
   function rebuildAttrs() {
     disposeGroup(attrGroup);
-    var list = god.attrs.concat(usingMesh ? [] : god.fallback || []);
-    list.forEach(function (n) {
-      if (ATTRS[n] && ATTRS[n].wire) ATTRS[n].wire(attrGroup);
-    });
+    if (PROPS[god.id]) PROPS[god.id](attrGroup);
     applyPalette();
   }
 
@@ -1329,7 +1446,7 @@
           return w[0] === c.material;
         });
         if (idx >= 0) wireObjs.splice(idx, 1);
-        c.material.dispose();
+        if (!c.userData.shared) c.material.dispose();
       }
     }
   }
@@ -1514,18 +1631,28 @@
     pu.uSurf.value = surfMesh.visible ? 1 : 0;
     headWire.material.opacity = usingMesh ? 0 : wireOp * 0.16;
     shoulderWire.material.opacity = usingBustMesh ? 0 : wireOp * 0.22;
-    attrGroup.traverse(function (c) {
-      if (c.material && c.userData.base) c.material.opacity = wireOp * c.userData.base;
+    propMatList.forEach(function (pm2) {
+      pm2.uniforms.uShow.value = wireOp;
+      if (pm2.uniforms.uAlpha.value !== undefined && pm2.userData.shimmer)
+        pm2.uniforms.uAlpha.value = 0.65 + 0.3 * Math.sin(time * 5) + speak * 0.2;
     });
+    attrGroup.scale.setScalar(0.7 + 0.3 * e);
     attrGroup.traverse(function (c) {
       var an = c.userData.anim;
-      if (an === 'hammer') {
-        c.rotation.z = -0.5 + (anim ? Math.sin(time * 1.3) * 0.12 : 0) - speak * 0.15;
-        c.position.y = 0.1 + (anim ? Math.sin(time * 1.1) * 0.05 : 0);
-      } else if (an === 'coin') {
-        c.rotation.y = anim ? time * 1.2 : 0.5;
-      } else if (an === 'sway') {
-        c.rotation.z = anim ? Math.sin(time * 1.1) * 0.07 : 0;
+      if (!an) return;
+      if (an === 'sway') c.rotation.z = anim ? Math.sin(time * 1.1) * 0.08 : 0;
+      else if (an === 'spin') c.rotation.y = anim ? time * 0.9 : 0.5;
+      else if (an === 'drift') {
+        c.rotation.z = (anim ? Math.sin(time * 1.3) * 0.12 : 0) - 0.5 - speak * 0.15;
+        c.position.y =
+          (c.userData.y0 === undefined ? (c.userData.y0 = c.position.y) : c.userData.y0) +
+          (anim ? Math.sin(time * 1.1) * 0.05 : 0);
+      } else if (an === 'bob') {
+        c.rotation.z = anim ? Math.sin(time * 1.4) * 0.06 : 0;
+      } else if (an === 'sparks') {
+        var f = anim ? (time * 0.5) % 1 : 0.4;
+        c.position.y = 0.6 + f * 0.5;
+        c.scale.setScalar(1 - f * 0.8);
       }
     });
 
