@@ -123,7 +123,12 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     const c = known(id);
     const run = c && running.get(c.agent);
     if (!c || !run || run.conversationId !== c.id) return h.json(res, 404, { error: 'not running' });
-    if (!(await gateway.cancel(run.runId))) return h.json(res, 409, { error: 'nothing to cancel' });
+    run.stopRequested = true;
+    let ok = await gateway.cancel(run.runId);
+    // the first attempt may have just ended: the flag then cancels the retry before it starts
+    if (!ok && !run.retryDecided) ok = true;
+    if (!ok) ok = await gateway.cancel(run.runId); // a retry started meanwhile has a new run id
+    if (!ok) return h.json(res, 409, { error: 'nothing to cancel' });
     return h.json(res, 202, { ok: true });
   }
 
@@ -149,9 +154,9 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
   }
 
   // One run of the gateway for this conversation. `resume` picks --resume or --session-id.
-  async function attempt(c, text, resume, emit) {
+  async function attempt(c, text, resume, emit, entry) {
     const runId = crypto.randomBytes(18).toString('base64url');
-    running.set(c.agent, { runId, conversationId: c.id });
+    entry.runId = runId;
     const mapper = createStreamMapper();
     let result = null;
     let sawText = false;
@@ -183,6 +188,10 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
   }
 
   async function stream(req, res, c, text) {
+    // one entry for the whole stream (both attempts): stop() flags it, so a stop that lands between a failed first
+    // attempt and its retry cancels the retry instead of being lost
+    const entry = { runId: '', conversationId: c.id, stopRequested: false, retryDecided: false };
+    running.set(c.agent, entry);
     let gone = false;
     let started = false;
     let keepalive = null;
@@ -213,7 +222,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       // retried once in the other mode. A run that used a tool is NEVER retried: repeating the prompt could repeat
       // side effects (commands, writes, deploys). The flag is only set after a successful run; history is kept.
       let resume = c.session_started === true;
-      let r = await attempt(c, text, resume, emit);
+      let r = await attempt(c, text, resume, emit, entry);
       const failed = (x) =>
         !x.gwError &&
         !x.exit.cancelled &&
@@ -224,9 +233,14 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
         !x.sawTool &&
         ((x.result && x.result.isError) || x.exit.code !== 0);
       if (failed(r) && !gone) {
-        resume = !resume;
-        r = await attempt(c, text, resume, emit);
+        if (entry.stopRequested) r.exit = { ...r.exit, cancelled: true };
+        else {
+          entry.retryDecided = true;
+          resume = !resume;
+          r = await attempt(c, text, resume, emit, entry);
+        }
       }
+      entry.retryDecided = true;
       const { exit, result, gwError, mapper } = r;
 
       let statusName = 'done';
@@ -259,6 +273,9 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       const saved = persist(() =>
         store.updateMessage(asstId, { text: finalText, status: statusName, errorCode }),
       );
+      // last resort: never leave the row 'streaming' (it would read as running until a restart); keep the text if possible
+      if (!saved)
+        persist(() => store.updateMessage(asstId, { text: finalText, status: 'error', errorCode: 'failed' }));
       const unsaved = saved ? {} : { unsaved: true };
       if (statusName === 'done') emit('done', { message_id: asstId, text: finalText, ...unsaved });
       else if (statusName === 'cancelled')
