@@ -431,6 +431,56 @@ test('a first run that died after the session was created is retried by resuming
   }
 });
 
+test('one failed write after a successful run is retried and the reply is saved normally', async () => {
+  const st = createMemoryStore();
+  const real = st.updateMessage;
+  let n = 0;
+  st.updateMessage = (...a) => {
+    if (n++ === 0) throw new Error('busy');
+    return real(...a);
+  };
+  const s = await app(fakeGateway({ run: okRun }), {}, st);
+  try {
+    const c = await newChat(s);
+    const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
+    const last = sse(r.text).pop();
+    assert.equal(last[0], 'done');
+    assert.equal(last[1].unsaved, undefined);
+    assert.equal(st.listMessages(c.id)[1].text, 'fine');
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a run that used a tool and then failed is never retried (no repeated side effects)', async () => {
+  const toolThenFail = async (_r, onLine) => {
+    onLine(init);
+    onLine(
+      line({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 't1', name: 'Bash' } },
+      }),
+    );
+    onLine(result('boom', true));
+    return { type: 'exit', code: 1, cancelled: false, timedOut: false };
+  };
+  for (const resumeFirst of [true, false]) {
+    const gw = fakeGateway({ run: toolThenFail });
+    const s = await app(gw);
+    try {
+      const c = await newChat(s);
+      if (resumeFirst) s.store.markSessionStarted(c.id);
+      const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'deploy it' });
+      assert.equal(gw.calls.length, 1, 'exactly one run');
+      assert.equal(sse(r.text).pop()[0], 'error');
+      assert.equal(s.store.listMessages(c.id).length, 2, 'history kept');
+      assert.equal(s.store.getConversation(c.id).session_started, resumeFirst);
+    } finally {
+      await s.stop();
+    }
+  }
+});
+
 test('a cancelled, timed-out or switched-off run is not retried', async () => {
   for (const exit of [
     { code: 143, cancelled: true },
@@ -511,7 +561,7 @@ test('a store failure becomes a generic 500, never leaks detail and never leaves
   }
 });
 
-test('a store failure after the run finished still releases the slot and ends the stream', async () => {
+test('a store failure after the run finished keeps the reply (marked unsaved), releases the slot and ends the stream', async () => {
   const st = createMemoryStore();
   const real = st.updateMessage;
   let armed = true;
@@ -524,7 +574,10 @@ test('a store failure after the run finished still releases the slot and ends th
     const c = await newChat(s);
     const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
     assert.equal(r.status, 200);
-    assert.equal(sse(r.text).pop()[0], 'error');
+    const last = sse(r.text).pop();
+    assert.equal(last[0], 'done', 'the reply is delivered, not dropped');
+    assert.equal(last[1].text, 'fine');
+    assert.equal(last[1].unsaved, true);
     assert.equal(s.app.chat.running.size, 0);
     armed = false;
     assert.equal(
@@ -724,6 +777,46 @@ test('end to end through the real gateway and the fake claude: history, session 
     const audit = fs.readFileSync(cfg.auditLog, 'utf8');
     assert.ok(!audit.includes('PROMPT-SECRET'));
     assert.equal(audit.trim().split('\n').length, 2);
+  } finally {
+    await s.stop();
+    await gw.close();
+    process.env.HOME = prev;
+    for (const d of [dataDir, ws, home]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('through the real gateway: a failure after a tool event is one run, a failure right after init is retried once', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-data-'));
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-ws-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-home-'));
+  const prev = process.env.HOME;
+  process.env.HOME = home;
+  const cfg = loadGatewayConfig({
+    GATEWAY_DATA_DIR: dataDir,
+    WORKSPACE_DIR: ws,
+    CLAUDE_BIN: path.join(__dirname, 'fixtures', 'fake-claude.js'),
+  });
+  const gw = createGateway(cfg, { log: () => {} });
+  await gw.listen();
+  const s = await app(createGatewayClient({ socketPath: cfg.socketPath, backoffMs: [] }));
+  const runs = () =>
+    fs.existsSync(cfg.auditLog)
+      ? fs
+          .readFileSync(cfg.auditLog, 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => JSON.parse(l))
+          .filter((a) => a.event === 'run').length
+      : 0;
+  try {
+    const c = await newChat(s);
+    const r1 = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'toolfail now' });
+    assert.equal(sse(r1.text).at(-1)[0], 'error');
+    assert.equal(runs(), 1, 'the audit shows a single run');
+    const r2 = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'fail now' });
+    assert.equal(sse(r2.text).at(-1)[0], 'error');
+    assert.equal(runs(), 3, 'one more run, retried once');
+    assert.equal((await api(s, 'GET', `/api/chats/${c.id}`)).json.messages.length, 4);
   } finally {
     await s.stop();
     await gw.close();
