@@ -4,6 +4,4 @@ data
 coverage
 *-TASK.md
 test-results
-e2e-artifacts
-playwright-report
-docs/mocks/vendor
+public/vendor
