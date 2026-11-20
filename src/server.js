@@ -63,11 +63,18 @@ function createApp(config, opts = {}) {
     return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
   }
 
+  // A request that came through a proxy or tunnel (forwarding or Cloudflare headers) is never a local one.
+  function proxied(req) {
+    return Object.keys(req.headers).some(
+      (h) => h === 'x-forwarded-for' || h === 'forwarded' || h.startsWith('cf-'),
+    );
+  }
+
   async function authenticate(req) {
     if (config.devBypass) {
-      return isLoopbackPeer(req)
+      return isLoopbackPeer(req) && !proxied(req)
         ? { ok: true, email: 'dev@localhost.invalid' }
-        : { ok: false, status: 403, reason: 'bypass is loopback only' };
+        : { ok: false, status: 403, reason: 'bypass is local only' };
     }
     const h = req.headers['cf-access-jwt-assertion'];
     return verifier.verify(Array.isArray(h) ? h[0] : h);
@@ -128,7 +135,11 @@ function createApp(config, opts = {}) {
 
   const server = http.createServer((req, res) => {
     (async () => {
-      const p = new URL(req.url, 'http://localhost').pathname;
+      // The path comes from the request target only when it is a plain origin-form path: a target such as
+      // //host/path or one with a backslash would otherwise be read as another host by the URL parser.
+      const target = String(req.url || '');
+      const badTarget = !target.startsWith('/') || target.startsWith('//') || target.includes('\\');
+      const p = badTarget ? '' : new URL(target, 'http://localhost').pathname;
       const m = req.method;
       if (p === '/healthz' && (m === 'GET' || m === 'HEAD')) return send(res, 200, 'ok');
       if (p === '/event') {
@@ -140,6 +151,7 @@ function createApp(config, opts = {}) {
         const msg = auth.status === 401 ? 'unauthorized' : auth.status === 403 ? 'forbidden' : 'unavailable';
         return send(res, auth.status, { error: msg });
       }
+      if (badTarget) return send(res, 400, { error: 'bad request target' });
       if (m !== 'GET' && m !== 'HEAD')
         return send(res, 405, { error: 'method not allowed' }, { Allow: 'GET, HEAD' });
       if (p === '/api/roster') return send(res, 200, { agents: roster() });

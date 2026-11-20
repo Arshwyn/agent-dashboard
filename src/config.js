@@ -12,7 +12,8 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   ACCESS_TEAM_DOMAIN  hostname of the Cloudflare Access team (no scheme, no path)
  *   ACCESS_AUD          the Access application audience tag
  *   OWNER_EMAIL         the single allowed identity
- *   DEV_AUTH_BYPASS     "1" turns Access off for local development; refused in production or off loopback
+ *   DEV_AUTH_BYPASS     "1" turns Access off for local development; needs NODE_ENV=development (or test)
+ *                       and a loopback HOST, otherwise the server refuses to start
  *   APOLLO_CHAT_URL     optional https link-out for the Apollo card; empty hides it
  */
 function loadConfig(env) {
@@ -20,13 +21,18 @@ function loadConfig(env) {
   const port = Number.parseInt(env.PORT || '8787', 10);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('PORT must be 0-65535');
 
-  const production = env.NODE_ENV === 'production';
+  const nodeEnv = String(env.NODE_ENV || '')
+    .trim()
+    .toLowerCase();
+  const production = nodeEnv === 'production';
   const bypass = env.DEV_AUTH_BYPASS === '1';
   if (env.DEV_AUTH_BYPASS && env.DEV_AUTH_BYPASS !== '1' && env.DEV_AUTH_BYPASS !== '0') {
     throw new Error('DEV_AUTH_BYPASS must be 1 or 0');
   }
   if (bypass) {
-    if (production) throw new Error('DEV_AUTH_BYPASS is not allowed when NODE_ENV=production');
+    if (nodeEnv !== 'development' && nodeEnv !== 'test') {
+      throw new Error('DEV_AUTH_BYPASS needs NODE_ENV=development (or test)');
+    }
     if (!LOOPBACK.has(host)) throw new Error('DEV_AUTH_BYPASS is only allowed with HOST on loopback');
   }
 
@@ -55,6 +61,7 @@ function loadConfig(env) {
     } catch {
       throw new Error('APOLLO_CHAT_URL must be an absolute https URL');
     }
+    if (u.username || u.password) throw new Error('APOLLO_CHAT_URL must not contain credentials');
     if (u.protocol !== 'https:' && !(u.protocol === 'http:' && LOOPBACK.has(u.hostname))) {
       throw new Error('APOLLO_CHAT_URL must be an absolute https URL');
     }
