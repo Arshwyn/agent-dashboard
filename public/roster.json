@@ -1,0 +1,68 @@
+{
+  "agents": [
+    {
+      "id": "hephaestus",
+      "name": "Hephaestus",
+      "role": "Builder",
+      "palette": ["#ff9a1f", "#ff5a1f", "#ffd08a"],
+      "motif": "anvil and hammer",
+      "chat": "hub"
+    },
+    {
+      "id": "themis",
+      "name": "Themis",
+      "role": "Quality gate",
+      "palette": ["#9bb8ff", "#e9c46a", "#f2f6ff"],
+      "motif": "scales",
+      "chat": "hub"
+    },
+    {
+      "id": "janus",
+      "name": "Janus",
+      "role": "Gatekeeper",
+      "palette": ["#5ad1d6", "#c27bf0", "#e8eef7"],
+      "motif": "two faces, key and staff",
+      "chat": "hub"
+    },
+    {
+      "id": "atlas",
+      "name": "Atlas",
+      "role": "Operator",
+      "palette": ["#6aa0ff", "#3b5bd6", "#e0ecff"],
+      "motif": "celestial sphere",
+      "chat": "hub"
+    },
+    {
+      "id": "plutus",
+      "name": "Plutus",
+      "role": "Finance",
+      "palette": ["#3fbf7a", "#d6a82a", "#eaffd8"],
+      "motif": "cornucopia",
+      "chat": "hub"
+    },
+    {
+      "id": "apollo",
+      "name": "Apollo",
+      "role": "Coach",
+      "palette": ["#ffd24a", "#8fbf6a", "#fff3bd"],
+      "motif": "lyre",
+      "chat": "link"
+    },
+    {
+      "id": "iris",
+      "name": "Iris",
+      "role": "Mail and calendar",
+      "palette": ["#ff7ac8", "#5ad1ff", "#ffe27a"],
+      "motif": "wings, staff and pitcher",
+      "chat": "hub"
+    },
+    {
+      "id": "dionysus",
+      "name": "Dionysus",
+      "role": "Travel and food",
+      "palette": ["#b04ad6", "#e0456a", "#f0d0ff"],
+      "motif": "thyrsus and cup",
+      "chat": "hub"
+    }
+  ]
+}
