@@ -33,12 +33,32 @@ class AccessVerifier {
     this.keys = new Map(); // kid -> KeyObject
     this.fetchedAt = 0;
     this.lastAttempt = 0;
+    this.lastError = null; // the last fetch failure, so the throttle window reports unavailable, not unauthorized
+    this.inflight = null; // one key fetch at a time; concurrent callers share it
   }
 
-  async _refresh() {
+  _refresh() {
+    if (this.inflight) return this.inflight;
     const t = this.now();
-    if (t - this.lastAttempt < JWKS_MIN_REFETCH_MS) return;
+    if (t - this.lastAttempt < JWKS_MIN_REFETCH_MS) {
+      return this.lastError ? Promise.reject(this.lastError) : Promise.resolve();
+    }
     this.lastAttempt = t;
+    this.inflight = this._fetchKeys(t)
+      .then(() => {
+        this.lastError = null;
+      })
+      .catch((e) => {
+        this.lastError = e;
+        throw e;
+      })
+      .finally(() => {
+        this.inflight = null;
+      });
+    return this.inflight;
+  }
+
+  async _fetchKeys(t) {
     const doc = await this.fetchJson(this.certsUrl);
     const next = new Map();
     for (const jwk of Array.isArray(doc && doc.keys) ? doc.keys : []) {
