@@ -8,7 +8,7 @@
 function createErrorGuard({
   max = 5,
   windowMs = 60_000,
-  now = () => Date.now(),
+  now = () => performance.now(),
   exit = (c) => process.exit(c),
   log = console.error,
 } = {}) {
@@ -17,7 +17,13 @@ function createErrorGuard({
     const t = now();
     times.push(t);
     while (times.length && t - times[0] > windowMs) times.shift();
-    log(`${kind}:`, err && err.name);
+    let name = 'unknown';
+    try {
+      name = String(err && err.name);
+    } catch {
+      // a hostile getter: keep the default
+    }
+    log(`${kind}:`, name);
     if (times.length > max) {
       log('too many uncaught errors, exiting');
       exit(1);
