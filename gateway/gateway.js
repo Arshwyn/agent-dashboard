@@ -12,7 +12,7 @@
 //   cancel: {"cancel":"<run_id>"}
 //   status: {"op":"status"}  -> {"type":"status","enabled":true,"busy":false,"agents":["arshwyn"]}
 // Responses: {"type":"line","data":"<raw stream-json line>"} ..., then
-//   {"type":"exit","code":0,"signal":null,"timedOut":false,"cancelled":false,"outBytes":123}
+//   {"type":"exit","code":0,"signal":null,"timedOut":false,"cancelled":false,"switchedOff":false,"outBytes":123}
 //   or {"type":"error","code":"invalid|not_enabled|not_proxied|disabled|busy|too_large|spawn"} (generic codes only).
 const fs = require('node:fs');
 const net = require('node:net');
@@ -78,6 +78,7 @@ function loadGatewayConfig(env = process.env) {
     requestTimeoutMs: int('REQUEST_TIMEOUT_MS', 10_000),
     maxOutBytes: int('MAX_OUT_BYTES', 8 * 1024 * 1024),
     killGraceMs: int('KILL_GRACE_MS', 3000),
+    killPollMs: int('KILL_POLL_MS', 1000),
   };
 }
 
@@ -162,8 +163,13 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     if (!sock.destroyed && sock.writable) sock.write(JSON.stringify(obj) + '\n');
   }
 
-  // SIGINT first (ends the turn cleanly, per the Claude Code docs), then SIGTERM, then SIGKILL, on the whole group.
-  function killGroup(child, grace) {
+  // One guarded kill sequence per run: SIGINT first (ends the turn cleanly, per the Claude Code docs), then SIGTERM,
+  // then SIGKILL, on the whole process group. Signals are only sent while the child has not exited (so a late cancel
+  // can never hit a recycled pid), and the group is swept with SIGKILL once, right at exit, whatever the reason.
+  function makeKiller(child) {
+    let exited = false;
+    let started = false;
+    const timers = [];
     const sig = (s) => {
       try {
         process.kill(-child.pid, s);
@@ -171,17 +177,21 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
         // already gone
       }
     };
-    sig('SIGINT');
-    const t1 = setTimeout(() => sig('SIGTERM'), Math.max(1, Math.floor(grace / 2)));
-    const t2 = setTimeout(() => sig('SIGKILL'), grace);
-    t1.unref();
-    t2.unref();
     child.once('exit', () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      // anything the run left behind in its process group (a shell it started) goes with it
-      sig('SIGKILL');
+      exited = true;
+      for (const t of timers) clearTimeout(t);
+      sig('SIGKILL'); // anything the run left behind (a shell, a background command) goes with it
     });
+    return function kill(grace) {
+      if (exited || started) return;
+      started = true;
+      sig('SIGINT');
+      const t1 = setTimeout(() => !exited && sig('SIGTERM'), Math.max(1, Math.floor(grace / 2)));
+      const t2 = setTimeout(() => !exited && sig('SIGKILL'), grace);
+      t1.unref();
+      t2.unref();
+      timers.push(t1, t2);
+    };
   }
 
   function reject(sock, code, agent) {
@@ -217,7 +227,15 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     } catch {
       return reject(sock, 'spawn', run.agent);
     }
-    const state = { agent: run.agent, child, cancelled: false, timedOut: false, tooBig: false };
+    const state = {
+      agent: run.agent,
+      child,
+      cancelled: false,
+      timedOut: false,
+      tooBig: false,
+      switchedOff: false,
+    };
+    state.kill = makeKiller(child);
     active.set(run.runId, state);
     busyAgents.add(run.agent);
 
@@ -243,7 +261,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       outBytes += Buffer.byteLength(d);
       if (outBytes > cfg.maxOutBytes && !state.tooBig) {
         state.tooBig = true;
-        killGroup(child, cfg.killGraceMs);
+        state.kill(cfg.killGraceMs);
       }
       if (state.tooBig) return;
       buf += d;
@@ -264,19 +282,27 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     let finished = false;
     const timer = setTimeout(() => {
       state.timedOut = true;
-      killGroup(child, cfg.killGraceMs);
+      state.kill(cfg.killGraceMs);
     }, cfg.runTimeoutMs);
 
     // The hub going away (restart, crash) ends the run: nobody is left to read it, and it would hold the one slot.
     sock.on('close', () => {
       if (finished) return;
       state.cancelled = true;
-      killGroup(child, cfg.killGraceMs);
+      state.kill(cfg.killGraceMs);
     });
+    // The kill switch also applies to a run in progress: watched while the run lives, then the run is ended.
+    const watch = setInterval(() => {
+      if (!isDisabled(cfg)) return;
+      state.switchedOff = true;
+      state.kill(cfg.killGraceMs);
+    }, cfg.killPollMs);
+    watch.unref();
     const finish = (code, signal) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
+      clearInterval(watch);
       if (buf && !state.tooBig) send(sock, { type: 'line', data: buf });
       active.delete(run.runId);
       busyAgents.delete(run.agent);
@@ -288,6 +314,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
         timedOut: state.timedOut,
         cancelled: state.cancelled,
         tooBig: state.tooBig,
+        switchedOff: state.switchedOff,
         outBytes,
       });
       sock.end();
@@ -303,6 +330,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
         timedOut: state.timedOut,
         cancelled: state.cancelled,
         tooBig: state.tooBig,
+        switched_off: state.switchedOff,
         out_bytes: outBytes,
         prompt_chars: run.prompt.length,
         tokens_in: tokensIn,
@@ -319,7 +347,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       const st = keys.length === 1 && typeof req.cancel === 'string' ? active.get(req.cancel) : null;
       if (st) {
         st.cancelled = true;
-        killGroup(st.child, cfg.killGraceMs);
+        st.kill(cfg.killGraceMs);
         send(sock, { type: 'cancelled' });
       } else {
         send(sock, { type: 'error', code: 'invalid' });
@@ -393,7 +421,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       return cfg.socketPath;
     },
     async close() {
-      for (const s of active.values()) killGroup(s.child, 100);
+      for (const s of active.values()) s.kill(100);
       await new Promise((r) => server.close(r));
     },
   };

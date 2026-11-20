@@ -315,6 +315,63 @@ test('a client that disappears mid-run ends the run and frees the slot', async (
   }
 });
 
+test('the kill switch ends a run that is already in progress, and frees the slot', async () => {
+  const g = await startGateway({ KILL_POLL_MS: '100', KILL_GRACE_MS: '500' });
+  try {
+    const lines = [];
+    const first = g.client.run(req({ prompt: 'slow' }), { onLine: (l) => lines.push(l) });
+    const t0 = Date.now();
+    while (!lines.length && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(lines.length, 'the run is streaming');
+    fs.writeFileSync(g.cfg.killSwitchFile, '');
+    const t1 = Date.now();
+    const exit = await first;
+    assert.ok(Date.now() - t1 < 3000, 'ended within a bound');
+    assert.equal(exit.switchedOff, true);
+    assert.equal((await g.client.status()).busy, false);
+    assert.equal(
+      g
+        .audit()
+        .filter((a) => a.event === 'run')
+        .pop().switched_off,
+      true,
+    );
+  } finally {
+    await g.stop();
+  }
+});
+
+test('a background child left behind by a finished run is swept with its group', async () => {
+  const g = await startGateway();
+  try {
+    const exit = await g.client.run(req({ prompt: 'stray' }));
+    assert.equal(exit.code, 0);
+    const pid = Number(fs.readFileSync(path.join(g.home, 'stray.pid'), 'utf8'));
+    let alive = true;
+    for (let i = 0; i < 50 && alive; i++) {
+      try {
+        process.kill(pid, 0);
+        await new Promise((r) => setTimeout(r, 40));
+      } catch {
+        alive = false;
+      }
+    }
+    assert.equal(alive, false);
+  } finally {
+    await g.stop();
+  }
+});
+
+test('a cancel after the run has exited sends no signal and is refused', async () => {
+  const g = await startGateway();
+  try {
+    await g.client.run(req());
+    assert.equal(await g.client.cancel(RUN), false);
+  } finally {
+    await g.stop();
+  }
+});
+
 test('a run past the timeout is killed even if it ignores signals, and the exit says so', async () => {
   const g = await startGateway({ RUN_TIMEOUT_MS: '300', KILL_GRACE_MS: '200' });
   try {
@@ -376,6 +433,7 @@ test('the audit log records metadata only: no prompt, reply or tool input', asyn
         'tokens_in',
         'tokens_out',
         'tooBig',
+        'switched_off',
         'event',
       ].sort(),
     );
