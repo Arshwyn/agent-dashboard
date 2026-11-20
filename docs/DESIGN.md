@@ -14,8 +14,8 @@ Quiet, dark glass, a little theatrical. The default is dark: a near-black page w
 
 - **Primary look: the orb.** Each agent is a soft glass sphere: a low-alpha fresnel rim, a glowing interior, a wide haze band, a particle shell and core, one orbiting soft mote, and gentle pointer parallax. No hard ring lines or outlines.
 - **Expanded look: a half figure.** Clicking the orb (or pressing Enter or Space when it is focused) dissolves the particles into the agent's half figure, a hologram drawn with a fresnel rim, a key light, soft scanlines and a rising scan sweep. Clicking again, or pressing Esc, collapses it back to the orb. Choosing another agent always starts as the orb.
-- **The figures.** Eight generated half figures (head to waist), each holding its own attribute: a stylised reference image was generated with Google Gemini (Nano Banana) by the repository owner and turned into a 3D model with TRELLIS.2 (MIT, Microsoft) through ComfyUI; the models are CC0 1.0, dedicated by the owner (see `ASSET-LICENSE`). Geometry only, about 25k triangles each, 2.4 MB in total. Each model has its fit (yaw, scale, offset) in the viewer; a replacement mesh needs only those numbers.
-- **States.** Idle, thinking and speaking come from the stage's `data-state`. Thinking contracts and quickens the orb and speeds the scan sweep; speaking adds a pulse glow and a flicker. The chat will drive these later.
+- **The figures.** Eight generated half figures (head to waist), each holding its own attribute: a stylised reference image was generated with Google Gemini (Nano Banana) by the repository owner and turned into a 3D model with TRELLIS.2 (MIT, Microsoft) through ComfyUI; the models are CC0 1.0, dedicated by the owner (see `ASSET-LICENSE`). Geometry only, about 25k triangles each, 2.4 MB in total. Each model has its fit (yaw, scale, offset) in the viewer; a replacement mesh needs only those numbers. The pilot agent (Arshwyn, the orchestrator) has no generated figure yet and uses the procedural bust until one exists.
+- **States.** Idle, thinking and speaking come from the stage's `data-state`. Thinking contracts and quickens the orb and speeds the scan sweep; speaking adds a pulse glow and a flicker. The chat drives them: waiting for a reply is thinking (a tool call shows a short generic label such as "reading" and returns to thinking), the first streamed text is speaking, a finished reply is idle, and a failed run is error.
 - **WebGL 2 is required.** There is no flat or 2D fallback. Without WebGL 2 the stage shows the plain text "3D view needs WebGL 2". Performance step-down lowers particle count, pixel ratio and glow, never to a flat look.
 
 ## Layout
@@ -30,6 +30,7 @@ Each agent has three tones: a main tone (rim, rings, panels), a second tone (inn
 
 | Agent      | Role              | Tones                               |
 | ---------- | ----------------- | ----------------------------------- |
+| Arshwyn    | Orchestrator      | cool steel, slate blue, white       |
 | Hephaestus | Builder           | forge amber, ember, pale gold       |
 | Themis     | Quality gate      | cool silver-blue, brass, near white |
 | Janus      | Gatekeeper        | teal, violet, pale blue-white       |
@@ -55,7 +56,7 @@ Only transform and opacity animate in CSS; the stage animates through WebGL. `pr
 - The stage is a button: pointer cursor, hover and focus glow, a visible focus ring, `aria-expanded`, Enter and Space to toggle, Esc to collapse, and a first-view hint pill.
 - The rail is a list of links with `aria-current` on the selected agent; each agent has a real URL.
 - Status (Idle, Thinking, Speaking) is text as well as colour.
-- The chat panel is clearly marked as not connected until the backend exists: a visible notice, a disabled input and no invented replies.
+- The chat panel states its condition in words: an empty state, a streaming reply with a Stop button, a plain error line per failure, an offline notice when the gateway is unreachable and a notice when web chat is switched off. The pilot agent is the only one with a live chat; the others say they are not enabled yet. Replies and the user's text are drawn as plain text (never HTML), and narration before a tool call is shown as a muted note.
 - Light and dark both keep text contrast at a readable level; the stage uses its own dark tokens in both.
 
 ## What this is not
