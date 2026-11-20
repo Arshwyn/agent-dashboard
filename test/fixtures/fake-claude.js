@@ -60,6 +60,14 @@ process.stdin.on('end', () => {
     process.on('SIGINT', () => process.exit(130));
     process.on('SIGTERM', () => process.exit(143));
     setTimeout(() => process.exit(0), 60000);
+  } else if (p.startsWith('stray')) {
+    // leaves a background child behind in the process group, then ends normally
+    const kid = require('node:child_process').spawn('sleep', ['30'], { stdio: 'ignore' });
+    fs.writeFileSync(path.join(process.env.HOME, 'stray.pid'), String(kid.pid));
+    init();
+    delta('ok');
+    result('ok');
+    process.exit(0);
   } else if (p.startsWith('stubborn')) {
     init();
     process.on('SIGINT', () => {});
