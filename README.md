@@ -1,10 +1,10 @@
 # agent-hub
 
-A private web hub for talking with a small set of AI agents. Each agent is a glowing glass orb that expands, on click, into a hologram half figure. A side rail lists the eight agents (Hephaestus, Themis, Janus, Atlas, Plutus, Apollo, Iris, Dionysus); a chat panel sits under the stage.
+A private web hub for talking with a small set of AI agents. Each agent is a glowing glass orb that expands, on click, into a hologram half figure. A side rail lists the agents (Arshwyn, the orchestrator, then Hephaestus, Themis, Janus, Atlas, Plutus, Apollo, Iris, Dionysus); a chat panel sits under the stage.
 
-**Status: the shell.** The roster, the 3D bodies, routing and single-owner sign-in work. The chat is not connected to a backend yet and says so in the page. Apollo's card links out to its own chat app. See [`docs/DESIGN.md`](docs/DESIGN.md) for the look and the rules behind it.
+**Status: chat for one agent.** The roster, the 3D bodies, routing and single-owner sign-in work, and text chat works for the pilot agent, Arshwyn, through a small gateway on the host that runs Claude Code. The other agents say they are not enabled yet. Apollo is never proxied: its card links out to its own chat app. **Read [`docs/ISOLATION.md`](docs/ISOLATION.md) before enabling chat: a web chat run has the orchestrator's own tool access.** See [`docs/DESIGN.md`](docs/DESIGN.md) for the look and the rules behind it.
 
-- Node 24, plain `http` server with no runtime dependencies, no frontend framework, no build step, no CDN. The browser needs WebGL 2 (otherwise the stage shows the text "3D view needs WebGL 2").
+- Node 24, plain `http` server with one runtime dependency (`better-sqlite3`, for the chat history, installed from its prebuilt binary), no frontend framework, no build step, no CDN. The browser needs WebGL 2 (otherwise the stage shows the text "3D view needs WebGL 2").
 - Sign-in is Cloudflare Access only: the server verifies the `Cf-Access-Jwt-Assertion` JWT against the team's published keys, checks issuer, audience and expiry, and allows exactly one email. There are no passwords or sessions of its own. Everything except `/healthz` and `/event` requires it, and it fails closed.
 - `/healthz` is open. `POST /event` is a stub that reads the body, stores nothing and returns 204, so hooks configured elsewhere for the old dashboard do not error.
 - Default port: **8787**.
@@ -23,6 +23,10 @@ Copy `.env.example` to `.env` and fill it in (it is gitignored).
 | `BIND_ADDR`          | no       | Address compose publishes the port on (default 127.0.0.1)                      |
 | `APOLLO_CHAT_URL`    | no       | https link-out for the Apollo card (no credentials in the URL); empty hides it |
 | `DEV_AUTH_BYPASS`    | no       | `1` skips Access for local development only                                    |
+| `GATEWAY_SOCKET`     | no       | Absolute path of the chat gateway's unix socket; unset means chat is offline   |
+| `DB_PATH`            | no       | Chat history database (default `./data/hub.db`)                                |
+| `CHAT_DISABLED`      | no       | `1` is the app-side kill switch for web chat                                   |
+| `CHAT_MAX_PER_MIN`   | no       | Messages per minute across all chats (default 6)                               |
 
 `DEV_AUTH_BYPASS=1` is accepted only when `NODE_ENV` is explicitly `development` or `test` (case and spaces ignored; unset or anything else is refused) and `HOST` is a loopback address; otherwise the server refuses to start. With it on, only requests from the local machine are served (a request carrying `X-Forwarded-For`, `Forwarded` or any `Cf-*` header is refused, as it came through a proxy or tunnel) and a warning is logged at startup. Never set it on a deployment.
 
@@ -36,15 +40,16 @@ NODE_ENV=development DEV_AUTH_BYPASS=1 npm start   # http://127.0.0.1:8787
 npm start
 ```
 
-With Docker, `docker compose up -d --build` builds the image and publishes the port on `BIND_ADDR`; put it behind a Cloudflare Access application (a tunnel or reverse proxy) so requests carry the JWT header. The compose file refuses to start without the three required variables.
+With Docker, `docker compose up -d --build` builds the image and publishes the port on `BIND_ADDR`; put it behind a Cloudflare Access application (a tunnel or reverse proxy) so requests carry the JWT header. The compose file refuses to start without the Access variables and the chat ones (`HUB_UID`, `HUB_GID`, `GATEWAY_SOCKET_DIR`, `HUB_DATA_DIR`); the host steps are in [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 Add `?perf` to the page URL to show the frame-time readout on the stage; `?yaw=`, `?pitch=`, `?roll=`, `?scale=`, `?dy=` and `?god=<id>` tune a model's fit while developing (values are clamped).
 
 ## Project layout
 
-- `src/` server, config and the Access verifier.
+- `src/` server, config, the Access verifier, the chat API (`chat.js`), the CSRF check, the gateway client, the stream mapper (the only code that decides what reaches the browser) and the history store.
+- `gateway/gateway.js` the host-side chat gateway (dependency-free): fixed profile table, fixed command line, one run at a time, kill switch, audit log. `docs/host/` holds its systemd unit and environment sample.
 - `public/` the app: `index.html`, `css/app.css`, `js/app.js` (shell and routing), `js/hub.js` (the 3D viewer), `roster.json` (the one roster file), `models/` (the eight generated figures) and `vendor/` (a three.js subset bundle with its licence and rebuild notes).
-- `docs/DESIGN.md` the design identity. `ASSET-LICENSE` lists every asset and its licence.
+- `docs/DESIGN.md` the design identity. `docs/DEPLOY.md` how to run the app and the gateway. `docs/ISOLATION.md` what web chat can do, the threat model and the kill switch. `ASSET-LICENSE` lists every asset and its licence.
 - `scripts/hook.js` a no-op kept so existing hook entries on the host keep working.
 
 ## Tests
@@ -54,7 +59,7 @@ npm test        # node:test, no network
 npm run lint    # eslint and prettier --check
 ```
 
-The tests cover config validation, the Access verifier (signature, issuer, audience, expiry, email, key caching, fail closed), the routes and headers, the roster, the `/event` stub and the removal of the old dashboard.
+The tests cover config validation, the Access verifier (signature, issuer, audience, expiry, email, key caching, fail closed), the routes and headers, the roster, the `/event` stub and the removal of the old dashboard, and for chat: the gateway's validation, fixed command line, kill switch, one-run limit, timeouts and audit log (against a fake `claude` script, no model), the stream mapping, CSRF, input limits, rate limit and history. The history tests that load `better-sqlite3` need Node 22 or later and are skipped on older Node; the rest use an in-memory store with the same contract.
 
 ## Licence
 
