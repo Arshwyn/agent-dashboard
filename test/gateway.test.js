@@ -343,18 +343,18 @@ test('the kill switch ends a run that is already in progress, and frees the slot
 
 /** Dead means gone or a zombie (an unreaped child, as in a container without an init, still answers kill -0). */
 function isDead(pid) {
-  try {
-    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'Z';
-  } catch (e) {
-    if (e.code !== 'ENOENT' && e.code !== 'ESRCH') {
-      try {
-        process.kill(pid, 0); // no /proc: kill -0 semantics
-      } catch {
-        return true;
-      }
-      return false;
+  if (fs.existsSync('/proc/self')) {
+    try {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'Z';
+    } catch {
+      return true; // no such process
     }
+  }
+  try {
+    process.kill(pid, 0); // no /proc: kill -0 semantics
+    return false;
+  } catch {
     return true;
   }
 }
@@ -426,6 +426,38 @@ test('a run that already ended is never reported as switched off', async () => {
         .audit()
         .filter((a) => a.event === 'run')
         .pop().switched_off,
+      false,
+    );
+  } finally {
+    if (pid) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // gone
+      }
+    }
+    await g.stop();
+  }
+});
+
+test('a cancel during the exit grace after a clean exit is ignored: the run stays completed', async () => {
+  const g = await startGateway({ EXIT_GRACE_MS: '1000' });
+  let pid = 0;
+  try {
+    const p = g.client.run(req({ prompt: 'escape' }));
+    const t0 = Date.now();
+    while (!fs.existsSync(path.join(g.home, 'escape.pid')) && Date.now() - t0 < 3000)
+      await new Promise((r) => setTimeout(r, 20));
+    pid = Number(fs.readFileSync(path.join(g.home, 'escape.pid'), 'utf8'));
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(await g.client.cancel(RUN), false);
+    const exit = await p;
+    assert.equal(exit.cancelled, false);
+    assert.equal(
+      g
+        .audit()
+        .filter((a) => a.event === 'run')
+        .pop().cancelled,
       false,
     );
   } finally {
