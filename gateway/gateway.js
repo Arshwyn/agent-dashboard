@@ -1,0 +1,411 @@
+#!/usr/bin/env node
+'use strict';
+// Host-side chat gateway for the agent hub. It launches `claude -p` for the hub container over its own unix socket.
+//
+// Dependency-free (node: built-ins only, Node 20 compatible). The hub sends only
+//   { agent, conversation_id, resume, prompt, run_id }
+// and this script builds the argv, the environment and the working directory itself from a fixed profile table,
+// validates every field, and never logs prompts, replies or tool inputs. The browser never reaches this process.
+//
+// Protocol: newline-delimited JSON, one request per connection.
+//   run:    {"agent":"arshwyn","conversation_id":"<uuid>","resume":false,"prompt":"...","run_id":"..."}
+//   cancel: {"cancel":"<run_id>"}
+//   status: {"op":"status"}  -> {"type":"status","enabled":true,"busy":false,"agents":["arshwyn"]}
+// Responses: {"type":"line","data":"<raw stream-json line>"} ..., then
+//   {"type":"exit","code":0,"signal":null,"timedOut":false,"cancelled":false,"outBytes":123}
+//   or {"type":"error","code":"invalid|not_enabled|not_proxied|disabled|busy|too_large|spawn"} (generic codes only).
+const fs = require('node:fs');
+const net = require('node:net');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+
+const AGENT_ID = /^[a-z][a-z0-9_]{1,19}$/;
+const RUN_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const MAX_REQUEST_BYTES = 64 * 1024;
+const MAX_PROMPT_CHARS = 16000;
+const REQUEST_KEYS = new Set(['agent', 'conversation_id', 'resume', 'prompt', 'run_id']);
+
+// The profile table is the safety control. Each enabled profile is a fixed command line: the browser, the hub and
+// the request can choose none of it. `arshwyn` is the orchestrator's MAIN session (no --agent flag): the working
+// directory is the orchestrator workspace, so the workspace's own CLAUDE.md, settings, permission rules and hooks
+// apply exactly as in an interactive session. No permission-bypass flag appears anywhere, and no --allowedTools:
+// what needs approval is denied because --permission-prompts none leaves nobody to approve it.
+// The seven other agents are listed so the answer is a clear "not enabled yet"; `apollo` is deliberately absent
+// (it has its own chat app and its own health-data isolation, and is never proxied here).
+const PROFILES = Object.freeze({
+  arshwyn: Object.freeze({
+    enabled: true,
+    maxTurns: 40,
+    permissionMode: 'default',
+    settingSources: Object.freeze(['user', 'project', 'local']),
+  }),
+  hephaestus: Object.freeze({ enabled: false }),
+  themis: Object.freeze({ enabled: false }),
+  janus: Object.freeze({ enabled: false }),
+  atlas: Object.freeze({ enabled: false }),
+  plutus: Object.freeze({ enabled: false }),
+  iris: Object.freeze({ enabled: false }),
+  dionysus: Object.freeze({ enabled: false }),
+});
+
+function loadGatewayConfig(env = process.env) {
+  const need = (k) => {
+    if (!env[k] || !path.isAbsolute(env[k])) throw new Error(`${k} must be an absolute path`);
+    return env[k];
+  };
+  const int = (k, d) => {
+    const n = env[k] === undefined || env[k] === '' ? d : Number(env[k]);
+    if (!Number.isInteger(n) || n < 1) throw new Error(`${k} must be a positive integer`);
+    return n;
+  };
+  const model = env.GATEWAY_MODEL || null;
+  if (model !== null && !/^[A-Za-z0-9._-]{1,64}$/.test(model)) throw new Error('GATEWAY_MODEL is invalid');
+  const dataDir = need('GATEWAY_DATA_DIR');
+  return {
+    workspaceDir: fs.realpathSync(need('WORKSPACE_DIR')),
+    dataDir,
+    socketPath: env.GATEWAY_SOCKET ? need('GATEWAY_SOCKET') : path.join(dataDir, 'gateway.sock'),
+    killSwitchFile: env.KILL_SWITCH_FILE ? need('KILL_SWITCH_FILE') : path.join(dataDir, 'DISABLED'),
+    auditLog: env.AUDIT_LOG ? need('AUDIT_LOG') : path.join(dataDir, 'audit.log'),
+    claudeBin: env.CLAUDE_BIN || 'claude',
+    model,
+    disabledByEnv: env.GATEWAY_DISABLED === '1',
+    runTimeoutMs: int('RUN_TIMEOUT_MS', 600_000),
+    requestTimeoutMs: int('REQUEST_TIMEOUT_MS', 10_000),
+    maxOutBytes: int('MAX_OUT_BYTES', 8 * 1024 * 1024),
+    killGraceMs: int('KILL_GRACE_MS', 3000),
+  };
+}
+
+function fail(code) {
+  const e = new Error(code);
+  e.code = code;
+  return e;
+}
+
+/** Validates one run request against the profile table. Throws an Error whose `code` is a generic reason. */
+function validateRun(req) {
+  if (req === null || typeof req !== 'object' || Array.isArray(req)) throw fail('invalid');
+  for (const k of Object.keys(req)) if (!REQUEST_KEYS.has(k)) throw fail('invalid');
+  const { agent, conversation_id: conversationId, resume, prompt, run_id: runId } = req;
+  if (typeof agent !== 'string' || !AGENT_ID.test(agent)) throw fail('invalid');
+  if (!Object.hasOwn(PROFILES, agent)) throw fail('not_proxied');
+  if (!PROFILES[agent].enabled) throw fail('not_enabled');
+  if (typeof conversationId !== 'string' || !UUID.test(conversationId)) throw fail('invalid');
+  if (typeof resume !== 'boolean') throw fail('invalid');
+  if (typeof runId !== 'string' || !RUN_ID.test(runId)) throw fail('invalid');
+  if (typeof prompt !== 'string' || prompt.trim().length === 0) throw fail('invalid');
+  if (prompt.length > MAX_PROMPT_CHARS || prompt.includes('\0')) throw fail('too_large');
+  return { agent, conversationId, resume, prompt, runId };
+}
+
+/** The fixed command line for a validated run. Nothing here comes from the request except the session UUID. */
+function buildArgv(cfg, { agent, conversationId, resume }) {
+  const p = PROFILES[agent];
+  const argv = [
+    '-p',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--permission-mode',
+    p.permissionMode,
+    '--permission-prompts',
+    'none',
+    '--setting-sources',
+    p.settingSources.join(','),
+    '--max-turns',
+    String(p.maxTurns),
+  ];
+  if (cfg.model) argv.push('--model', cfg.model);
+  argv.push(resume ? '--resume' : '--session-id', conversationId);
+  return argv;
+}
+
+/** A minimal environment: no secrets from the gateway's own environment reach the child beyond what login needs. */
+function buildEnv(cfg, runId, base = process.env) {
+  const env = { PATH: base.PATH || '/usr/local/bin:/usr/bin:/bin', HUB_CHAT_RUN: '1', HUB_RUN_ID: runId };
+  if (base.HOME) env.HOME = base.HOME;
+  if (base.LANG) env.LANG = base.LANG;
+  return env;
+}
+
+function isDisabled(cfg) {
+  if (cfg.disabledByEnv) return true;
+  try {
+    fs.accessSync(cfg.killSwitchFile);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o) + '\n') } = {}) {
+  const active = new Map(); // runId -> { agent, child, cancelled }
+  const busyAgents = new Set();
+
+  function audit(obj) {
+    const line = { t: new Date().toISOString(), ...obj };
+    log(line);
+    try {
+      fs.appendFileSync(cfg.auditLog, JSON.stringify(line) + '\n', { mode: 0o600 });
+    } catch {
+      // the journal copy above still exists
+    }
+  }
+
+  function send(sock, obj) {
+    if (!sock.destroyed && sock.writable) sock.write(JSON.stringify(obj) + '\n');
+  }
+
+  // SIGINT first (ends the turn cleanly, per the Claude Code docs), then SIGTERM, then SIGKILL, on the whole group.
+  function killGroup(child, grace) {
+    const sig = (s) => {
+      try {
+        process.kill(-child.pid, s);
+      } catch {
+        // already gone
+      }
+    };
+    sig('SIGINT');
+    const t1 = setTimeout(() => sig('SIGTERM'), Math.max(1, Math.floor(grace / 2)));
+    const t2 = setTimeout(() => sig('SIGKILL'), grace);
+    t1.unref();
+    t2.unref();
+    child.once('exit', () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    });
+  }
+
+  function reject(sock, code, agent) {
+    send(sock, { type: 'error', code });
+    sock.end();
+    audit({ event: 'rejected', agent: agent || null, code });
+  }
+
+  function startRun(sock, req) {
+    let run;
+    try {
+      run = validateRun(req);
+    } catch (e) {
+      return reject(
+        sock,
+        e.code || 'invalid',
+        typeof req?.agent === 'string' && AGENT_ID.test(req.agent) ? req.agent : null,
+      );
+    }
+    if (isDisabled(cfg)) return reject(sock, 'disabled', run.agent);
+    if (active.size >= 1 || busyAgents.has(run.agent)) return reject(sock, 'busy', run.agent);
+    if (active.has(run.runId)) return reject(sock, 'invalid', run.agent);
+
+    const started = Date.now();
+    let child;
+    try {
+      child = spawn(cfg.claudeBin, buildArgv(cfg, run), {
+        cwd: cfg.workspaceDir,
+        env: buildEnv(cfg, run.runId),
+        detached: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch {
+      return reject(sock, 'spawn', run.agent);
+    }
+    const state = { agent: run.agent, child, cancelled: false, timedOut: false, tooBig: false };
+    active.set(run.runId, state);
+    busyAgents.add(run.agent);
+
+    let buf = '';
+    let outBytes = 0;
+    let tokensIn = null;
+    let tokensOut = null;
+    const noteLine = (line) => {
+      // token counts only; the line itself is forwarded but never stored
+      if (line.length > 200000 || !line.includes('"type":"result"')) return;
+      try {
+        const o = JSON.parse(line);
+        if (o && o.type === 'result' && o.usage) {
+          tokensIn = Number.isFinite(o.usage.input_tokens) ? o.usage.input_tokens : null;
+          tokensOut = Number.isFinite(o.usage.output_tokens) ? o.usage.output_tokens : null;
+        }
+      } catch {
+        // not JSON
+      }
+    };
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => {
+      outBytes += Buffer.byteLength(d);
+      if (outBytes > cfg.maxOutBytes && !state.tooBig) {
+        state.tooBig = true;
+        killGroup(child, cfg.killGraceMs);
+      }
+      if (state.tooBig) return;
+      buf += d;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 1);
+        if (line) {
+          noteLine(line);
+          send(sock, { type: 'line', data: line });
+        }
+      }
+    });
+    child.stderr.on('data', () => {}); // drained, never stored or logged
+    child.stdin.on('error', () => {});
+    child.stdin.end(run.prompt);
+
+    const timer = setTimeout(() => {
+      state.timedOut = true;
+      killGroup(child, cfg.killGraceMs);
+    }, cfg.runTimeoutMs);
+
+    let finished = false;
+    const finish = (code, signal) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (buf && !state.tooBig) send(sock, { type: 'line', data: buf });
+      active.delete(run.runId);
+      busyAgents.delete(run.agent);
+      const ms = Date.now() - started;
+      send(sock, {
+        type: 'exit',
+        code,
+        signal,
+        timedOut: state.timedOut,
+        cancelled: state.cancelled,
+        tooBig: state.tooBig,
+        outBytes,
+      });
+      sock.end();
+      audit({
+        event: 'run',
+        agent: run.agent,
+        conversation_id: run.conversationId,
+        run_id: run.runId,
+        resume: run.resume,
+        ms,
+        code,
+        signal,
+        timedOut: state.timedOut,
+        cancelled: state.cancelled,
+        tooBig: state.tooBig,
+        out_bytes: outBytes,
+        prompt_chars: run.prompt.length,
+        tokens_in: tokensIn,
+        tokens_out: tokensOut,
+      });
+    };
+    child.on('error', () => finish(null, null));
+    child.on('close', finish);
+  }
+
+  function handle(sock, req) {
+    if (req && typeof req === 'object' && !Array.isArray(req) && 'cancel' in req) {
+      const keys = Object.keys(req);
+      const st = keys.length === 1 && typeof req.cancel === 'string' ? active.get(req.cancel) : null;
+      if (st) {
+        st.cancelled = true;
+        killGroup(st.child, cfg.killGraceMs);
+        send(sock, { type: 'cancelled' });
+      } else {
+        send(sock, { type: 'error', code: 'invalid' });
+      }
+      return sock.end();
+    }
+    if (
+      req &&
+      typeof req === 'object' &&
+      !Array.isArray(req) &&
+      req.op === 'status' &&
+      Object.keys(req).length === 1
+    ) {
+      send(sock, {
+        type: 'status',
+        enabled: !isDisabled(cfg),
+        busy: active.size >= 1,
+        agents: Object.keys(PROFILES).filter((k) => PROFILES[k].enabled),
+      });
+      return sock.end();
+    }
+    startRun(sock, req);
+  }
+
+  const server = net.createServer((sock) => {
+    let data = '';
+    let handled = false;
+    const idle = setTimeout(() => {
+      if (!handled) sock.destroy();
+    }, cfg.requestTimeoutMs);
+    idle.unref();
+    sock.on('close', () => clearTimeout(idle));
+    sock.setEncoding('utf8');
+    sock.on('error', () => {});
+    sock.on('data', (chunk) => {
+      if (handled) return;
+      data += chunk;
+      if (data.length > MAX_REQUEST_BYTES) {
+        handled = true;
+        clearTimeout(idle);
+        send(sock, { type: 'error', code: 'too_large' });
+        return sock.end();
+      }
+      const i = data.indexOf('\n');
+      if (i < 0) return;
+      handled = true;
+      clearTimeout(idle);
+      let req;
+      try {
+        req = JSON.parse(data.slice(0, i));
+      } catch {
+        send(sock, { type: 'error', code: 'invalid' });
+        return sock.end();
+      }
+      handle(sock, req);
+    });
+  });
+
+  return {
+    server,
+    active,
+    async listen() {
+      fs.mkdirSync(cfg.dataDir, { recursive: true, mode: 0o700 });
+      fs.chmodSync(cfg.dataDir, 0o700);
+      fs.rmSync(cfg.socketPath, { force: true });
+      await new Promise((resolve, reject2) => {
+        server.once('error', reject2);
+        server.listen(cfg.socketPath, resolve);
+      });
+      fs.chmodSync(cfg.socketPath, 0o600);
+      return cfg.socketPath;
+    },
+    async close() {
+      for (const s of active.values()) killGroup(s.child, 100);
+      await new Promise((r) => server.close(r));
+    },
+  };
+}
+
+module.exports = {
+  PROFILES,
+  loadGatewayConfig,
+  validateRun,
+  buildArgv,
+  buildEnv,
+  isDisabled,
+  createGateway,
+  MAX_PROMPT_CHARS,
+};
+
+if (require.main === module) {
+  const cfg = loadGatewayConfig();
+  const gw = createGateway(cfg);
+  gw.listen().then((sock) => {
+    process.stdout.write(
+      JSON.stringify({ t: new Date().toISOString(), event: 'listening', socket: path.basename(sock) }) + '\n',
+    );
+  });
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => gw.close().then(() => process.exit(0)));
+}
