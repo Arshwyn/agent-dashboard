@@ -469,6 +469,10 @@ a {
   overflow-wrap: anywhere;
 }
 
+.msg:empty {
+  display: none;
+}
+
 .msg.user {
   align-self: flex-end;
   background: var(--accent);
