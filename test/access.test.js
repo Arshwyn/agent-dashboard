@@ -91,3 +91,45 @@ test('keys are cached, and an unknown key id refetches at most once a minute', a
   await v.verify(unknown);
   assert.equal(calls, 2);
 });
+
+test('concurrent verifications share one key fetch', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const v = verifier({
+    fetchJson: async () => {
+      calls++;
+      await gate;
+      return { keys: [jwk] };
+    },
+  });
+  const all = Promise.all([1, 2, 3, 4, 5].map(() => v.verify(makeToken())));
+  await new Promise((r) => setImmediate(r));
+  release();
+  const rs = await all;
+  assert.equal(calls, 1);
+  assert.ok(rs.every((r) => r.ok));
+});
+
+test('a failed key fetch stays unavailable (503) inside the throttle window, then retries', async () => {
+  let t = 1_000_000_000_000;
+  let calls = 0;
+  let fail = true;
+  const v = verifier({
+    now: () => t,
+    fetchJson: async () => {
+      calls++;
+      if (fail) throw new Error('down');
+      return { keys: [jwk] };
+    },
+  });
+  const tok = () => makeToken({ exp: Math.floor(t / 1000) + 600, nbf: Math.floor(t / 1000) - 5 });
+  assert.equal((await v.verify(tok())).status, 503);
+  t += 5000;
+  assert.equal((await v.verify(tok())).status, 503, 'throttled request is still 503, not 401');
+  assert.equal(calls, 1);
+  t += 61_000;
+  fail = false;
+  assert.equal((await v.verify(tok())).ok, true);
+  assert.equal(calls, 2);
+});
