@@ -37,6 +37,9 @@ function main() {
     });
     setTimeout(() => process.exit(0), 3000).unref();
   };
+  // A bug in one request must not take the process (and the other chats) down; log the kind of error only.
+  process.on('uncaughtException', (e) => console.error('uncaught error:', e && e.name));
+  process.on('unhandledRejection', (e) => console.error('unhandled rejection:', e && e.name));
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }

@@ -35,6 +35,28 @@ test('everything else needs a valid Access token: 401 without, 403 for another i
     for (const p of ['/', '/api/roster', '/api/me', '/js/hub.js', '/models/atlas.glb', '/agent/atlas']) {
       assert.equal((await get(s.base, p)).status, 401, p);
     }
+    // every chat route, with every method, is behind Access too (auth comes before CSRF and routing)
+    const id = '0b9f4f1e-6b1d-4c5e-8a55-2f3c9f6d1a77';
+    for (const p of [
+      '/api/chat/status',
+      '/api/chats',
+      `/api/chats/${id}`,
+      `/api/chats/${id}/messages`,
+      `/api/chats/${id}/stop`,
+    ]) {
+      for (const method of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']) {
+        const r = await fetch(s.base + p, {
+          method,
+          headers: {
+            'X-Hub-Request': '1',
+            'Sec-Fetch-Site': 'same-origin',
+            'Content-Type': 'application/json',
+          },
+          body: method === 'GET' ? undefined : '{}',
+        });
+        assert.equal(r.status, 401, `${method} ${p}`);
+      }
+    }
     assert.equal((await get(s.base, '/api/roster', { 'Cf-Access-Jwt-Assertion': 'junk' })).status, 401);
     const wrong = { 'Cf-Access-Jwt-Assertion': makeToken({ email: 'other@example.com' }) };
     assert.equal((await get(s.base, '/api/roster', wrong)).status, 403);
