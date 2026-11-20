@@ -184,6 +184,10 @@ test('config requires absolute paths and a sane model name', () => {
     assert.throws(() => loadGatewayConfig({ ...env, WORKSPACE_DIR: 'relative' }), /WORKSPACE_DIR/);
     assert.throws(() => loadGatewayConfig({ ...env, GATEWAY_DATA_DIR: '' }), /GATEWAY_DATA_DIR/);
     assert.throws(() => loadGatewayConfig({ ...env, GATEWAY_MODEL: 'a b; rm' }), /GATEWAY_MODEL/);
+    assert.throws(
+      () => loadGatewayConfig({ ...env, GATEWAY_SOCKET: '/tmp/' + 'x'.repeat(120) + '.sock' }),
+      /too long/,
+    );
     assert.throws(() => loadGatewayConfig({ ...env, RUN_TIMEOUT_MS: '0' }), /RUN_TIMEOUT_MS/);
     assert.equal(loadGatewayConfig(env).runTimeoutMs, 600000);
   } finally {
@@ -279,6 +283,33 @@ test('only one run at a time: the second is refused as busy, and the first can b
     assert.equal(exit.cancelled, true);
     assert.ok(exit.code === 130 || exit.signal);
     assert.equal((await g.client.status()).busy, false);
+  } finally {
+    await g.stop();
+  }
+});
+
+test('a client that disappears mid-run ends the run and frees the slot', async () => {
+  const g = await startGateway();
+  try {
+    const c = net.createConnection(g.cfg.socketPath);
+    await new Promise((r) => c.once('connect', r));
+    let got = '';
+    c.setEncoding('utf8');
+    c.on('data', (d) => (got += d));
+    c.write(JSON.stringify(req({ prompt: 'slow' })) + '\n');
+    const t0 = Date.now();
+    while (!got.includes('"line"') && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+    assert.equal((await g.client.status()).busy, true);
+    c.destroy();
+    const t1 = Date.now();
+    while ((await g.client.status()).busy && Date.now() - t1 < 5000)
+      await new Promise((r) => setTimeout(r, 30));
+    assert.equal((await g.client.status()).busy, false);
+    const last = g
+      .audit()
+      .filter((a) => a.event === 'run')
+      .pop();
+    assert.equal(last.cancelled, true);
   } finally {
     await g.stop();
   }
