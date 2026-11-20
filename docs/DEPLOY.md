@@ -6,7 +6,7 @@ Every value below is a placeholder. Real paths, users, hostnames and the Access 
 
 ## What you need
 
-- Node 20 or later on the host for the gateway (it has no dependencies), and Claude Code **v2.1.259 or later** (the `--permission-prompts` flag does not exist before it), logged in as the service user.
+- Node 20 or later on the host for the gateway (it has no dependencies), and Claude Code with the `--permission-prompts` flag (documented in the CLI reference at code.claude.com/docs/en/cli-reference and the "Turn off permission prompts in unattended runs" section of code.claude.com/docs/en/headless, which gives v2.1.259 as the first version with it; verified working on the host's installed version), logged in as the service user.
 - Docker with the compose plugin for the app. The image needs no build tools: `better-sqlite3` ships a prebuilt binary and `.npmrc` stops install scripts, so `npm ci` compiles nothing.
 - A Cloudflare Access application in front of the app, one allowed email, short session.
 - The orchestrator's workspace directory (the working directory of every web run).
@@ -35,9 +35,10 @@ How the gateway reaches the orchestrator: it starts `claude` with the workspace 
 
 ## Kill switch
 
-- **Instant, no restart:** `touch /path/to/hub-gateway/DISABLED` refuses every new web run (the page shows a notice); `rm` the file to turn chat back on.
+- **Instant, no restart:** `touch /path/to/hub-gateway/DISABLED` refuses every new web run **and ends a run in progress** within about a second (`KILL_POLL_MS`, default 1000; SIGINT, then SIGTERM, then SIGKILL on the run's process group). The page shows a notice and "switched off during this reply". `rm` the file to turn chat back on.
 - **Restart-based:** `GATEWAY_DISABLED=1` in `gateway.env` (restart the service), or `CHAT_DISABLED=1` in the app's `.env` (recreate the container).
-- A running reply is not cut by the flag. Stop it from the page, or stop the gateway service, which ends the run (so does the app going away).
+- `CHAT_DISABLED` (app side) only refuses new sends; use the gateway flag to cut a running reply. Stop on the page, stopping the gateway service, or the app going away also end a run.
+- Closing the browser tab does **not** end a run: the reply finishes and is saved. Stop it from the page, or use the kill switch.
 
 ## Logs, data and retention
 
@@ -53,7 +54,7 @@ How the gateway reaches the orchestrator: it starts `claude` with the workspace 
 1. Open the hub through Access, choose Arshwyn: the input is enabled and the page says nothing about being offline.
 2. Send a short message: the orb shows thinking, then speaking while text streams, then idle. The audit log gained one line.
 3. Send two messages quickly from two tabs: the second is refused as busy.
-4. `touch DISABLED`: the page shows the switched-off notice and a send is refused; `rm DISABLED` restores it.
+4. Start a longer reply, then `touch DISABLED`: the reply stops within a couple of seconds with "switched off", and further sends are refused; `rm DISABLED` restores it.
 
 ## Rollback
 

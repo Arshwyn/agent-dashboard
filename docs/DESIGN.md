@@ -20,6 +20,8 @@ Quiet, dark glass, a little theatrical. The default is dark: a near-black page w
 
 ## Layout
 
+The page is one viewport tall: the stage has a capped height and the chat takes the rest, with its messages scrolling inside it, so the composer is always visible at 1280x800 and 390x844 without scrolling the page (on a very short window the page scrolls instead). On a phone the roster is a five-column grid of small tiles.
+
 Layout B, a persistent side rail: the roster of agents on the left (a row of tiles on a phone), the stage above the chat in the main column. One agent is selected at a time and has its own route, `/agent/<id>`. The rail is the roster tile for every agent: a small glowing dot in the agent's palette and its name.
 
 Apollo's card shows the same body but its chat panel is a link-out to the separate chat app (`APOLLO_CHAT_URL`), which keeps its own sign-in and per-user separation. The longer-term goal is a unified view where Apollo is simultaneous with the others; that needs the owner's approval first.
@@ -55,7 +57,7 @@ Only transform and opacity animate in CSS; the stage animates through WebGL. `pr
 
 - The stage is a button: pointer cursor, hover and focus glow, a visible focus ring, `aria-expanded`, Enter and Space to toggle, Esc to collapse, and a first-view hint pill.
 - The rail is a list of links with `aria-current` on the selected agent; each agent has a real URL.
-- Status (Idle, Thinking, Speaking) is text as well as colour.
+- Status (Idle, Thinking, Speaking) is text as well as colour. Streamed text is not announced word by word (the message log is `aria-live=off` and `aria-busy` while a reply streams); a separate polite status region announces when a reply is complete, stopped or failed.
 - The chat panel states its condition in words: an empty state, a streaming reply with a Stop button, a plain error line per failure, an offline notice when the gateway is unreachable and a notice when web chat is switched off. The pilot agent is the only one with a live chat; the others say they are not enabled yet. Replies and the user's text are drawn as plain text (never HTML), and narration before a tool call is shown as a muted note.
 - Light and dark both keep text contrast at a readable level; the stage uses its own dark tokens in both.
 
