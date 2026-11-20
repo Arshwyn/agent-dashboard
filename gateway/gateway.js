@@ -289,7 +289,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
 
     // The hub going away (restart, crash) ends the run: nobody is left to read it, and it would hold the one slot.
     sock.on('close', () => {
-      if (finished) return;
+      if (finished || state.exited) return; // a clean exit stays a completed run
       state.cancelled = true;
       state.kill(cfg.killGraceMs);
     });
@@ -359,7 +359,8 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
   function handle(sock, req) {
     if (req && typeof req === 'object' && !Array.isArray(req) && 'cancel' in req) {
       const keys = Object.keys(req);
-      const st = keys.length === 1 && typeof req.cancel === 'string' ? active.get(req.cancel) : null;
+      const found = keys.length === 1 && typeof req.cancel === 'string' ? active.get(req.cancel) : null;
+      const st = found && !found.exited ? found : null; // nothing to cancel once the process has exited
       if (st) {
         st.cancelled = true;
         st.kill(cfg.killGraceMs);
