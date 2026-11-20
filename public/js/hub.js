@@ -201,7 +201,7 @@
   }
 
   // The shell (app.js) owns the rail, labels, chat and theme; the viewer only reports activity labels.
-  var STATE_LABEL = { idle: 'Idle', thinking: 'Thinking', speaking: 'Speaking' };
+  var STATE_LABEL = { idle: 'Idle', thinking: 'Thinking', speaking: 'Speaking', error: 'Error' };
   function stateOk(st) {
     return typeof st === 'string' && Object.prototype.hasOwnProperty.call(STATE_LABEL, st); // not 'constructor' and friends
   }
@@ -734,6 +734,11 @@
   var scanNote = {};
   function loadScan(id) {
     if (scans[id]) return;
+    if (!Object.prototype.hasOwnProperty.call(SCANS, id)) {
+      scans[id] = { failed: true }; // no model for this agent yet: the procedural bust stands in
+      scanNote[id] = 'procedural bust (no model for ' + id + ')';
+      return;
+    }
     scans[id] = { loading: true };
     scanNote[id] = 'loading model ' + id;
     new THREE.GLTFLoader().load(
@@ -800,7 +805,7 @@
       surfMesh.geometry.setAttribute('position', new THREE.BufferAttribute(scan.surf.p, 3));
       surfMesh.geometry.setAttribute('normal', new THREE.BufferAttribute(scan.surf.n, 3));
     }
-    var cfg = SCANS[god.id];
+    var cfg = SCANS[god.id] || {};
     eyesShown = !scan || !!cfg.eyes;
     if (!scan) {
       eyeL.position.set(-0.15, 0.68, 0.42);
