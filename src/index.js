@@ -6,6 +6,7 @@ const { loadConfig, startupWarnings } = require('./config');
 const { createApp } = require('./server');
 const { openStore } = require('./store');
 const { createGatewayClient } = require('./gatewayClient');
+const { createErrorGuard } = require('./errorGuard');
 
 function main() {
   let config;
@@ -38,8 +39,10 @@ function main() {
     setTimeout(() => process.exit(0), 3000).unref();
   };
   // A bug in one request must not take the process (and the other chats) down; log the kind of error only.
-  process.on('uncaughtException', (e) => console.error('uncaught error:', e && e.name));
-  process.on('unhandledRejection', (e) => console.error('unhandled rejection:', e && e.name));
+  // A loop of them exits non-zero so the container's restart policy takes over (see errorGuard.js).
+  const guard = createErrorGuard();
+  process.on('uncaughtException', (e) => guard('uncaught error', e));
+  process.on('unhandledRejection', (e) => guard('unhandled rejection', e));
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
