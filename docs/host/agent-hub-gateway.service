@@ -1,0 +1,25 @@
+# systemd unit for the agent hub chat gateway. Placeholders in <angle brackets>; copy, edit and install on the host
+# that runs Claude Code (see docs/DEPLOY.md). Not the apollo-chat gateway: this one has its own socket and data dir.
+[Unit]
+Description=agent hub chat gateway (launches the orchestrator's main session for the hub)
+After=network.target
+
+[Service]
+# The OS user that owns the Claude Code login and the orchestrator workspace. It also owns the socket (mode 0600),
+# and the hub container runs as this same uid and gid.
+User=<service-user>
+Group=<service-group>
+EnvironmentFile=/path/to/hub-gateway/gateway.env
+ExecStart=/usr/bin/node /path/to/agent-dashboard/gateway/gateway.js
+Restart=on-failure
+RestartSec=2
+# Files the gateway creates (socket directory, audit log) are private to the service user.
+UMask=0077
+NoNewPrivileges=yes
+# The gateway only needs its own data dir, the workspace and the Claude Code state of the service user. Tighten
+# further (ProtectSystem, ReadWritePaths) only after checking that Claude Code still starts under it.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
