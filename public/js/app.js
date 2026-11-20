@@ -233,6 +233,7 @@
           node.appendChild(el('small', { class: 'err' }, ERROR_TEXT[m.error_code] || ERROR_TEXT.failed));
         if (m.status === 'cancelled') node.appendChild(el('small', { class: 'err' }, 'Stopped.'));
       });
+      log.scrollTop = log.scrollHeight;
     }
 
     function fillSelect() {
@@ -327,7 +328,7 @@
           log.scrollTop = log.scrollHeight;
         } else if (ev === 'interim') {
           // narration before a tool call: keep it as a muted note and start the live text again
-          addMsg('assistant', data.text.trim(), 'note').insertAdjacentElement('beforebegin', live);
+          live.insertAdjacentElement('beforebegin', addMsg('assistant', data.text.trim(), 'note'));
           text = '';
           live.textContent = '';
           spoke = false;
@@ -339,11 +340,13 @@
           live.textContent = data.text || text;
           if (data.cancelled) live.appendChild(el('small', { class: 'err' }, 'Stopped.'));
           tool.remove();
+          log.scrollTop = log.scrollHeight;
           setStageState('idle');
         } else if (ev === 'error') {
           tool.remove();
           live.appendChild(el('small', { class: 'err' }, ERROR_TEXT[data.code] || ERROR_TEXT.failed));
           live.classList.add('is-error');
+          log.scrollTop = log.scrollHeight;
           setStageState('error');
         }
       }
