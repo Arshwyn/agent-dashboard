@@ -632,17 +632,20 @@ test('listen() removes only a stale socket and never a file or directory at that
   }
 });
 
-test('listen() refuses a data directory that is a file, and leaves modes of foreign paths alone', async () => {
+test('listen() refuses a data directory that is a file and leaves its mode alone', async () => {
   const base = tmp('gw-dd-');
   try {
     const file = path.join(base, 'afile');
     fs.writeFileSync(file, 'x');
     fs.chmodSync(file, 0o644);
-    const env = mkEnv({ GATEWAY_DATA_DIR: file });
-    const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+    const ws = path.join(base, 'ws');
+    fs.mkdirSync(ws);
+    const gw = createGateway(
+      loadGatewayConfig({ GATEWAY_DATA_DIR: file, WORKSPACE_DIR: ws, CLAUDE_BIN: FAKE }),
+      { log: () => {} },
+    );
     await assert.rejects(gw.listen());
     assert.equal(fs.statSync(file).mode & 0o777, 0o644, 'the file mode was not changed');
-    cleanup({ ...env, GATEWAY_DATA_DIR: tmp('gw-unused-') });
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
