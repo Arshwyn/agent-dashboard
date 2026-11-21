@@ -800,6 +800,12 @@ test('status reports the gateway kill switch, busy, offline and not-enabled agen
   try {
     let st = (await api(s, 'GET', '/api/chat/status')).json;
     assert.deepEqual([st.enabled, st.available, st.busy, st.agents], [true, true, false, [...HUB_AGENTS]]);
+    assert.equal(st.configured, true);
+    const realStatus = gw.status;
+    gw.status = async () => ({ type: 'status', enabled: true, busy: false, configured: false, agents: [] });
+    st = (await api(s, 'GET', '/api/chat/status')).json;
+    assert.deepEqual([st.available, st.configured, st.agents], [true, false, []]);
+    gw.status = realStatus;
     gw.state.enabled = false;
     gw.state.busy = true;
     st = (await api(s, 'GET', '/api/chat/status')).json;

@@ -75,6 +75,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       enabled: !config.chatDisabled,
       disabled_by: config.chatDisabled ? 'app' : null,
       available: false,
+      configured: true,
       busy: false,
       running_agent: [...running.keys()][0] || null,
     };
@@ -82,6 +83,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     try {
       const s = await gateway.status();
       out.available = true;
+      out.configured = s.configured !== false; // an up gateway without its deny list refuses every run
       out.busy = s.busy === true || running.size > 0;
       if (s.enabled === false) {
         out.enabled = false;

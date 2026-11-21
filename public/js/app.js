@@ -184,6 +184,7 @@
   }
 
   function drawReal(a, st) {
+    if (st.available && st.configured === false) return drawBlocked(a, errorText('not_configured'), false);
     if (st.agents.indexOf(a.id) < 0 && st.available) {
       return drawBlocked(a, 'Chat for ' + a.name + ' is not enabled yet.', false);
     }
