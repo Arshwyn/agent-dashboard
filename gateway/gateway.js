@@ -160,6 +160,29 @@ function isDisabled(cfg) {
   }
 }
 
+/** Creates the directory private (0700) if missing; refuses anything that is not a directory owned by this user. */
+function secureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const st = fs.lstatSync(dir);
+  if (!st.isDirectory()) throw new Error('a gateway directory path is not a directory');
+  if (typeof process.getuid === 'function' && st.uid !== process.getuid())
+    throw new Error('a gateway directory is not owned by the service user');
+  fs.chmodSync(dir, 0o700);
+}
+
+/** Removes a leftover socket from an earlier run. A regular file, directory or link at that path is never touched. */
+function removeStaleSocket(file) {
+  let st;
+  try {
+    st = fs.lstatSync(file);
+  } catch (e) {
+    if (e.code === 'ENOENT') return;
+    throw e;
+  }
+  if (!st.isSocket()) throw new Error('the socket path exists and is not a socket; refusing to remove it');
+  fs.unlinkSync(file);
+}
+
 function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o) + '\n') } = {}) {
   const active = new Map(); // runId -> { agent, child, cancelled }
   const busyAgents = new Set();
@@ -440,9 +463,9 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     server,
     active,
     async listen() {
-      fs.mkdirSync(cfg.dataDir, { recursive: true, mode: 0o700 });
-      fs.chmodSync(cfg.dataDir, 0o700);
-      fs.rmSync(cfg.socketPath, { force: true });
+      secureDir(cfg.dataDir);
+      if (path.dirname(cfg.socketPath) !== cfg.dataDir) secureDir(path.dirname(cfg.socketPath));
+      removeStaleSocket(cfg.socketPath);
       await new Promise((resolve, reject2) => {
         server.once('error', reject2);
         server.listen(cfg.socketPath, resolve);
