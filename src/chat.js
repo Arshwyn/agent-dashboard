@@ -7,7 +7,19 @@ const { cleanTitle } = require('./store');
 
 const MESSAGE_MAX_CHARS = 8000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const PILOT_AGENTS = Object.freeze(['arshwyn']);
+// The agents the hub talks to: the pilot and the seven agents with a gateway profile. Apollo is never here (it has its
+// own chat app and its own health-data isolation) and Mercury is not enabled. A test keeps this list, the gateway's
+// profile table and the roster's `chat: "hub"` entries identical.
+const HUB_AGENTS = Object.freeze([
+  'arshwyn',
+  'hephaestus',
+  'themis',
+  'janus',
+  'atlas',
+  'plutus',
+  'iris',
+  'dionysus',
+]);
 // Gateway answers that mean nothing was started: the send is refused, so it leaves no rows behind.
 const REFUSAL_CODES = new Set([
   'busy',
@@ -48,7 +60,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
 
   async function status(res) {
     const out = {
-      agents: [...PILOT_AGENTS],
+      agents: [...HUB_AGENTS],
       enabled: !config.chatDisabled,
       disabled_by: config.chatDisabled ? 'app' : null,
       available: false,
@@ -63,7 +75,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
         out.enabled = false;
         out.disabled_by = out.disabled_by || 'gateway';
       }
-      out.agents = Array.isArray(s.agents) ? s.agents.filter((a) => PILOT_AGENTS.includes(a)) : [];
+      out.agents = Array.isArray(s.agents) ? s.agents.filter((a) => HUB_AGENTS.includes(a)) : [];
     } catch {
       out.available = false;
     }
@@ -72,7 +84,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
 
   function list(res, url) {
     const agent = url.searchParams.get('agent') || '';
-    if (!PILOT_AGENTS.includes(agent)) return h.json(res, 200, { conversations: [] });
+    if (!HUB_AGENTS.includes(agent)) return h.json(res, 200, { conversations: [] });
     return h.json(res, 200, { conversations: store.listConversations(agent).map(view) });
   }
 
@@ -86,7 +98,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       ) {
         return h.json(res, 400, { error: 'bad request' });
       }
-      if (typeof body.agent !== 'string' || !PILOT_AGENTS.includes(body.agent))
+      if (typeof body.agent !== 'string' || !HUB_AGENTS.includes(body.agent))
         return h.json(res, 409, { error: 'not_enabled' });
       const c = store.createConversation(
         body.agent,
@@ -153,7 +165,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       if (text.length > MESSAGE_MAX_CHARS) return h.json(res, 413, { error: 'message too long' });
       const c = known(id);
       if (!c) return h.json(res, 404, { error: 'not found' });
-      if (!PILOT_AGENTS.includes(c.agent)) return h.json(res, 409, { error: 'not_enabled' });
+      if (!HUB_AGENTS.includes(c.agent)) return h.json(res, 409, { error: 'not_enabled' });
       if (config.chatDisabled) return h.json(res, 503, { error: 'disabled' });
       if (!gateway) return h.json(res, 503, { error: 'unavailable' });
       if (running.has(c.agent)) return h.json(res, 409, { error: 'busy' });
@@ -368,4 +380,4 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
   return { route, recover, running, MESSAGE_MAX_CHARS };
 }
 
-module.exports = { createChat, MESSAGE_MAX_CHARS, PILOT_AGENTS };
+module.exports = { createChat, MESSAGE_MAX_CHARS, HUB_AGENTS };
