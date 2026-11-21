@@ -150,16 +150,37 @@ test('Stop clicked again, or a conversation switch, invalidates the running refr
 test('a Stop refresh only replaces the view with ok responses of the expected shape', () => {
   const list = { ok: true, body: { conversations: [{ id: 'a' }] } };
   const conv = { ok: true, body: { conversation: { id: 'a', running: false }, messages: [] } };
-  const good = refreshData(list, conv);
+  const good = refreshData(list, conv, 'a');
   assert.deepEqual(good.conversations, [{ id: 'a' }]);
   assert.equal(good.conversation.id, 'a');
   assert.deepEqual(good.messages, []);
   // the conversation was deleted in another tab: a JSON error body must not blank the view
-  assert.equal(refreshData(list, { ok: false, body: { error: 'not_found' } }), null);
-  assert.equal(refreshData(list, { ok: true, body: { error: 'not_found' } }), null);
-  assert.equal(refreshData({ ok: true, body: { error: 'x' } }, conv), null);
-  assert.equal(refreshData({ ok: true, body: { conversations: {} } }, conv), null);
-  assert.equal(refreshData(list, { ok: true, body: { conversation: null, messages: [] } }), null);
-  assert.equal(refreshData(list, { ok: true, body: null }), null);
-  assert.equal(refreshData(null, conv), null);
+  assert.equal(refreshData(list, { ok: false, body: { error: 'not_found' } }, 'a'), null);
+  assert.equal(refreshData(list, { ok: true, body: { error: 'not_found' } }, 'a'), null);
+  assert.equal(refreshData({ ok: true, body: { error: 'x' } }, conv, 'a'), null);
+  assert.equal(refreshData({ ok: true, body: { conversations: {} } }, conv, 'a'), null);
+  assert.equal(refreshData(list, { ok: true, body: { conversation: null, messages: [] } }, 'a'), null);
+  assert.equal(refreshData(list, { ok: true, body: null }, 'a'), null);
+  assert.equal(refreshData(null, conv, 'a'), null);
+});
+
+test('a Stop refresh rejects arrays, another conversation and malformed list entries', () => {
+  const list = { ok: true, body: { conversations: [{ id: 'a' }] } };
+  const conv = { ok: true, body: { conversation: { id: 'a' }, messages: [] } };
+  assert.equal(refreshData(list, conv, 'b'), null, 'the id must be the requested one');
+  assert.equal(refreshData(list, { ok: true, body: { conversation: [], messages: [] } }, 'a'), null);
+  assert.equal(refreshData(list, { ok: true, body: [conv.body] }, 'a'), null);
+  assert.equal(refreshData({ ok: true, body: [] }, conv, 'a'), null);
+  for (const bad of [[null], [1], [[]], [{}], [{ id: 5 }], [{ id: 'a' }, 'x']]) {
+    assert.equal(
+      refreshData({ ok: true, body: { conversations: bad } }, conv, 'a'),
+      null,
+      JSON.stringify(bad),
+    );
+  }
+  assert.equal(
+    refreshData(list, { ok: true, body: { conversation: { id: 'a' } } }, 'a'),
+    null,
+    'messages required',
+  );
 });
