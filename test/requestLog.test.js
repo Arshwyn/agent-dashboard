@@ -165,3 +165,18 @@ test('a throwing sink or a bad clock never becomes an uncaught exception', async
     process.off('uncaughtException', onErr);
   }
 });
+
+test('an async sink that rejects is harmless', async () => {
+  let unhandled = 0;
+  const onRej = () => unhandled++;
+  process.on('unhandledRejection', onRej);
+  const s = await startApp({}, { requestLog: () => Promise.reject(new Error('sink down')) });
+  try {
+    await fetch(`${s.base}/api/roster`);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(unhandled, 0);
+  } finally {
+    process.off('unhandledRejection', onRej);
+    await s.stop();
+  }
+});

@@ -56,6 +56,13 @@ function createRequestLogger(
     const origWrite = res.write.bind(res);
     const origEnd = res.end.bind(res);
     const count = (chunk, enc) => {
+      try {
+        add(chunk, enc);
+      } catch {
+        // an odd chunk only makes the byte count short
+      }
+    };
+    const add = (chunk, enc) => {
       if (chunk === undefined || chunk === null || typeof chunk === 'function') return;
       bytes +=
         Buffer.isBuffer(chunk) || chunk instanceof Uint8Array
@@ -75,9 +82,10 @@ function createRequestLogger(
       try {
         const ms = Number((hrtime() - t0) / 1_000_000n);
         const method = /^[A-Z]{1,10}$/.test(String(req.method)) ? req.method : 'OTHER';
-        write(
+        const out = write(
           `${new Date(clock()).toISOString()} ${method} ${routePattern(req.url)} ${res.statusCode} ${ms}ms ${bytes}b`,
         );
+        if (out && typeof out.then === 'function') out.then(undefined, () => {}); // a rejecting async sink is harmless
       } catch {
         // dropped
       }
