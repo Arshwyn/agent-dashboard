@@ -137,3 +137,31 @@ test('a streamed response is counted and logged once it ends; ids never appear',
     await s.stop();
   }
 });
+
+test('a throwing sink or a bad clock never becomes an uncaught exception', async () => {
+  let uncaught = 0;
+  const onErr = () => uncaught++;
+  process.on('uncaughtException', onErr);
+  try {
+    for (const opts of [
+      {
+        requestLog: () => {
+          throw new Error('sink down');
+        },
+      },
+      { requestLog: () => {}, now: () => NaN },
+    ]) {
+      const s = await startApp({}, opts);
+      try {
+        assert.equal((await fetch(`${s.base}/api/roster`)).status, 401);
+        assert.equal((await fetch(`${s.base}/api/roster`)).status, 401);
+        await new Promise((r) => setTimeout(r, 30));
+      } finally {
+        await s.stop();
+      }
+    }
+    assert.equal(uncaught, 0);
+  } finally {
+    process.off('uncaughtException', onErr);
+  }
+});
