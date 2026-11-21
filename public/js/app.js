@@ -206,6 +206,9 @@
     });
     chat.appendChild(composer);
 
+    var stopChain = window.HubStreamState.createChain();
+    var stopTimer = null;
+
     function say(text) {
       notice.textContent = text || '';
     }
@@ -309,10 +312,20 @@
         });
     }
 
+    // a notice about the previous conversation (a refused send) must not linger, on screen or in the live region
+    function clearNotices() {
+      stopChain.cancel();
+      window.clearTimeout(stopTimer);
+      say('');
+      announcer.textContent = '';
+    }
+
     select.addEventListener('change', function () {
+      clearNotices();
       if (select.value) openConv(select.value);
     });
     bNew.addEventListener('click', function () {
+      clearNotices();
       api('POST', '/api/chats', { agent: a.id })
         .then(function (r) {
           return r.json();
@@ -481,15 +494,32 @@
     bStop.addEventListener('click', function () {
       if (!chat_.conv) return;
       var id = chat_.conv.id;
+      var ticket = stopChain.begin(); // a second click replaces the first chain
+      window.clearTimeout(stopTimer);
       var tries = 0;
       // A run started in another tab ends without this page hearing about it: re-read the conversation and the
       // list until it no longer says running, so the view does not stay on "Reply in progress..." with Stop shown.
       function refresh() {
-        if (token !== chat_.token || chat_.busy || !chat_.conv || chat_.conv.id !== id) return;
-        return loadList(id).then(function () {
-          if (chat_.conv && chat_.conv.running && !chat_.busy && ++tries < 8)
-            window.setTimeout(refresh, 1000);
-        });
+        if (!stopChain.valid(ticket) || token !== chat_.token || chat_.busy) return;
+        return Promise.all([
+          api('GET', '/api/chats?agent=' + encodeURIComponent(a.id)).then(function (r) {
+            return r.json();
+          }),
+          api('GET', '/api/chats/' + id).then(function (r) {
+            return r.json();
+          }),
+        ])
+          .then(function (both) {
+            // checked again after the responses: a send or a switch since then must not be wiped
+            if (!stopChain.valid(ticket) || token !== chat_.token || chat_.busy) return;
+            chat_.convs = both[0].conversations;
+            chat_.conv = both[1].conversation;
+            fillSelect();
+            drawMessages(both[1].messages);
+            lock(false);
+            if (chat_.conv.running && ++tries < 8) stopTimer = window.setTimeout(refresh, 1000);
+          })
+          .catch(function () {});
       }
       api('POST', '/api/chats/' + id + '/stop')
         .then(refresh)

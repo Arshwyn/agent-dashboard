@@ -2,7 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { create, errorText, refusalNotice, rowText, noticeForView } = require('../public/js/streamstate');
+const {
+  create,
+  errorText,
+  refusalNotice,
+  rowText,
+  noticeForView,
+  createChain,
+} = require('../public/js/streamstate');
 
 test('deltas accumulate, the first one starts speaking, done returns to idle', () => {
   const s = create();
@@ -126,4 +133,15 @@ test('the busy notice only mentions Stop when the open chat is the one running',
   assert.match(other, /another chat/);
   assert.match(other, /open that chat and press Stop/);
   assert.equal(noticeForView('Web chat is switched off.', false), 'Web chat is switched off.');
+});
+
+test('Stop clicked again, or a conversation switch, invalidates the running refresh chain', () => {
+  const c = createChain();
+  const first = c.begin();
+  assert.equal(c.valid(first), true);
+  const second = c.begin(); // Stop clicked again
+  assert.deepEqual([c.valid(first), c.valid(second)], [false, true]);
+  c.cancel(); // another conversation opened
+  assert.equal(c.valid(second), false);
+  assert.equal(c.valid(c.begin()), true);
 });
