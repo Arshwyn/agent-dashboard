@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { AccessVerifier } = require('./access');
 const { csrfOk, jsonContentType } = require('./csrf');
 const { createChat } = require('./chat');
+const { createRequestLogger } = require('./requestLog');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const MIME = {
@@ -190,7 +191,9 @@ function createApp(config, opts = {}) {
     return sendFile(req, res, file, MIME[path.extname(file)] || 'application/octet-stream');
   }
 
+  const watch = opts.requestLog ? createRequestLogger(opts.requestLog, { clock: opts.now }) : null;
   const server = http.createServer((req, res) => {
+    if (watch) watch(req, res);
     (async () => {
       // The path comes from the request target only when it is a plain origin-form path: a target such as
       // //host/path or one with a backslash would otherwise be read as another host by the URL parser.
