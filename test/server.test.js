@@ -112,6 +112,13 @@ test('the roster lists the nine agents (the pilot and the eight gods) in one dat
         `${a.id} model`,
       );
     }
+    for (const a of r.json.agents) {
+      if (a.chat === 'hub') {
+        assert.equal(typeof a.access, 'string', `${a.id} has an access note`);
+        assert.ok(a.access.length > 10 && a.access.length <= 140, a.id);
+        assert.ok(!/[/\\]|https?:|@/.test(a.access), `${a.id}: no paths, URLs or addresses`);
+      } else assert.ok(!('access' in a), `${a.id} (link-out) has no access note`);
+    }
     assert.equal(r.json.agents.find((a) => a.id === 'apollo').link, 'https://chat.example.com/');
     assert.equal(r.json.agents.find((a) => a.id === 'apollo').chat, 'link');
     assert.equal(r.json.agents.find((a) => a.id === 'atlas').link, null);

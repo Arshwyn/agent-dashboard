@@ -6,7 +6,8 @@
       "role": "Orchestrator",
       "palette": ["#c9d4e5", "#8aa0c8", "#ffffff"],
       "motif": "the workspace main session",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Full orchestrator access: every tool, server and connector the workspace has, except health data."
     },
     {
       "id": "hephaestus",
@@ -14,7 +15,8 @@
       "role": "Builder",
       "palette": ["#ff9a1f", "#ff5a1f", "#ffd08a"],
       "motif": "anvil and hammer",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Builds and fixes code in the project repos; every tool except health data."
     },
     {
       "id": "themis",
@@ -22,7 +24,8 @@
       "role": "Quality gate",
       "palette": ["#9bb8ff", "#e9c46a", "#f2f6ff"],
       "motif": "scales",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Runs tests and checks, reviews diffs and drives a test browser; shell and read tools, no file-edit tool."
     },
     {
       "id": "janus",
@@ -30,7 +33,8 @@
       "role": "Gatekeeper",
       "palette": ["#5ad1d6", "#c27bf0", "#e8eef7"],
       "motif": "two faces, key and staff",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Reviews diffs for security and merges; shell, read and web-fetch tools, no file-edit tool."
     },
     {
       "id": "atlas",
@@ -38,7 +42,8 @@
       "role": "Operator",
       "palette": ["#6aa0ff", "#3b5bd6", "#e0ecff"],
       "motif": "celestial sphere",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Operates the servers and keeps the ops docs; shell, read, edit and web-fetch tools."
     },
     {
       "id": "plutus",
@@ -46,7 +51,8 @@
       "role": "Finance",
       "palette": ["#3fbf7a", "#d6a82a", "#eaffd8"],
       "motif": "cornucopia",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Finance questions; every tool except health data."
     },
     {
       "id": "apollo",
@@ -62,7 +68,8 @@
       "role": "Mail and calendar",
       "palette": ["#ff7ac8", "#5ad1ff", "#ffe27a"],
       "motif": "wings, staff and pitcher",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Mail, calendar and documents; every tool except health data."
     },
     {
       "id": "dionysus",
@@ -70,7 +77,8 @@
       "role": "Travel and food",
       "palette": ["#b04ad6", "#e0456a", "#f0d0ff"],
       "motif": "thyrsus and cup",
-      "chat": "hub"
+      "chat": "hub",
+      "access": "Travel and food planning; every tool except health data."
     }
   ]
 }
