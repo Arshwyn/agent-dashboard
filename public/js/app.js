@@ -50,7 +50,11 @@
 
   // The one running reply (only one run exists at a time) is marked on its rail entry with text and a shape, so
   // colour is not the only signal. The page asks the server every few seconds while it is visible.
-  function setRunning(id) {
+  // A poll that was already in flight when this page changed the marker itself (a send) must not undo it: every local
+  // change bumps the epoch, and a poll result is applied only if the epoch is the one it started with.
+  var runningEpoch = 0;
+  function setRunning(id, local) {
+    if (local) runningEpoch++;
     rail.querySelectorAll('a').forEach(function (l) {
       var on = !!id && l.getAttribute('data-agent') === id;
       var mark = l.querySelector('.run-mark');
@@ -63,12 +67,13 @@
 
   function pollRunning() {
     if (document.hidden) return;
+    var epoch = runningEpoch;
     api('GET', '/api/chat/status')
       .then(function (r) {
         return r.ok ? r.json() : null;
       })
       .then(function (st) {
-        if (st) setRunning(st.running_agent || null);
+        if (st && epoch === runningEpoch) setRunning(st.running_agent || null);
       })
       .catch(function () {});
   }
@@ -467,7 +472,7 @@
       if (!text.trim() || chat_.busy) return;
       if (text.length > MAX_CHARS) return say('That message is too long.');
       say('');
-      setRunning(a.id);
+      setRunning(a.id, true);
       var oldNotice = log.querySelector('.msg-notice');
       if (oldNotice) oldNotice.remove();
       lock(true);
