@@ -202,17 +202,22 @@ function secureDir(dir) {
   fs.chmodSync(dir, 0o700);
 }
 
-/** True when something accepts connections on the socket path (another gateway is running there). */
+/**
+ * True unless the socket is certainly dead. Only ECONNREFUSED (nobody listens) and ENOENT (the file is gone) mean
+ * dead; any other outcome (a connection, EAGAIN from a busy listener with a full accept queue, EACCES, a timeout)
+ * is treated as live, so a gateway that is merely busy is never unlinked.
+ */
 function socketIsLive(file) {
   return new Promise((resolve) => {
     const c = net.createConnection(file);
+    const timer = setTimeout(() => done(true), 1000);
     const done = (live) => {
+      clearTimeout(timer);
       c.destroy();
       resolve(live);
     };
     c.once('connect', () => done(true));
-    c.once('error', () => done(false));
-    setTimeout(() => done(false), 1000).unref();
+    c.once('error', (e) => done(!(e && (e.code === 'ECONNREFUSED' || e.code === 'ENOENT'))));
   });
 }
 
