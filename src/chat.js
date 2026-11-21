@@ -20,11 +20,22 @@ const HUB_AGENTS = Object.freeze([
   'iris',
   'dionysus',
 ]);
+// Gateway codes the page may see as they are; any other gateway failure shows as 'unavailable'.
+const PASS_CODES = Object.freeze([
+  'busy',
+  'disabled',
+  'not_enabled',
+  'not_configured',
+  'profile_mismatch',
+  'too_large',
+]);
 // Gateway answers that mean nothing was started: the send is refused, so it leaves no rows behind.
 const REFUSAL_CODES = new Set([
   'busy',
   'disabled',
   'not_enabled',
+  'not_configured',
+  'profile_mismatch',
   'too_large',
   'unavailable',
   'spawn',
@@ -276,9 +287,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       // The gateway refused the run (busy, switched off, not reachable): nothing happened, so the send is taken
       // back completely. The browser shows a notice and puts the text back in the composer.
       if (r.refused) {
-        const code = ['busy', 'disabled', 'not_enabled', 'too_large'].includes(gwError)
-          ? gwError
-          : 'unavailable';
+        const code = PASS_CODES.includes(gwError) ? gwError : 'unavailable';
         let undone = true;
         for (const id of [asstId, userId]) {
           try {
@@ -299,9 +308,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       let errorCode = null;
       if (gwError) {
         statusName = 'error';
-        errorCode = ['busy', 'disabled', 'not_enabled', 'too_large'].includes(gwError)
-          ? gwError
-          : 'unavailable';
+        errorCode = PASS_CODES.includes(gwError) ? gwError : 'unavailable';
       } else if (exit.switchedOff) [statusName, errorCode] = ['error', 'switched_off'];
       else if (exit.cancelled) statusName = 'cancelled';
       else if (exit.timedOut) [statusName, errorCode] = ['error', 'timeout'];

@@ -11,6 +11,8 @@
     switched_off: 'Web chat was switched off during this reply, so it was stopped.',
     busy: 'Another reply is still running. Wait for it to finish or press Stop.',
     not_enabled: 'Chat is not enabled for this agent yet.',
+    not_configured: 'Chat is not set up on the host yet (the tool deny list is missing).',
+    profile_mismatch: "This agent's profile no longer matches its agent file, so it was not started.",
     unavailable: 'The chat service is not reachable.',
     interrupted: 'The app restarted before this reply finished.',
     // the row of a reply that finished but could not be written normally: its text is kept, the run did not fail
@@ -21,6 +23,8 @@
     busy: ERROR_TEXT.busy,
     disabled: ERROR_TEXT.disabled,
     not_enabled: ERROR_TEXT.not_enabled,
+    not_configured: ERROR_TEXT.not_configured,
+    profile_mismatch: ERROR_TEXT.profile_mismatch,
     too_large: 'That message is too long.',
     unavailable: 'The chat service is not reachable. Try again in a moment.',
   };
