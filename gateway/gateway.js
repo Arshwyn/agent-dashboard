@@ -491,7 +491,14 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
         outBytes: 0,
       });
       sock.end();
-      audit({ event: 'run', agent: run.agent, run_id: run.runId, cancelled: true, not_started: true });
+      audit({
+        event: 'run',
+        agent: run.agent,
+        profile: PROFILES[run.agent].name,
+        run_id: run.runId,
+        cancelled: true,
+        not_started: true,
+      });
       return;
     }
 
@@ -604,6 +611,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       audit({
         event: 'run',
         agent: run.agent,
+        profile: PROFILES[run.agent].name,
         conversation_id: run.conversationId,
         run_id: run.runId,
         resume: run.resume,
