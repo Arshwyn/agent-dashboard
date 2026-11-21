@@ -456,7 +456,7 @@ test('a reply whose write fails twice is never left streaming: the row ends as a
     const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' });
     assert.equal(sse(r.text).pop()[1].unsaved, true);
     const m = st.listMessages(c.id)[1];
-    assert.deepEqual([m.status, m.error_code, m.text], ['error', 'failed', 'fine']);
+    assert.deepEqual([m.status, m.error_code, m.text], ['error', 'unsaved', 'fine']);
   } finally {
     await s.stop();
   }
@@ -952,6 +952,21 @@ test('refusals before any row is written: 409 busy, 429, 503, 413 and 404 store 
     assert.equal((await api(s, 'GET', `/api/chats/${c.id}`)).json.messages.length, before);
     release();
     await first;
+  } finally {
+    await s.stop();
+  }
+});
+
+test('a failed run whose row cannot be written is marked unsaved on the error event too', async () => {
+  const st = createMemoryStore();
+  st.updateMessage = () => {
+    throw new Error('disk');
+  };
+  const s = await app(fakeGateway({ run: async () => ({ type: 'exit', code: 1 }) }), {}, st);
+  try {
+    const c = await newChat(s);
+    const last = sse((await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'hi' })).text).pop();
+    assert.deepEqual([last[0], last[1].code, last[1].unsaved], ['error', 'failed', true]);
   } finally {
     await s.stop();
   }

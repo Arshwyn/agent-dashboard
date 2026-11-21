@@ -108,3 +108,12 @@ test('a stored reply that is still running reads as in progress, not as an ellip
   assert.equal(rowText({ text: '', status: 'error' }), '');
   assert.equal(rowText({ text: 'hi', status: 'done' }), 'hi');
 });
+
+test('a failed run whose row could not be saved says so, and the stored fallback code reads as not saved', () => {
+  const s = create();
+  s.apply('delta', { text: 'kept text' });
+  const e = s.apply('error', { code: 'failed', unsaved: true });
+  assert.deepEqual(e.notes, ['This reply could not be saved to the history.']);
+  assert.equal(s.keepLog(), true);
+  assert.equal(errorText('unsaved'), 'This reply could not be saved to the history.');
+});

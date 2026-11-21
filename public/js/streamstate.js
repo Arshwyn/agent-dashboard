@@ -13,6 +13,8 @@
     not_enabled: 'Chat is not enabled for this agent yet.',
     unavailable: 'The chat service is not reachable.',
     interrupted: 'The app restarted before this reply finished.',
+    // the row of a reply that finished but could not be written normally: its text is kept, the run did not fail
+    unsaved: 'This reply could not be saved to the history.',
   };
   // A send the gateway refused before anything started: the code names why, in words for the sender.
   var REFUSED_TEXT = {
@@ -91,7 +93,7 @@
           out.liveText = data.text || s.text;
           if (data.cancelled) out.notes.push('Stopped.');
           if (data.unsaved) {
-            out.notes.push('This reply could not be saved to the history.');
+            out.notes.push(ERROR_TEXT.unsaved);
             s.keepLog = true;
           }
           out.removeTool = true;
@@ -101,6 +103,10 @@
           out.removeTool = true;
           out.errorCode = data.code;
           out.stage = 'error';
+          if (data.unsaved) {
+            out.notes.push(ERROR_TEXT.unsaved);
+            s.keepLog = true;
+          }
           if (data.refused) {
             // nothing started and nothing was stored: the page drops the empty bubble and shows this as a notice
             out.refused = true;
