@@ -7,7 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { createMemoryStore } = require('../src/store');
 const { GatewayError, createGatewayClient } = require('../src/gatewayClient');
-const { loadGatewayConfig, createGateway } = require('../gateway/gateway');
+const { loadGatewayConfig, createGateway, PROFILES } = require('../gateway/gateway');
+const { HUB_AGENTS } = require('../src/chat');
 const { makeToken, startApp, CSRF } = require('./helpers');
 
 const H = () => ({ 'Cf-Access-Jwt-Assertion': makeToken(), ...CSRF });
@@ -24,7 +25,7 @@ function fakeGateway(over = {}) {
     state: { enabled: true, busy: false },
     release: null,
     async status() {
-      return { type: 'status', enabled: g.state.enabled, busy: g.state.busy, agents: ['arshwyn'] };
+      return { type: 'status', enabled: g.state.enabled, busy: g.state.busy, agents: [...HUB_AGENTS] };
     },
     async cancel(id) {
       g.cancels.push(id);
@@ -84,14 +85,16 @@ async function newChat(s) {
   return (await api(s, 'POST', '/api/chats', { agent: 'arshwyn' })).json.conversation;
 }
 
-test('conversations: create, list, read, rename, delete; only the pilot is accepted', async () => {
+test('conversations: create, list, read, rename, delete; the eight hub agents are accepted, Apollo and others are not', async () => {
   const s = await app(fakeGateway());
   try {
     const c = await newChat(s);
     assert.equal(c.agent, 'arshwyn');
     assert.equal(c.title, 'New chat');
     assert.equal((await api(s, 'POST', '/api/chats', { agent: 'apollo' })).status, 409);
-    assert.equal((await api(s, 'POST', '/api/chats', { agent: 'themis' })).status, 409);
+    assert.equal((await api(s, 'POST', '/api/chats', { agent: 'mercury' })).status, 409);
+    assert.equal((await api(s, 'POST', '/api/chats', { agent: '__proto__' })).status, 409);
+    assert.equal((await api(s, 'POST', '/api/chats', { agent: 'themis' })).status, 201);
     assert.equal((await api(s, 'POST', '/api/chats', { agent: 'arshwyn', extra: 1 })).status, 400);
     assert.equal((await api(s, 'POST', '/api/chats', null)).status, 400);
     const list = await api(s, 'GET', '/api/chats?agent=arshwyn');
@@ -108,6 +111,78 @@ test('conversations: create, list, read, rename, delete; only the pilot is accep
     assert.equal((await api(s, 'GET', `/api/chats/${c.id}`)).status, 404);
     assert.equal((await api(s, 'GET', '/api/chats/not-a-uuid')).status, 404);
     assert.equal((await api(s, 'DELETE', `/api/chats/${c.id}`)).status, 404);
+  } finally {
+    await s.stop();
+  }
+});
+
+test('the app allowlist, the gateway profile table and the roster hub entries are the same set', () => {
+  const roster = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', 'public', 'roster.json'), 'utf8'),
+  ).agents;
+  const hub = roster.filter((a) => a.chat === 'hub').map((a) => a.id);
+  const gateway = Object.keys(PROFILES).filter((k) => PROFILES[k].enabled);
+  assert.deepEqual([...HUB_AGENTS].sort(), [...hub].sort());
+  assert.deepEqual([...HUB_AGENTS].sort(), [...gateway].sort());
+  assert.ok(!HUB_AGENTS.includes('apollo') && !HUB_AGENTS.includes('mercury'));
+  assert.ok(Object.isFrozen(HUB_AGENTS));
+});
+
+test('conversations are per agent: lists, sends, renames and deletes never cross agents', async () => {
+  const gw = fakeGateway();
+  const s = await app(gw);
+  try {
+    const mk = async (agent) => (await api(s, 'POST', '/api/chats', { agent })).json.conversation;
+    const t = await mk('themis');
+    const j = await mk('janus');
+    const j2 = await mk('janus');
+    assert.deepEqual(
+      (await api(s, 'GET', '/api/chats?agent=themis')).json.conversations.map((c) => c.id),
+      [t.id],
+    );
+    assert.equal((await api(s, 'GET', '/api/chats?agent=janus')).json.conversations.length, 2);
+    assert.equal((await api(s, 'GET', '/api/chats?agent=atlas')).json.conversations.length, 0);
+    const r = await api(s, 'POST', `/api/chats/${t.id}/messages`, { text: 'for themis' });
+    assert.equal(r.status, 200);
+    assert.equal(gw.calls.at(-1).agent, 'themis');
+    assert.equal(gw.calls.at(-1).conversation_id, t.id);
+    // the agent comes from the stored row: a body that names one is refused, and the row cannot be re-assigned
+    assert.equal(
+      (await api(s, 'POST', `/api/chats/${j.id}/messages`, { text: 'x', agent: 'themis' })).status,
+      400,
+    );
+    assert.equal((await api(s, 'PATCH', `/api/chats/${j.id}`, { title: 'x', agent: 'themis' })).status, 400);
+    assert.equal((await api(s, 'PATCH', `/api/chats/${j.id}`, { title: 'Renamed' })).status, 200);
+    assert.equal((await api(s, 'DELETE', `/api/chats/${j2.id}`)).status, 200);
+    assert.equal((await api(s, 'GET', '/api/chats?agent=janus')).json.conversations.length, 1);
+    assert.equal((await api(s, 'GET', '/api/chats?agent=themis')).json.conversations.length, 1);
+    assert.equal((await api(s, 'GET', `/api/chats/${t.id}`)).json.conversation.agent, 'themis');
+  } finally {
+    await s.stop();
+  }
+});
+
+test('Apollo is unreachable: no chat route, body, list or status offers or forwards it', async () => {
+  const gw = fakeGateway();
+  const s = await app(gw);
+  try {
+    const row = s.store.createConversation('apollo', 'planted');
+    assert.equal((await api(s, 'POST', '/api/chats', { agent: 'apollo' })).status, 409);
+    assert.equal((await api(s, 'GET', '/api/chats?agent=apollo')).json.conversations.length, 0);
+    assert.equal((await api(s, 'POST', `/api/chats/${row.id}/messages`, { text: 'hi' })).status, 409);
+    const good = await newChat(s);
+    assert.equal(
+      (await api(s, 'POST', `/api/chats/${good.id}/messages`, { text: 'hi', agent: 'apollo' })).status,
+      400,
+    );
+    assert.equal(
+      (await api(s, 'PATCH', `/api/chats/${good.id}`, { title: 'x', agent: 'apollo' })).status,
+      400,
+    );
+    assert.ok(!(await api(s, 'GET', '/api/chat/status')).json.agents.includes('apollo'));
+    gw.status = async () => ({ type: 'status', enabled: true, busy: false, agents: ['apollo', 'themis'] });
+    assert.deepEqual((await api(s, 'GET', '/api/chat/status')).json.agents, ['themis']);
+    assert.ok(gw.calls.every((c) => c.agent !== 'apollo'));
   } finally {
     await s.stop();
   }
@@ -283,7 +358,7 @@ test('a conversation of an agent that is not enabled cannot send', async () => {
   const gw = fakeGateway();
   const s = await app(gw);
   try {
-    const other = s.store.createConversation('themis', 'x');
+    const other = s.store.createConversation('apollo', 'x');
     assert.equal((await api(s, 'POST', `/api/chats/${other.id}/messages`, { text: 'hi' })).status, 409);
     assert.equal(gw.calls.length, 0);
   } finally {
@@ -683,7 +758,7 @@ test('status reports the gateway kill switch, busy, offline and not-enabled agen
   const s = await app(gw);
   try {
     let st = (await api(s, 'GET', '/api/chat/status')).json;
-    assert.deepEqual([st.enabled, st.available, st.busy, st.agents], [true, true, false, ['arshwyn']]);
+    assert.deepEqual([st.enabled, st.available, st.busy, st.agents], [true, true, false, [...HUB_AGENTS]]);
     gw.state.enabled = false;
     gw.state.busy = true;
     st = (await api(s, 'GET', '/api/chat/status')).json;
