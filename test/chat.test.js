@@ -162,6 +162,47 @@ test('conversations are per agent: lists, sends, renames and deletes never cross
   }
 });
 
+test('one run at a time across agents: another agent is busy before the gateway is called, and Stop is per run', async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const gw = fakeGateway({
+    run: async (req, onLine) => {
+      onLine(init);
+      await gate;
+      onLine(result(''));
+      return { type: 'exit', code: 0, cancelled: false, timedOut: false };
+    },
+  });
+  const s = await app(gw);
+  try {
+    const a = (await api(s, 'POST', '/api/chats', { agent: 'themis' })).json.conversation;
+    const b = (await api(s, 'POST', '/api/chats', { agent: 'atlas' })).json.conversation;
+    const first = api(s, 'POST', `/api/chats/${a.id}/messages`, { text: 'one' });
+    for (let i = 0; i < 50 && gw.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(gw.calls.length, 1);
+    const st = (await api(s, 'GET', '/api/chat/status')).json;
+    assert.equal(st.busy, true);
+    assert.equal(st.running_agent, 'themis');
+    const second = await api(s, 'POST', `/api/chats/${b.id}/messages`, { text: 'two' });
+    assert.equal(second.status, 409);
+    assert.equal(gw.calls.length, 1, 'the gateway was not asked');
+    assert.equal(
+      (await api(s, 'POST', `/api/chats/${b.id}/stop`)).status,
+      404,
+      'Stop only reaches the run holder',
+    );
+    assert.equal((await api(s, 'GET', `/api/chats/${b.id}`)).json.messages.length, 0, 'no orphan rows');
+    release();
+    assert.equal((await first).status, 200);
+    assert.equal((await api(s, 'GET', '/api/chat/status')).json.running_agent, null);
+    assert.equal((await api(s, 'POST', `/api/chats/${b.id}/messages`, { text: 'three' })).status, 200);
+    assert.equal(gw.calls.at(-1).agent, 'atlas');
+  } finally {
+    release();
+    await s.stop();
+  }
+});
+
 test('Apollo is unreachable: no chat route, body, list or status offers or forwards it', async () => {
   const gw = fakeGateway();
   const s = await app(gw);
