@@ -603,6 +603,7 @@ test('the audit log records metadata only: no prompt, reply or tool input', asyn
         'conversation_id',
         'ms',
         'out_bytes',
+        'profile',
         'prompt_chars',
         'resume',
         'run_id',
@@ -616,6 +617,9 @@ test('the audit log records metadata only: no prompt, reply or tool input', asyn
         'event',
       ].sort(),
     );
+    assert.equal(runs[0].profile, 'main-session');
+    await g.client.run(req({ agent: 'atlas', prompt: 'tool PROMPT-SECRET-TEXT', run_id: 'run_eeeeeeee55' }));
+    assert.equal(g.audit().filter((r) => r.event === 'run')[2].profile, 'agent-atlas');
     assert.equal(runs[0].tokens_in, 11);
     assert.equal(runs[0].tokens_out, 7);
     assert.equal(runs[1].code, 1);
