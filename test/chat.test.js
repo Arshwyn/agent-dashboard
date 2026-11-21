@@ -194,32 +194,22 @@ test('tool use becomes a generic label and interim text; inputs and outputs neve
 
 test('failures become generic error codes and keep the partial text', async () => {
   const cases = [
-    [async () => ({ type: 'exit', code: 1 }), 'failed'],
-    [async () => ({ type: 'exit', code: 0, timedOut: true }), 'timeout'],
-    [async () => ({ type: 'exit', code: 0, tooBig: true }), 'too_large'],
-    [
-      async () => {
-        throw new GatewayError('disabled');
-      },
-      'disabled',
-    ],
-    [
-      async () => {
-        throw new GatewayError('busy');
-      },
-      'busy',
-    ],
+    [async () => ({ type: 'exit', code: 1 }), 'failed', false],
+    [async () => ({ type: 'exit', code: 0, timedOut: true }), 'timeout', false],
+    [async () => ({ type: 'exit', code: 0, tooBig: true }), 'too_large', false],
     [
       async () => {
         throw new GatewayError('closed');
       },
       'unavailable',
+      false,
     ],
     [
       async () => {
         throw new Error('SECRET internals');
       },
       'unavailable',
+      false,
     ],
   ];
   for (const [run, code] of cases) {
@@ -229,6 +219,7 @@ test('failures become generic error codes and keep the partial text', async () =
       const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'x' });
       const err = sse(r.text).find((e) => e[0] === 'error');
       assert.equal(err[1].code, code);
+      assert.equal(err[1].refused, undefined, 'a run that may have started is not a refusal');
       assert.ok(!r.text.includes('SECRET'));
       assert.equal((await api(s, 'GET', `/api/chats/${c.id}`)).json.messages[1].status, 'error');
     } finally {
@@ -909,5 +900,59 @@ test('through the real gateway: a Stop that reaches the gateway before the run d
     await gw.close();
     process.env.HOME = prev;
     for (const d of [dataDir, ws, home]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('a send the gateway refuses leaves no stored rows and keeps the title, and is marked refused', async () => {
+  for (const code of ['busy', 'disabled', 'not_enabled', 'too_large', 'unavailable']) {
+    const s = await app(
+      fakeGateway({
+        async run() {
+          throw new GatewayError(code);
+        },
+      }),
+    );
+    try {
+      const c = await newChat(s);
+      const r = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'first words' });
+      const err = sse(r.text).find((e) => e[0] === 'error');
+      assert.deepEqual([err[1].code, err[1].refused], [code, true], code);
+      const after = (await api(s, 'GET', `/api/chats/${c.id}`)).json;
+      assert.deepEqual(after.messages, [], `no user row or placeholder is left for ${code}`);
+      assert.equal(after.conversation.title, 'New chat', 'the title is not taken from a refused message');
+      assert.equal(s.app.chat.running.size, 0);
+      // and the composer can send again
+      assert.equal((await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'again' })).status, 200);
+    } finally {
+      await s.stop();
+    }
+  }
+});
+
+test('refusals before any row is written: 409 busy, 429, 503, 413 and 404 store nothing', async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const gw = fakeGateway({
+    async run(_r, onLine) {
+      onLine(init);
+      await gate;
+      return { type: 'exit', code: 0, cancelled: false, timedOut: false };
+    },
+  });
+  const s = await app(gw, { CHAT_MAX_PER_MIN: '2' });
+  try {
+    const c = await newChat(s);
+    const first = api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'one' });
+    for (let i = 0; i < 100 && gw.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    const before = (await api(s, 'GET', `/api/chats/${c.id}`)).json.messages.length;
+    const busy = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'two' });
+    assert.deepEqual([busy.status, busy.json.error], [409, 'busy']);
+    const big = await api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'x'.repeat(8001) });
+    assert.equal(big.status, 413);
+    assert.equal((await api(s, 'GET', `/api/chats/${c.id}`)).json.messages.length, before);
+    release();
+    await first;
+  } finally {
+    await s.stop();
   }
 });

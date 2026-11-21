@@ -40,6 +40,23 @@ function contract(name, make, skip = false) {
     }
   });
 
+  test(`${name}: a message can be deleted by id`, () => {
+    const { store, done } = make();
+    try {
+      const c = store.createConversation('arshwyn', 'D', 1);
+      const a = store.addMessage(c.id, 'user', 'one', 'done', 2);
+      const b = store.addMessage(c.id, 'assistant', '', 'streaming', 3);
+      assert.equal(store.deleteMessage(b), true);
+      assert.equal(store.deleteMessage(b), false);
+      assert.deepEqual(
+        store.listMessages(c.id).map((m) => m.id),
+        [a],
+      );
+    } finally {
+      done();
+    }
+  });
+
   test(`${name}: list is per agent and newest first; rename cleans the title; delete cascades`, () => {
     const { store, done } = make();
     try {
