@@ -7,6 +7,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { HUB_AGENTS } = require('../src/chat');
 
 const sqliteOk = Number(process.versions.node.split('.')[0]) >= 22;
 
@@ -64,7 +65,7 @@ test(
     try {
       const st = await (await fetch(app.base + '/api/chat/status')).json();
       assert.equal(st.available, false, 'no gateway behind the socket yet');
-      assert.deepEqual(st.agents, ['arshwyn']);
+      assert.deepEqual(st.agents, [...HUB_AGENTS]);
       const c = await fetch(app.base + '/api/chats', {
         method: 'POST',
         headers: {
