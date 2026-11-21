@@ -11,6 +11,8 @@ const {
   PROFILES,
   loadGatewayConfig,
   parseDenyTools,
+  parseFrontmatter,
+  checkAgentFile,
   validateRun,
   buildArgv,
   assertSafeArgv,
@@ -31,6 +33,7 @@ function tmp(prefix) {
 function mkEnv(over = {}) {
   const dataDir = tmp('gw-data-');
   const workspaceDir = tmp('gw-ws-');
+  writeAgentFiles(workspaceDir);
   return {
     GATEWAY_DATA_DIR: dataDir,
     WORKSPACE_DIR: workspaceDir,
@@ -38,6 +41,19 @@ function mkEnv(over = {}) {
     HUB_DENY_TOOLS: DENY.join(','),
     ...over,
   };
+}
+
+/** Writes placeholder agent files that match the profile table (the real ones live in the host workspace). */
+function writeAgentFiles(workspaceDir, over = {}) {
+  const dir = path.join(workspaceDir, '.claude', 'agents');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const id of OTHER_AGENT_IDS) {
+    const tools = PROFILES[id].expectedTools;
+    const lines = ['---', `name: ${id}`, 'description: A placeholder agent for tests.', 'model: sonnet'];
+    if (tools) lines.push(`tools: ${tools.join(', ')}`);
+    lines.push('---', '', 'Placeholder body.', '');
+    fs.writeFileSync(path.join(dir, `${id}.md`), over[id] ?? lines.join('\n'));
+  }
 }
 
 function cleanup(env) {
@@ -732,6 +748,75 @@ test('with HUB_DENY_TOOLS every hub agent starts with the deny list and Agent(ap
       for (let j = at + 1; !c.argv[j].startsWith('-'); j++) got.push(c.argv[j]);
       assert.deepEqual(got, ['Agent(apollo)', ...DENY], HUB_AGENT_IDS[i]);
     });
+  } finally {
+    await g.stop();
+  }
+});
+
+test('the agent file must match its profile: a widened tools line, extra keys, a missing file all stop the run', () => {
+  const ws = tmp('gw-ws-');
+  try {
+    writeAgentFiles(ws);
+    const cfg = { workspaceDir: ws };
+    for (const id of OTHER_AGENT_IDS) assert.equal(checkAgentFile(cfg, PROFILES[id]), true, id);
+    assert.equal(checkAgentFile(cfg, PROFILES.arshwyn), true, 'the main session has no agent file');
+    const file = (id) => path.join(ws, '.claude', 'agents', `${id}.md`);
+    const edit = (id, f) => fs.writeFileSync(file(id), f(fs.readFileSync(file(id), 'utf8')));
+    // a body-only edit and other frontmatter keys do not matter
+    edit('janus', (t) => t.replace('Placeholder body.', 'A very different body.\ntools: not frontmatter'));
+    edit('janus', (t) => t.replace('model: sonnet', 'model: opus\nskills:\n  - something'));
+    assert.equal(checkAgentFile(cfg, PROFILES.janus), true);
+    // widened, narrowed, reordered (same set is fine), removed
+    edit('janus', (t) => t.replace('tools: Bash,', 'tools: Edit, Bash,'));
+    assert.equal(checkAgentFile(cfg, PROFILES.janus), false, 'extra tool');
+    writeAgentFiles(ws);
+    edit('atlas', (t) => t.replace(', Write, WebFetch', ', WebFetch'));
+    assert.equal(checkAgentFile(cfg, PROFILES.atlas), false, 'fewer tools');
+    writeAgentFiles(ws);
+    edit('atlas', (t) => t.replace(/tools: .*/, 'tools: WebFetch, Write, Edit, Glob, Grep, Read, Bash'));
+    assert.equal(checkAgentFile(cfg, PROFILES.atlas), true, 'same set in another order');
+    edit('atlas', (t) => t.replace(/tools: .*\n/, ''));
+    assert.equal(checkAgentFile(cfg, PROFILES.atlas), false, 'tools line removed');
+    // an agent that inherits everything must not gain a tools line
+    edit('iris', (t) => t.replace('model: sonnet', 'model: sonnet\ntools: Read'));
+    assert.equal(checkAgentFile(cfg, PROFILES.iris), false, 'tools line added');
+    writeAgentFiles(ws);
+    for (const extra of [
+      'permissionMode: bypassPermissions',
+      'disallowedTools: Bash',
+      'mcpServers: x',
+      'hooks: x',
+    ]) {
+      edit('plutus', (t) => t.replace('model: sonnet', `model: sonnet\n${extra}`));
+      assert.equal(checkAgentFile(cfg, PROFILES.plutus), false, extra);
+      writeAgentFiles(ws);
+    }
+    fs.writeFileSync(file('dionysus'), 'no frontmatter at all');
+    assert.equal(checkAgentFile(cfg, PROFILES.dionysus), false, 'no frontmatter');
+    fs.writeFileSync(file('dionysus'), '---\nname: dionysus\n');
+    assert.equal(checkAgentFile(cfg, PROFILES.dionysus), false, 'unclosed frontmatter');
+    fs.rmSync(file('hephaestus'));
+    assert.equal(checkAgentFile(cfg, PROFILES.hephaestus), false, 'missing file');
+    assert.equal(checkAgentFile({ workspaceDir: path.join(ws, 'nope') }, PROFILES.janus), false);
+    assert.equal(parseFrontmatter('---\na: 1\na: 2\n---\n').a, '1', 'the first key wins');
+  } finally {
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test('a mismatched agent file answers profile_mismatch with no spawn and an audit line; the pilot is unaffected', async () => {
+  const g = await startGateway();
+  try {
+    writeAgentFiles(g.cfg.workspaceDir, {
+      janus: '---\nname: janus\ntools: Bash, Read, Grep, Glob, WebFetch, Write\n---\nbody',
+    });
+    await assert.rejects(g.client.run(req({ agent: 'janus' })), (e) => e.code === 'profile_mismatch');
+    assert.equal(g.argvLog().length, 0);
+    assert.ok(
+      g.audit().some((l) => l.event === 'rejected' && l.agent === 'janus' && l.code === 'profile_mismatch'),
+    );
+    const exit = await g.client.run(req({ run_id: 'run_pilot_0001' }), {});
+    assert.equal(exit.code, 0);
   } finally {
     await g.stop();
   }

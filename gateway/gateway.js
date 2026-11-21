@@ -13,7 +13,7 @@
 //   status: {"op":"status"}  -> {"type":"status","enabled":true,"busy":false,"configured":true,"agents":["arshwyn",...]}
 // Responses: {"type":"line","data":"<raw stream-json line>"} ..., then
 //   {"type":"exit","code":0,"signal":null,"timedOut":false,"cancelled":false,"switchedOff":false,"outBytes":123}
-//   or {"type":"error","code":"invalid|not_enabled|not_proxied|not_configured|disabled|busy|too_large|spawn"} (generic codes only).
+//   or {"type":"error","code":"invalid|not_enabled|not_proxied|not_configured|profile_mismatch|disabled|busy|too_large|spawn"} (generic codes only).
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
@@ -112,6 +112,57 @@ function parseDenyTools(value) {
   for (const d of list)
     if (!DENY_PATTERN.test(d)) throw new Error('HUB_DENY_TOOLS has an entry that is not allowed');
   return [...new Set(list)];
+}
+
+// Frontmatter keys that change what an agent can do. `tools` must equal the profile's expected list (or be absent when
+// the profile expects "inherits everything"); the others must not appear at all, so a widened or re-moded agent file
+// stops the run until the profile table is changed on purpose. Other keys and the body never matter.
+const AGENT_FORBIDDEN_KEYS = Object.freeze([
+  'disallowedTools',
+  'permissionMode',
+  'mcpServers',
+  'hooks',
+  'tools',
+]);
+
+/** The top-level `key: value` lines of a `---` frontmatter block (one line each; list items are skipped). */
+function parseFrontmatter(text) {
+  const lines = String(text).split(/\r?\n/);
+  if (lines[0] !== '---') return null;
+  const out = {};
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === '---') return out;
+    const m = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$/.exec(lines[i]);
+    if (m && !Object.hasOwn(out, m[1])) out[m[1]] = m[2].trim();
+  }
+  return null; // never closed
+}
+
+/** Fail-closed comparison of an agent file with its profile. Returns true when the file matches the table. */
+function checkAgentFile(cfg, profile) {
+  if (profile.kind !== 'agent') return true;
+  let fm;
+  try {
+    const file = path.join(cfg.workspaceDir, '.claude', 'agents', `${profile.agent}.md`);
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(16 * 1024);
+      fm = parseFrontmatter(buf.toString('utf8', 0, fs.readSync(fd, buf, 0, buf.length, 0)));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+  if (!fm) return false;
+  for (const k of AGENT_FORBIDDEN_KEYS) {
+    if (k === 'tools') continue;
+    if (Object.hasOwn(fm, k)) return false;
+  }
+  if (profile.expectedTools === null) return !Object.hasOwn(fm, 'tools');
+  if (!Object.hasOwn(fm, 'tools') || fm.tools === '') return false;
+  const got = fm.tools.split(',').map((t) => t.trim());
+  return got.length === profile.expectedTools.length && profile.expectedTools.every((t) => got.includes(t));
 }
 
 function loadGatewayConfig(env = process.env) {
@@ -426,6 +477,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     if (cfg.denyTools.length === 0) return reject(sock, 'not_configured', run.agent);
     if (active.size >= 1 || busyAgents.has(run.agent)) return reject(sock, 'busy', run.agent);
     if (active.has(run.runId)) return reject(sock, 'invalid', run.agent);
+    if (!checkAgentFile(cfg, PROFILES[run.agent])) return reject(sock, 'profile_mismatch', run.agent);
     if (takePrecancel(run.runId)) {
       // cancelled before it started: nothing is spawned
       send(sock, {
@@ -681,6 +733,8 @@ module.exports = {
   PROFILES,
   loadGatewayConfig,
   parseDenyTools,
+  parseFrontmatter,
+  checkAgentFile,
   validateRun,
   buildArgv,
   assertSafeArgv,
