@@ -6,11 +6,11 @@ This page says plainly what web chat can do, what it cannot, and what protects i
 
 ## The plain statement
 
-**The pilot agent (Arshwyn, the orchestrator) runs through the hub with the orchestrator's own tool access.** A web chat run is the orchestrator's main session: the same workspace, the same instructions, the same settings, the same permission rules and hooks, and every tool and connector that session has. Whatever those rules let it do from a terminal, they let it do from the web.
+**The pilot agent (Arshwyn, the orchestrator) runs through the hub with the orchestrator's own tool access, and seven other agents run with the access their agent files give them (see "Per-agent profiles").** A pilot web chat run is the orchestrator's main session: the same workspace, the same instructions, the same settings, the same permission rules and hooks, and every tool and connector that session has. Whatever those rules let it do from a terminal, they let it do from the web.
 
 So **a compromised web session equals control of whatever the orchestrator can reach**, including the infrastructure it can administer. The hub adds no extra sandbox around the agent. What the hub adds is a narrow, authenticated, rate-limited door and the mitigations below. Treat access to the hub as access to the orchestrator.
 
-This is a deliberate choice for the pilot (the owner wants the same agent from the browser). It is why the pilot is the only enabled agent, why the hub adds no permission-bypass flag, and why approvals stay where they are (see below).
+This is a deliberate choice (the owner wants the same agents from the browser). It is why the hub adds no permission-bypass flag, and why approvals stay where they are (see below).
 
 ### Same permission mode as the interactive session
 
@@ -49,13 +49,13 @@ A web run uses **permission mode `auto`**, the same classifier-based mode the in
 - **No permission bypass.** No `--dangerously-skip-permissions`, no `bypassPermissions` mode, no `--allowedTools`, `--add-dir` or `--mcp-config`; the gateway refuses such a command line, and any flag that is not on its fixed list. The run uses permission mode `auto` (the interactive session's mode, see above) with `--permission-prompts none`: nobody is at the other end to approve a prompt, so anything the classifier and the rules do not settle is denied. **Approvals for trades, sends and deploys stay with the agents' own rules**; the hub does not grant or widen them.
 - **One run at a time on the host.** A second run is refused (`busy`); the gateway never queues.
 - **Bounded runs.** Per-run timeout (default 10 minutes), a maximum output size (default 8 MiB), a maximum number of turns (40) and a message cap (8,000 characters in the app, 16,000 at the gateway). A run also ends, with its whole process group, when the hub disconnects from the gateway or the kill switch is set. After every run (however it ended) the process group is swept so no background child outlives it, and a process that escaped the group but holds the output pipe cannot keep the slot: the run is finished about two seconds (`EXIT_GRACE_MS`) after the main process exits.
-- **Only the pilot.** Other agents are listed in the profile table as disabled and answer `not_enabled`. **Apollo is not in the table at all and is never proxied**: it keeps its own chat app, its own sign-in and its own health-data isolation, and the hub holds no Apollo chat data.
+- **Eight agents, no more.** The pilot and the seven agents in the profile table; an id that is not in the table is refused. **Apollo is not in the table at all and is never proxied**: it keeps its own chat app, its own sign-in and its own health-data isolation, and the hub holds no Apollo chat data.
 - **Only a small, safe event set reaches the browser:** text, a "thinking" signal, a generic tool label such as "reading", an error code and "done". Tool inputs, tool results, thinking text, session ids and file paths are dropped on the server.
 - **Audit without content.** The gateway keeps a JSON-lines audit log (see below) with metadata only.
 
 ### The profile (machine-checked)
 
-This is the exact flag list the gateway passes for the pilot, in order. A test compares it to the code, so the two cannot drift apart. The last argument is `--session-id <uuid>` for a conversation's first run and `--resume <uuid>` afterwards; the uuid is the hub conversation id.
+This is the exact flag list the gateway passes for the pilot, in order (the other agents are in "Per-agent profiles"). A test compares it to the code, so the two cannot drift apart. The last argument is `--session-id <uuid>` for a conversation's first run and `--resume <uuid>` afterwards; the uuid is the hub conversation id.
 
 <!-- profile:arshwyn:begin -->
 
@@ -71,11 +71,41 @@ This is the exact flag list the gateway passes for the pilot, in order. A test c
 --session-id|--resume <conversation uuid>
 <!-- profile:arshwyn:end -->
 
-## Per-agent profiles (machine-checked)
+The prompt is written to the process's standard input. The working directory is the orchestrator workspace. The environment is `PATH`, `HOME`, `LANG`, `HUB_CHAT_RUN=1` and `HUB_RUN_ID` only; the gateway's own environment (tokens, keys) is not passed on. A host hook can use `HUB_CHAT_RUN` to treat web runs more strictly than terminal runs.
 
-The seven other agents run as `claude --agent <id>`; the flag list is the pilot's plus `--agent`. A test compares each block to the code.
+Sources for the flags, all public Claude Code documentation at code.claude.com/docs/en: **cli-reference** (`-p`, `--output-format`, `--verbose`, `--include-partial-messages`, `--permission-mode` and its values, `--permission-prompts`, `--setting-sources`, `--max-turns` (documented, print mode only), `--session-id`, `--resume`); **headless** ("Run Claude Code programmatically": stream-json output, `--permission-mode auto` with `--permission-prompts none` for unattended runs, resuming a session by id, stopping a run with SIGINT or SIGTERM); **permission-modes** (the `auto` mode, its use with `-p`, how it treats subagents); **permissions** (deny rules and a blocking `PreToolUse` hook apply before allow rules); **sub-agents** (permission inheritance, `tools` allow-lists).
 
-### Profile of hephaestus
+## Per-agent profiles
+
+Seven agents run through the hub besides the pilot, each as `claude --agent <id>` with the access its agent file already gives it. **Nothing is added to what an agent can do; two things are taken away on the web (see "Health data" below).** Mercury is not in the table and Apollo is never proxied.
+
+| Agent      | Runs as                    | Tools (from its agent file)                                                                                      | Reaches                                                                                | Approvals that stay the agent's own                                           |
+| ---------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Arshwyn    | the workspace main session | every tool of the session                                                                                        | everything the orchestrator can reach, including the infrastructure it administers     | the workspace's rules and hooks                                               |
+| Hephaestus | `--agent hephaestus`       | no `tools` line: every tool of the session                                                                       | the project repos and their remotes, the shell, every connector except the denied ones | never merges, deploys or marks its own work verified                          |
+| Themis     | `--agent themis`           | Bash, Read, Grep, Glob and the test-browser tools (navigate, snapshot, screenshot, click, type, fill, and so on) | the repos it checks out, a local test browser; no file-edit tool                       | never merges, never fixes logic findings                                      |
+| Janus      | `--agent janus`            | Bash, Read, Grep, Glob, WebFetch                                                                                 | the repos and the remotes (it merges after a clean review); no file-edit tool          | merges only a commit the gate cleared, with no critical findings              |
+| Atlas      | `--agent atlas`            | Bash, Read, Grep, Glob, Edit, Write, WebFetch                                                                    | the servers and hypervisor hosts through the host's wrappers, the ops docs             | its own auto-remediation tiers; everything else is a question                 |
+| Plutus     | `--agent plutus`           | no `tools` line: every tool of the session                                                                       | the finance connectors and the shell                                                   | never trades or moves money without the owner                                 |
+| Iris       | `--agent iris`             | no `tools` line: every tool of the session                                                                       | mail, calendar and documents connectors                                                | never sends, shares or accepts without the owner's approval of the exact text |
+| Dionysus   | `--agent dionysus`         | no `tools` line: every tool of the session                                                                       | web research and the shell                                                             | never books or pays without the owner                                         |
+
+All run in permission mode `auto` with `--permission-prompts none`, the same as the pilot, and with the workspace's settings, rules and hooks (`--setting-sources user,project,local`). The web has no approval prompt: an agent that needs the owner's yes asks in the chat and the owner answers in text, as in a terminal. **Reading the table plainly: a stolen owner session now reaches Atlas (servers), Hephaestus (repos and the shell), Iris (mail, calendar, documents) and Plutus (finance connectors), not only the pilot.** That is the owner's decision (each agent keeps the access it has); the controls are the same as for the pilot.
+
+**How the profile is enforced.**
+
+- The gateway builds `--agent <id>` itself from a fixed table. The request names an agent id, the gateway looks it up with `Object.hasOwn`, and an id that is not in the table is refused (`apollo`, `mercury`, `__proto__`, anything else). The app has its own allowlist of the same eight ids and never forwards another one; a test keeps the app list, the gateway table and the roster's chat entries identical. A conversation belongs to one agent for its whole life: the agent comes from the stored conversation, never from the send request.
+- Claude Code applies the agent file's `tools` list and model to a session started with `--agent` (public sub-agents documentation, "Run the whole session as a subagent"). The gateway therefore passes no `--tools` or `--allowedTools`. `assertSafeArgv` throws unless `--agent` appears exactly once and equals the profile's own id (never `apollo`) for these seven, appears not at all for the pilot, and carries no flag outside the fixed list.
+- **Drift check.** At the start of every run the gateway reads the first lines of the agent file in the workspace and compares only the keys that change what the agent can do: the `tools` line must equal the table (or be absent for the four agents that inherit every tool), and `disallowedTools`, `permissionMode`, `mcpServers` and `hooks` must not appear. A missing or unreadable file, a widened list or one of those keys answers `profile_mismatch`: nothing is started and the audit log records the rejection. The text of the agent file never matters. Changing an agent's tools on purpose therefore means changing the table, this page and the test in one change.
+- The model comes from the agent file unless the operator sets `GATEWAY_MODEL`, which then overrides it for every run.
+
+**Health data.** Apollo never runs here and no other agent gets health data. The host's own isolation hook only fences runs of the Apollo agent, so an all-tools agent could otherwise call the health connectors or start Apollo through the Agent tool. Every web profile, the pilot included, therefore passes `--disallowedTools` with `Agent(apollo)` (built in, cannot be removed) and the connector patterns from `HUB_DENY_TOOLS` in the gateway's environment file (real connector names stay out of this repository). While that list is empty no profile starts (`not_configured`), and an entry of any other shape stops the gateway at start. **This narrows the pilot compared with a terminal session**, on the owner's decision. It is a deny rule, not a sandbox: the same caveats as for the rest of the permission rules apply.
+
+### Profile of the other agents (machine-checked)
+
+Each block is the exact flag list the gateway passes for that agent, in order, compared with the code by a test. The `--disallowedTools` value is the built-in denial plus `HUB_DENY_TOOLS`.
+
+#### hephaestus
 
 <!-- profile:hephaestus:begin -->
 
@@ -92,7 +122,7 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:hephaestus:end -->
 
-### Profile of themis
+#### themis
 
 <!-- profile:themis:begin -->
 
@@ -109,7 +139,7 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:themis:end -->
 
-### Profile of janus
+#### janus
 
 <!-- profile:janus:begin -->
 
@@ -126,7 +156,7 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:janus:end -->
 
-### Profile of atlas
+#### atlas
 
 <!-- profile:atlas:begin -->
 
@@ -143,7 +173,7 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:atlas:end -->
 
-### Profile of plutus
+#### plutus
 
 <!-- profile:plutus:begin -->
 
@@ -160,7 +190,7 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:plutus:end -->
 
-### Profile of iris
+#### iris
 
 <!-- profile:iris:begin -->
 
@@ -177,7 +207,7 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:iris:end -->
 
-### Profile of dionysus
+#### dionysus
 
 <!-- profile:dionysus:begin -->
 
@@ -194,24 +224,20 @@ The seven other agents run as `claude --agent <id>`; the flag list is the pilot'
 --session-id|--resume <conversation uuid>
 <!-- profile:dionysus:end -->
 
-The prompt is written to the process's standard input. The working directory is the orchestrator workspace. The environment is `PATH`, `HOME`, `LANG`, `HUB_CHAT_RUN=1` and `HUB_RUN_ID` only; the gateway's own environment (tokens, keys) is not passed on. A host hook can use `HUB_CHAT_RUN` to treat web runs more strictly than terminal runs.
-
-Sources for the flags, all public Claude Code documentation at code.claude.com/docs/en: **cli-reference** (`-p`, `--output-format`, `--verbose`, `--include-partial-messages`, `--permission-mode` and its values, `--permission-prompts`, `--setting-sources`, `--max-turns` (documented, print mode only), `--session-id`, `--resume`); **headless** ("Run Claude Code programmatically": stream-json output, `--permission-mode auto` with `--permission-prompts none` for unattended runs, resuming a session by id, stopping a run with SIGINT or SIGTERM); **permission-modes** (the `auto` mode, its use with `-p`, how it treats subagents); **permissions** (deny rules and a blocking `PreToolUse` hook apply before allow rules); **sub-agents** (permission inheritance, `tools` allow-lists).
-
 ## Threat model
 
-| Threat                                                                    | Mitigation                                                                                                                                                                                                                                                                                                                                                                 | Residual risk                                                                                             |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Someone reaches the hub without being the owner                           | Cloudflare Access in front; the app verifies the Access JWT itself (signature, issuer, audience, expiry, one email) and fails closed                                                                                                                                                                                                                                       | Anyone who controls the owner's Access identity controls the orchestrator                                 |
-| A malicious page makes the owner's browser send a request                 | CSRF checks: a custom header plus same-origin provenance on every state-changing request; no CORS headers; JSON only                                                                                                                                                                                                                                                       | A script running inside the hub origin could still act (see prompt injection)                             |
-| The browser tries to pick flags, tools, directory or agent                | Fixed profile table; strict validation; extra fields rejected                                                                                                                                                                                                                                                                                                              | None known                                                                                                |
-| Another agent is reached through the hub                                  | Only the pilot is enabled; Apollo is absent from the table                                                                                                                                                                                                                                                                                                                 | Later slices add agents one by one with their own profile                                                 |
-| Prompt injection through content the agent reads (web pages, mail, files) | Same as in a terminal: the workspace's permission rules and hooks decide what runs; nothing here is more permissive                                                                                                                                                                                                                                                        | **This is the main residual risk.** The agent can be talked into actions its rules allow                  |
-| A runaway or stuck run                                                    | Timeout, output cap, max turns, one run at a time, Stop button, kill switch                                                                                                                                                                                                                                                                                                | A run can still use its allowed tools until it is stopped                                                 |
-| Abuse by a compromised session                                            | Per-minute message limit, one run at a time, audit log, kill switch                                                                                                                                                                                                                                                                                                        | Limits slow abuse; they do not remove the access                                                          |
-| Hub app or container compromised (RCE in the app or a dependency)         | Same consequence as a stolen owner session: arbitrary prompts to the pilot through the socket. Mitigations: read-only root filesystem and socket mount, all capabilities dropped, no secrets in the container environment, the kill switch and the audit log live outside the container (in the gateway's own directory, which is not mounted), the guard hook (heuristic) | The attacker can do what the owner can do through chat until the kill switch is set                       |
-| The gateway socket is reached by another local user                       | Socket mode 0600 and a 0700 directory, owned by the service user; the container runs as that user and mounts the socket directory read-only                                                                                                                                                                                                                                | Any process running as the service user can use the socket                                                |
-| Secrets in logs or in the browser                                         | No prompts, replies or tool inputs are logged; the audit log has metadata only; the gateway's environment is not passed to the run; the app sends no environment to the browser                                                                                                                                                                                            | The agent itself may print a secret into a reply it generates; replies are stored in the history database |
+| Threat                                                                    | Mitigation                                                                                                                                                                                                                                                                                                                                                                               | Residual risk                                                                                              |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Someone reaches the hub without being the owner                           | Cloudflare Access in front; the app verifies the Access JWT itself (signature, issuer, audience, expiry, one email) and fails closed                                                                                                                                                                                                                                                     | Anyone who controls the owner's Access identity controls the orchestrator                                  |
+| A malicious page makes the owner's browser send a request                 | CSRF checks: a custom header plus same-origin provenance on every state-changing request; no CORS headers; JSON only                                                                                                                                                                                                                                                                     | A script running inside the hub origin could still act (see prompt injection)                              |
+| The browser tries to pick flags, tools, directory or agent                | Fixed profile table; strict validation; extra fields rejected                                                                                                                                                                                                                                                                                                                            | None known                                                                                                 |
+| Another agent is reached through the hub                                  | Only the eight table entries run, each with its own fixed profile, drift check and denied tools; Apollo is absent from the table and denied as a sub-agent                                                                                                                                                                                                                               | Each agent's own reach (see the table above); an agent file edited without the table fails the drift check |
+| Prompt injection through content the agent reads (web pages, mail, files) | Same as in a terminal: the workspace's permission rules and hooks decide what runs; nothing here is more permissive                                                                                                                                                                                                                                                                      | **This is the main residual risk.** The agent can be talked into actions its rules allow                   |
+| A runaway or stuck run                                                    | Timeout, output cap, max turns, one run at a time, Stop button, kill switch                                                                                                                                                                                                                                                                                                              | A run can still use its allowed tools until it is stopped                                                  |
+| Abuse by a compromised session                                            | Per-minute message limit, one run at a time, audit log, kill switch                                                                                                                                                                                                                                                                                                                      | Limits slow abuse; they do not remove the access                                                           |
+| Hub app or container compromised (RCE in the app or a dependency)         | Same consequence as a stolen owner session: arbitrary prompts to any of the eight agents through the socket. Mitigations: read-only root filesystem and socket mount, all capabilities dropped, no secrets in the container environment, the kill switch and the audit log live outside the container (in the gateway's own directory, which is not mounted), the guard hook (heuristic) | The attacker can do what the owner can do through chat until the kill switch is set                        |
+| The gateway socket is reached by another local user                       | Socket mode 0600 and a 0700 directory, owned by the service user; the container runs as that user and mounts the socket directory read-only                                                                                                                                                                                                                                              | Any process running as the service user can use the socket                                                 |
+| Secrets in logs or in the browser                                         | No prompts, replies or tool inputs are logged; the audit log has metadata only; the gateway's environment is not passed to the run; the app sends no environment to the browser                                                                                                                                                                                                          | The agent itself may print a secret into a reply it generates; replies are stored in the history database  |
 
 ## Mitigations you operate
 
@@ -233,5 +259,5 @@ Sources for the flags, all public Claude Code documentation at code.claude.com/d
 ## What this does not cover
 
 - It does not make the orchestrator safer than it is in a terminal.
-- It does not isolate the pilot from the infrastructure it already has access to.
+- It does not isolate the pilot, Atlas or the other agents from what they already have access to.
 - It does not protect against the owner's own mistakes in what they ask the agent to do.
