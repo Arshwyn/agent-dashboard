@@ -1,25 +1,27 @@
-# systemd unit for the agent hub chat gateway. Placeholders in <angle brackets>; copy, edit and install on the host
-# that runs Claude Code (see docs/DEPLOY.md). Not the apollo-chat gateway: this one has its own socket and data dir.
+# systemd USER unit for the agent hub chat gateway. Placeholders in <angle brackets>; copy, edit and install on the
+# host that runs Claude Code (see docs/DEPLOY.md). Not the apollo-chat gateway: this one has its own socket and dirs.
+#
+# This is a user unit: it runs as the logged-in service user, so it has no User= or Group= lines, is installed under
+# ~/.config/systemd/user/ and is managed with `systemctl --user`. The service user must have lingering enabled
+# (`loginctl enable-linger <service-user>`, once, by an administrator), otherwise the unit stops at logout and does
+# not start at boot. The user that runs it must own the Claude Code login and be able to read the workspace.
 [Unit]
 Description=agent hub chat gateway (launches the orchestrator's main session for the hub)
-After=network.target
 
 [Service]
-# The OS user that owns the Claude Code login and the orchestrator workspace. It also owns the socket (mode 0600),
-# and the hub container runs as this same uid and gid.
-User=<service-user>
-Group=<service-group>
+# The environment file lives in the gateway's own directory, NOT in the socket directory (that one is mounted into
+# the hub container).
 EnvironmentFile=/path/to/hub-gateway/gateway.env
 ExecStart=/usr/bin/node /path/to/agent-dashboard/gateway/gateway.js
 Restart=on-failure
 RestartSec=2
-# Files the gateway creates (socket directory, audit log) are private to the service user.
+# Files the gateway creates (socket, audit log) are private to the service user.
 UMask=0077
-NoNewPrivileges=yes
-# The gateway only needs its own data dir, the workspace and the Claude Code state of the service user. Tighten
-# further (ProtectSystem, ReadWritePaths) only after checking that Claude Code still starts under it.
+# Optional hardening is deliberately NOT set here (NoNewPrivileges, PrivateTmp, ProtectSystem, ...): none of it has
+# been verified with Claude Code and the orchestrator's tools, and some of it would take away access the interactive
+# session has. See "Optional systemd hardening (unverified)" in docs/ISOLATION.md.
 StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
