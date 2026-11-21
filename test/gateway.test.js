@@ -30,7 +30,13 @@ function tmp(prefix) {
 function mkEnv(over = {}) {
   const dataDir = tmp('gw-data-');
   const workspaceDir = tmp('gw-ws-');
-  return { GATEWAY_DATA_DIR: dataDir, WORKSPACE_DIR: workspaceDir, CLAUDE_BIN: FAKE, ...over };
+  return {
+    GATEWAY_DATA_DIR: dataDir,
+    WORKSPACE_DIR: workspaceDir,
+    CLAUDE_BIN: FAKE,
+    HUB_DENY_TOOLS: DENY.join(','),
+    ...over,
+  };
 }
 
 function cleanup(env) {
@@ -85,6 +91,8 @@ const req = (over = {}) => ({
   ...over,
 });
 
+const DENY = ['mcp__test_health_one', 'mcp__test_health_two*'];
+const CFG = { model: null, denyTools: DENY };
 const HUB_AGENT_IDS = ['arshwyn', 'hephaestus', 'themis', 'janus', 'atlas', 'plutus', 'iris', 'dionysus'];
 const OTHER_AGENT_IDS = HUB_AGENT_IDS.slice(1);
 
@@ -137,7 +145,7 @@ test('validation rejects unknown agents, apollo, other agents, bad ids, bad type
 });
 
 test('argv comes from the fixed profile; only the session uuid and the resume choice vary', () => {
-  const cfg = { model: null };
+  const cfg = CFG;
   const first = buildArgv(cfg, validateRun(req()));
   const again = buildArgv(cfg, validateRun(req({ resume: true })));
   assert.deepEqual(first.slice(0, -2), again.slice(0, -2));
@@ -160,12 +168,15 @@ test('argv comes from the fixed profile; only the session uuid and the resume ch
   assert.ok(!first.some((a) => /bypass/i.test(a)));
   // the prompt never reaches the argv
   assert.ok(!first.join(' ').includes('hi'));
-  assert.deepEqual(buildArgv({ model: 'sonnet' }, validateRun(req())).slice(-4, -2), ['--model', 'sonnet']);
+  assert.deepEqual(buildArgv({ ...CFG, model: 'sonnet' }, validateRun(req())).slice(-4, -2), [
+    '--model',
+    'sonnet',
+  ]);
 });
 
 test('each other agent runs as exactly one --agent with its own id; the pilot has none', () => {
   for (const id of OTHER_AGENT_IDS) {
-    const argv = buildArgv({ model: null }, validateRun(req({ agent: id })));
+    const argv = buildArgv(CFG, validateRun(req({ agent: id })));
     assert.equal(argv.filter((a) => a === '--agent').length, 1, id);
     assert.equal(argv[argv.indexOf('--agent') + 1], id);
     assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'auto');
@@ -177,17 +188,35 @@ test('each other agent runs as exactly one --agent with its own id; the pilot ha
   }
 });
 
-test('the documented profile matches the argv exactly', () => {
+/** The argv as the docs show it: one entry per flag with its value, the deny list collapsed to a placeholder. */
+function documentedForm(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--disallowedTools') {
+      out.push(`${a} <deny list>`);
+      while (i + 1 < argv.length && !argv[i + 1].startsWith('-')) i++;
+    } else if (a.startsWith('-') && i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+      out.push(`${a} ${argv[++i]}`);
+    } else out.push(a);
+  }
+  return out;
+}
+
+test('the documented profiles match the argv exactly', () => {
   const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ISOLATION.md'), 'utf8');
-  const block = /<!-- profile:arshwyn:begin -->\n([\s\S]*?)<!-- profile:arshwyn:end -->/.exec(doc);
-  assert.ok(block, 'docs/ISOLATION.md has the profile block');
-  const documented = block[1]
-    .trim()
-    .split('\n')
-    .flatMap((l) => (l.startsWith('--session-id|') ? [] : l.split(/ (.+)/).filter(Boolean)));
-  const actual = buildArgv({ model: null }, validateRun(req())).slice(0, -2);
-  const flat = documented.flatMap((l) => (/^--?[a-z-]+$/.test(l) || !l.includes(' ') ? [l] : [l]));
-  assert.deepEqual(flat, actual, 'ISOLATION.md lists exactly the flags the gateway passes');
+  for (const id of HUB_AGENT_IDS) {
+    const block = new RegExp(`<!-- profile:${id}:begin -->\\n([\\s\\S]*?)<!-- profile:${id}:end -->`).exec(
+      doc,
+    );
+    assert.ok(block, `docs/ISOLATION.md has the profile block for ${id}`);
+    const documented = block[1]
+      .trim()
+      .split('\n')
+      .filter((l) => !l.startsWith('--session-id|'));
+    const actual = documentedForm(buildArgv(CFG, validateRun(req({ agent: id }))).slice(0, -2));
+    assert.deepEqual(documented, actual, `ISOLATION.md lists exactly the flags the gateway passes for ${id}`);
+  }
 });
 
 test('the child environment is minimal and carries no gateway secrets', () => {
@@ -600,7 +629,7 @@ test('raw socket garbage is rejected without a crash', async () => {
 });
 
 test('the gateway refuses any permission mode or flag that could skip permission checks', () => {
-  const ok = buildArgv({ model: null }, validateRun(req()));
+  const ok = buildArgv(CFG, validateRun(req()));
   assert.doesNotThrow(() => assertSafeArgv(ok));
   const withMode = (m) => ok.map((a, i) => (ok[i - 1] === '--permission-mode' ? m : a));
   assert.doesNotThrow(() => assertSafeArgv(withMode('default')));
@@ -627,6 +656,38 @@ test('the gateway refuses any permission mode or flag that could skip permission
   for (const [name, p] of Object.entries(PROFILES)) {
     if (p.enabled) assert.ok(['default', 'auto', 'dontAsk'].includes(p.permissionMode), name);
   }
+});
+
+test('assertSafeArgv checks --agent against the profile and requires the denied tools', () => {
+  const themis = buildArgv(CFG, validateRun(req({ agent: 'themis' })));
+  const pilot = buildArgv(CFG, validateRun(req()));
+  assert.doesNotThrow(() => assertSafeArgv(themis, 'themis'));
+  assert.doesNotThrow(() => assertSafeArgv(pilot, 'arshwyn'));
+  const swap = (argv, from, to) => argv.map((a) => (a === from ? to : a));
+  const bad = [
+    [swap(themis, 'themis', 'apollo'), 'themis'],
+    [swap(themis, 'themis', 'janus'), 'themis'],
+    [swap(themis, 'themis', 'mercury'), 'themis'],
+    [swap(themis, 'themis', 'arshwyn'), 'themis'],
+    [[...themis, '--agent', 'themis'], 'themis'],
+    [themis.filter((a) => a !== '--agent' && a !== 'themis'), 'themis'],
+    [[...pilot.slice(0, -2), '--agent', 'themis', ...pilot.slice(-2)], 'arshwyn'],
+    [themis.filter((a) => a !== 'Agent(apollo)'), 'themis'],
+    [themis.filter((a) => !DENY.includes(a)), 'themis'],
+    [pilot.filter((a) => a !== 'Agent(apollo)'), 'arshwyn'],
+    [themis.filter((a) => a !== '--disallowedTools'), 'themis'],
+    [swap(themis, DENY[0], 'Bash'), 'themis'],
+    [swap(themis, DENY[0], 'mcp__x y'), 'themis'],
+    [[...themis, '--tools', 'Bash'], 'themis'],
+    [[...themis, '--agents', '{}'], 'themis'],
+    [[...themis, '--system-prompt', 'x'], 'themis'],
+    [[...themis, '--append-system-prompt', 'x'], 'themis'],
+    [themis, 'apollo'],
+    [themis, 'nobody'],
+  ];
+  for (const [argv, id] of bad)
+    assert.throws(() => assertSafeArgv(argv, id), undefined, `${id}: ${argv.join(' ')}`);
+  assert.throws(() => buildArgv({ model: null, denyTools: [] }, validateRun(req())), /connector deny/);
 });
 
 test('listen() removes only a stale socket and never a file or directory at that path', async () => {

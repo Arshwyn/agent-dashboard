@@ -15,6 +15,7 @@ const need = [
   '--permission-prompts',
   '--setting-sources',
   '--max-turns',
+  '--disallowedTools',
 ];
 const bad = need.filter((f) => !argv.includes(f));
 const val = (f) => argv[argv.indexOf(f) + 1];
@@ -22,12 +23,16 @@ const val = (f) => argv[argv.indexOf(f) + 1];
 const allowed = new Set([...need, '--agent', '--model', '--session-id', '--resume']);
 const unknownFlag = argv.some((a) => a.startsWith('-') && !allowed.has(a));
 const unsafe = unknownFlag || argv.some((a) => /bypass|dangerously|skip-permissions/i.test(a));
+const denied = argv
+  .slice(argv.indexOf('--disallowedTools') + 1)
+  .filter((_, i, a) => !a.slice(0, i + 1).some((x) => x.startsWith('-')));
 if (
   bad.length ||
   unsafe ||
   val('--output-format') !== 'stream-json' ||
   val('--permission-mode') !== 'auto' ||
-  val('--permission-prompts') !== 'none'
+  val('--permission-prompts') !== 'none' ||
+  !denied.includes('Agent(apollo)')
 ) {
   process.stderr.write('fake-claude: bad flags\n');
   process.exit(2);

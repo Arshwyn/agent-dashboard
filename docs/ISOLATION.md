@@ -67,8 +67,132 @@ This is the exact flag list the gateway passes for the pilot, in order. A test c
 --permission-prompts none
 --setting-sources user,project,local
 --max-turns 40
+--disallowedTools <deny list>
 --session-id|--resume <conversation uuid>
 <!-- profile:arshwyn:end -->
+
+## Per-agent profiles (machine-checked)
+
+The seven other agents run as `claude --agent <id>`; the flag list is the pilot's plus `--agent`. A test compares each block to the code.
+
+### Profile of hephaestus
+
+<!-- profile:hephaestus:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent hephaestus
+--session-id|--resume <conversation uuid>
+<!-- profile:hephaestus:end -->
+
+### Profile of themis
+
+<!-- profile:themis:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent themis
+--session-id|--resume <conversation uuid>
+<!-- profile:themis:end -->
+
+### Profile of janus
+
+<!-- profile:janus:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent janus
+--session-id|--resume <conversation uuid>
+<!-- profile:janus:end -->
+
+### Profile of atlas
+
+<!-- profile:atlas:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent atlas
+--session-id|--resume <conversation uuid>
+<!-- profile:atlas:end -->
+
+### Profile of plutus
+
+<!-- profile:plutus:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent plutus
+--session-id|--resume <conversation uuid>
+<!-- profile:plutus:end -->
+
+### Profile of iris
+
+<!-- profile:iris:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent iris
+--session-id|--resume <conversation uuid>
+<!-- profile:iris:end -->
+
+### Profile of dionysus
+
+<!-- profile:dionysus:begin -->
+
+-p
+--output-format stream-json
+--verbose
+--include-partial-messages
+--permission-mode auto
+--permission-prompts none
+--setting-sources user,project,local
+--max-turns 40
+--disallowedTools <deny list>
+--agent dionysus
+--session-id|--resume <conversation uuid>
+<!-- profile:dionysus:end -->
 
 The prompt is written to the process's standard input. The working directory is the orchestrator workspace. The environment is `PATH`, `HOME`, `LANG`, `HUB_CHAT_RUN=1` and `HUB_RUN_ID` only; the gateway's own environment (tokens, keys) is not passed on. A host hook can use `HUB_CHAT_RUN` to treat web runs more strictly than terminal runs.
 
