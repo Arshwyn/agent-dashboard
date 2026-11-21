@@ -27,7 +27,7 @@ function main() {
     store = openStore(config.dbPath);
     gateway = createGatewayClient({ socketPath: config.gatewaySocket });
   }
-  const app = createApp(config, { store, gateway });
+  const app = createApp(config, { store, gateway, requestLog: (line) => console.log(line) });
   app.server.listen(config.port, config.host, () => {
     console.log(`agent-hub listening on ${config.host}:${config.port}`);
   });
