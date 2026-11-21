@@ -211,6 +211,7 @@ function socketIsLive(file) {
   return new Promise((resolve) => {
     const c = net.createConnection(file);
     const timer = setTimeout(() => done(true), 1000);
+    timer.unref();
     const done = (live) => {
       clearTimeout(timer);
       c.destroy();
@@ -585,6 +586,7 @@ module.exports = {
   buildEnv,
   isDisabled,
   createGateway,
+  socketIsLive,
   MAX_PROMPT_CHARS,
 };
 
