@@ -65,6 +65,7 @@ function openStore(file) {
     listMsg: db.prepare(
       'SELECT id, role, text, status, error_code, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC',
     ),
+    delMsg: db.prepare('DELETE FROM messages WHERE id = ?'),
     updMsg: db.prepare('UPDATE messages SET text = ?, status = ?, error_code = ? WHERE id = ?'),
     stale: db.prepare(
       "UPDATE messages SET status = 'error', error_code = 'interrupted' WHERE status = 'streaming'",
@@ -95,6 +96,8 @@ function openStore(file) {
     updateMessage(id, { text, status, errorCode = null }) {
       q.updMsg.run(text, status, errorCode, id);
     },
+    /** Removes one message (a send the gateway refused leaves no row behind). */
+    deleteMessage: (id) => q.delMsg.run(id).changes === 1,
     listMessages: (conversationId) => q.listMsg.all(conversationId),
     /** Messages left 'streaming' by a restart can never finish. */
     markInterrupted: () => q.stale.run().changes,
@@ -161,6 +164,12 @@ function createMemoryStore() {
     updateMessage(id, { text, status, errorCode = null }) {
       const m = msgs.find((x) => x.id === id);
       if (m) Object.assign(m, { text, status, error_code: errorCode });
+    },
+    deleteMessage(id) {
+      const i = msgs.findIndex((m) => m.id === id);
+      if (i < 0) return false;
+      msgs.splice(i, 1);
+      return true;
     },
     listMessages: (conversationId) =>
       msgs

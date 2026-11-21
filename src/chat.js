@@ -8,6 +8,16 @@ const { cleanTitle } = require('./store');
 const MESSAGE_MAX_CHARS = 8000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PILOT_AGENTS = Object.freeze(['arshwyn']);
+// Gateway answers that mean nothing was started: the send is refused, so it leaves no rows behind.
+const REFUSAL_CODES = new Set([
+  'busy',
+  'disabled',
+  'not_enabled',
+  'too_large',
+  'unavailable',
+  'spawn',
+  'invalid',
+]);
 
 /**
  * The chat API. `h.json(res, status, body, headers)` sends JSON, `h.readJson(req, res, cb)` reads a size-capped JSON
@@ -165,6 +175,7 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     let sawTool = false;
     let exit = null;
     let gwError = null;
+    let refused = false;
     try {
       exit = await gateway.run(
         { agent: c.agent, conversation_id: c.id, resume, prompt: text, run_id: runId },
@@ -185,8 +196,9 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       );
     } catch (e) {
       gwError = e instanceof GatewayError ? e.code : 'unavailable';
+      refused = e instanceof GatewayError && REFUSAL_CODES.has(e.code) && !sawText && !sawTool;
     }
-    return { exit, result, gwError, sawText, sawTool, mapper };
+    return { exit, result, gwError, refused, sawText, sawTool, mapper };
   }
 
   async function stream(req, res, c, text) {
@@ -198,14 +210,16 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
     let started = false;
     let keepalive = null;
     let asstId = null;
+    let userId;
+    let renamed = false;
     const emit = (event, data) => {
       if (started && !gone) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
     try {
-      store.addMessage(c.id, 'user', text, 'done', now());
+      userId = store.addMessage(c.id, 'user', text, 'done', now());
       asstId = store.addMessage(c.id, 'assistant', '', 'streaming', now());
       if (store.listMessages(c.id).length === 2 && c.title === 'New chat')
-        store.renameConversation(c.id, text.slice(0, 60), now());
+        renamed = store.renameConversation(c.id, text.slice(0, 60), now());
       res.on('close', () => {
         gone = true;
       });
@@ -244,6 +258,28 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       }
       entry.retryDecided = true;
       const { exit, result, gwError, mapper } = r;
+
+      // The gateway refused the run (busy, switched off, not reachable): nothing happened, so the send is taken
+      // back completely. The browser shows a notice and puts the text back in the composer.
+      if (r.refused) {
+        const code = ['busy', 'disabled', 'not_enabled', 'too_large'].includes(gwError)
+          ? gwError
+          : 'unavailable';
+        let undone = true;
+        for (const id of [asstId, userId]) {
+          try {
+            store.deleteMessage(id);
+          } catch {
+            undone = false;
+          }
+        }
+        if (undone) {
+          if (renamed) store.renameConversation(c.id, 'New chat', now());
+          asstId = null;
+          emit('error', { code, refused: true });
+          return;
+        }
+      }
 
       let statusName = 'done';
       let errorCode = null;
