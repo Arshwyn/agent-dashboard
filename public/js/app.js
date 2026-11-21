@@ -1,5 +1,5 @@
 // Agent hub shell: loads the roster, draws the side rail and the chat panel, routes between agents and
-// starts the viewer (js/hub.js). The chat is not connected to a backend yet and says so.
+// starts the viewer (js/hub.js). The chat talks to the hub API for the eight hub agents; Apollo is a link-out.
 (function () {
   'use strict';
 
