@@ -23,6 +23,16 @@ test('deltas accumulate, the first one starts speaking, done returns to idle', (
   assert.equal(s.keepLog(), false);
 });
 
+test('a profile mismatch and a missing host setup have plain messages, also when the send is refused', () => {
+  for (const code of ['profile_mismatch', 'not_configured']) {
+    const text = errorText(code);
+    assert.notEqual(text, errorText('nonsense'), code);
+    assert.ok(text.length > 20 && !/[<>]/.test(text), code);
+    const ev = create().apply('error', { code, refused: true });
+    assert.equal(ev.notice, text, code);
+  }
+});
+
 test('an unsaved reply keeps its text, shows the note and tells the page not to reload the log', () => {
   const s = create();
   s.apply('delta', { text: 'Reply text' });

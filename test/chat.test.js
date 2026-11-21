@@ -1023,7 +1023,15 @@ test('through the real gateway: a Stop that reaches the gateway before the run d
 });
 
 test('a send the gateway refuses leaves no stored rows and keeps the title, and is marked refused', async () => {
-  for (const code of ['busy', 'disabled', 'not_enabled', 'too_large', 'unavailable']) {
+  for (const code of [
+    'busy',
+    'disabled',
+    'not_enabled',
+    'not_configured',
+    'profile_mismatch',
+    'too_large',
+    'unavailable',
+  ]) {
     const s = await app(
       fakeGateway({
         async run() {
