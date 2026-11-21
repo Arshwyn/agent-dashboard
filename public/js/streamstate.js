@@ -54,6 +54,13 @@
     return 'The message was not accepted.';
   }
 
+  // Stop only exists for the open conversation, so when the running reply is in another chat the notice says so.
+  var BUSY_ELSEWHERE =
+    'Another reply is still running in another chat (marked "running" in the list). Wait for it to finish, or open that chat and press Stop.';
+  function noticeForView(text, openRunning) {
+    return text === ERROR_TEXT.busy && !openRunning ? BUSY_ELSEWHERE : text;
+  }
+
   /** What to draw for a stored message row; a reply that is still running says so instead of a bare "...". */
   function rowText(m) {
     if (m.text) return m.text;
@@ -120,7 +127,13 @@
       },
     };
   }
-  var api = { create: create, errorText: errorText, refusalNotice: refusalNotice, rowText: rowText };
+  var api = {
+    create: create,
+    errorText: errorText,
+    refusalNotice: refusalNotice,
+    rowText: rowText,
+    noticeForView: noticeForView,
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HubStreamState = api;
 })(typeof window !== 'undefined' ? window : this);

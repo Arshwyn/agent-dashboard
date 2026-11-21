@@ -471,14 +471,29 @@
           // the history is reloaded so it shows what is really stored (for instance the other reply that is running),
           // and the notice is put back at the end of it
           return loadList(chat_.conv && chat_.conv.id, keep).then(function () {
-            if (pending && token === chat_.token) showNotice(pending);
+            if (pending && token === chat_.token)
+              showNotice(window.HubStreamState.noticeForView(pending, !!(chat_.conv && chat_.conv.running)));
           });
         });
     }
 
     bSend.addEventListener('click', send);
     bStop.addEventListener('click', function () {
-      if (chat_.conv) api('POST', '/api/chats/' + chat_.conv.id + '/stop');
+      if (!chat_.conv) return;
+      var id = chat_.conv.id;
+      var tries = 0;
+      // A run started in another tab ends without this page hearing about it: re-read the conversation and the
+      // list until it no longer says running, so the view does not stay on "Reply in progress..." with Stop shown.
+      function refresh() {
+        if (token !== chat_.token || chat_.busy || !chat_.conv || chat_.conv.id !== id) return;
+        return loadList(id).then(function () {
+          if (chat_.conv && chat_.conv.running && !chat_.busy && ++tries < 8)
+            window.setTimeout(refresh, 1000);
+        });
+      }
+      api('POST', '/api/chats/' + id + '/stop')
+        .then(refresh)
+        .catch(function () {});
     });
     input.addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {

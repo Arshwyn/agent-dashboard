@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { create, errorText, refusalNotice, rowText } = require('../public/js/streamstate');
+const { create, errorText, refusalNotice, rowText, noticeForView } = require('../public/js/streamstate');
 
 test('deltas accumulate, the first one starts speaking, done returns to idle', () => {
   const s = create();
@@ -116,4 +116,14 @@ test('a failed run whose row could not be saved says so, and the stored fallback
   assert.deepEqual(e.notes, ['This reply could not be saved to the history.']);
   assert.equal(s.keepLog(), true);
   assert.equal(errorText('unsaved'), 'This reply could not be saved to the history.');
+});
+
+test('the busy notice only mentions Stop when the open chat is the one running', () => {
+  const busy = refusalNotice(409, { error: 'busy' }, null);
+  assert.equal(noticeForView(busy, true), busy);
+  assert.match(busy, /press Stop/);
+  const other = noticeForView(busy, false);
+  assert.match(other, /another chat/);
+  assert.match(other, /open that chat and press Stop/);
+  assert.equal(noticeForView('Web chat is switched off.', false), 'Web chat is switched off.');
 });
