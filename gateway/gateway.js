@@ -102,6 +102,18 @@ const PROFILES = Object.freeze({
   dionysus: agentProfile('dionysus', null),
 });
 
+/** HUB_DENY_TOOLS: comma-separated tool deny patterns from the operator's environment (connector names stay out of the repo). */
+function parseDenyTools(value) {
+  if (value === undefined || value === '') return [];
+  const list = String(value)
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  for (const d of list)
+    if (!DENY_PATTERN.test(d)) throw new Error('HUB_DENY_TOOLS has an entry that is not allowed');
+  return [...new Set(list)];
+}
+
 function loadGatewayConfig(env = process.env) {
   const need = (k) => {
     if (!env[k] || !path.isAbsolute(env[k])) throw new Error(`${k} must be an absolute path`);
@@ -126,6 +138,7 @@ function loadGatewayConfig(env = process.env) {
     auditLog: env.AUDIT_LOG ? need('AUDIT_LOG') : path.join(dataDir, 'audit.log'),
     claudeBin: env.CLAUDE_BIN || 'claude',
     model,
+    denyTools: parseDenyTools(env.HUB_DENY_TOOLS),
     disabledByEnv: env.GATEWAY_DISABLED === '1',
     runTimeoutMs: int('RUN_TIMEOUT_MS', 600_000),
     requestTimeoutMs: int('REQUEST_TIMEOUT_MS', 10_000),
@@ -158,6 +171,14 @@ function validateRun(req) {
   return { agent, conversationId, resume, prompt, runId };
 }
 
+// Tools every web run must have denied. Apollo is never reachable from the hub, so no run may spawn it; the health
+// connector patterns come from the operator's environment (HUB_DENY_TOOLS), not from this file.
+const REQUIRED_DENY = Object.freeze(['Agent(apollo)']);
+const DENY_PATTERN = /^(mcp__[A-Za-z0-9_*-]{1,100}|Agent\([a-z][a-z0-9_]{1,19}\))$/;
+function denyList(cfg) {
+  return [...new Set([...REQUIRED_DENY, ...(cfg.denyTools || [])])];
+}
+
 /** The fixed command line for a validated run. Nothing here comes from the request except the session UUID. */
 function buildArgv(cfg, { agent, conversationId, resume }) {
   const p = PROFILES[agent];
@@ -175,11 +196,13 @@ function buildArgv(cfg, { agent, conversationId, resume }) {
     p.settingSources.join(','),
     '--max-turns',
     String(p.maxTurns),
+    '--disallowedTools',
+    ...denyList(cfg),
   ];
   if (p.kind === 'agent') argv.push('--agent', p.agent);
   if (cfg.model) argv.push('--model', cfg.model);
   argv.push(resume ? '--resume' : '--session-id', conversationId);
-  assertSafeArgv(argv);
+  assertSafeArgv(argv, agent);
   return argv;
 }
 
@@ -194,6 +217,7 @@ const ALLOWED_FLAGS = Object.freeze([
   '--permission-prompts',
   '--setting-sources',
   '--max-turns',
+  '--disallowedTools',
   '--agent',
   '--model',
   '--session-id',
@@ -204,7 +228,7 @@ const REQUIRED_FLAGS = Object.freeze(
 );
 
 /** Last line of defence: a command line that could skip permission checks or widen access is never started. */
-function assertSafeArgv(argv) {
+function assertSafeArgv(argv, profileId) {
   for (const a of argv) {
     if (a.startsWith('-') && !ALLOWED_FLAGS.includes(a))
       throw new Error('a flag that is not on the allowed list');
@@ -216,10 +240,35 @@ function assertSafeArgv(argv) {
     throw new Error('exactly one of --session-id and --resume is required');
   if (new Set(argv.filter((a) => a.startsWith('-'))).size !== argv.filter((a) => a.startsWith('-')).length)
     throw new Error('a flag is repeated');
+  const agentFlags = argv.filter((a) => a === '--agent').length;
+  if (agentFlags > 1) throw new Error('--agent is repeated');
+  if (agentFlags === 1) {
+    const id = argv[argv.indexOf('--agent') + 1];
+    if (typeof id !== 'string' || !AGENT_ID.test(id) || id === 'apollo' || !Object.hasOwn(PROFILES, id))
+      throw new Error('--agent names an agent that is not a hub agent');
+    if (PROFILES[id].kind !== 'agent')
+      throw new Error('--agent names a profile that runs as the main session');
+  }
+  if (profileId !== undefined) {
+    const p = Object.hasOwn(PROFILES, profileId) ? PROFILES[profileId] : null;
+    if (!p) throw new Error('unknown profile');
+    if (p.kind === 'agent' && (agentFlags !== 1 || argv[argv.indexOf('--agent') + 1] !== profileId))
+      throw new Error('--agent does not match the profile');
+    if (p.kind === 'main' && agentFlags !== 0) throw new Error('the main session takes no --agent');
+  }
+  const di = argv.indexOf('--disallowedTools');
+  const denied = [];
+  for (let j = di + 1; j < argv.length && !argv[j].startsWith('-'); j++) denied.push(argv[j]);
+  if (denied.some((d) => !DENY_PATTERN.test(d))) throw new Error('a denied-tool pattern is not allowed');
+  for (const r of REQUIRED_DENY)
+    if (!denied.includes(r)) throw new Error('a required denied tool is missing');
+  if (!denied.some((d) => d.startsWith('mcp__'))) throw new Error('no connector deny pattern is set');
   const i = argv.indexOf('--permission-mode');
   if (i < 0 || !ALLOWED_PERMISSION_MODES.includes(argv[i + 1]))
     throw new Error('permission mode is not allowed');
-  if (argv.some((a) => /bypass|dangerously|skip-permissions|allowedtools|add-dir|mcp-config/i.test(a)))
+  if (
+    argv.some((a) => /bypass|dangerously|skip-permissions|(?<!dis)allowedtools|add-dir|mcp-config/i.test(a))
+  )
     throw new Error('a flag that widens access is not allowed');
 }
 
@@ -628,6 +677,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
 module.exports = {
   PROFILES,
   loadGatewayConfig,
+  parseDenyTools,
   validateRun,
   buildArgv,
   assertSafeArgv,

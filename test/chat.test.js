@@ -794,6 +794,7 @@ test('end to end through the real gateway and the fake claude: history, session 
   process.env.HOME = home;
   const cfg = loadGatewayConfig({
     GATEWAY_DATA_DIR: dataDir,
+    HUB_DENY_TOOLS: 'mcp__test_health_one',
     WORKSPACE_DIR: ws,
     CLAUDE_BIN: path.join(__dirname, 'fixtures', 'fake-claude.js'),
   });
@@ -833,6 +834,7 @@ test('through the real gateway: a failure after a tool event is one run, a failu
   process.env.HOME = home;
   const cfg = loadGatewayConfig({
     GATEWAY_DATA_DIR: dataDir,
+    HUB_DENY_TOOLS: 'mcp__test_health_one',
     WORKSPACE_DIR: ws,
     CLAUDE_BIN: path.join(__dirname, 'fixtures', 'fake-claude.js'),
   });
@@ -873,6 +875,7 @@ test('through the real gateway: a Stop that reaches the gateway before the run d
   process.env.HOME = home;
   const cfg = loadGatewayConfig({
     GATEWAY_DATA_DIR: dataDir,
+    HUB_DENY_TOOLS: 'mcp__test_health_one',
     WORKSPACE_DIR: ws,
     CLAUDE_BIN: path.join(__dirname, 'fixtures', 'fake-claude.js'),
   });
