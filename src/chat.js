@@ -157,6 +157,8 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
   async function attempt(c, text, resume, emit, entry) {
     const runId = crypto.randomBytes(18).toString('base64url');
     entry.runId = runId;
+    // a Stop that was flagged before this run id existed could not name it; the gateway remembers an early cancel
+    if (entry.stopRequested) gateway.cancel(runId).catch(() => {});
     const mapper = createStreamMapper();
     let result = null;
     let sawText = false;

@@ -873,3 +873,41 @@ test('through the real gateway: a failure after a tool event is one run, a failu
     for (const d of [dataDir, ws, home]) fs.rmSync(d, { recursive: true, force: true });
   }
 });
+
+test('through the real gateway: a Stop that reaches the gateway before the run does cancels it, and 202 is honest', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-data-'));
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-ws-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-home-'));
+  const prev = process.env.HOME;
+  process.env.HOME = home;
+  const cfg = loadGatewayConfig({
+    GATEWAY_DATA_DIR: dataDir,
+    WORKSPACE_DIR: ws,
+    CLAUDE_BIN: path.join(__dirname, 'fixtures', 'fake-claude.js'),
+  });
+  const gw = createGateway(cfg, { log: () => {} });
+  await gw.listen();
+  const real = createGatewayClient({ socketPath: cfg.socketPath, backoffMs: [] });
+  let started = false;
+  // the run request is held back, as on a slow socket, so the stop arrives first
+  const slowRun = {
+    ...real,
+    run: async (...a) => ((started = true), await new Promise((r) => setTimeout(r, 400)), real.run(...a)),
+  };
+  const s = await app(slowRun);
+  try {
+    const c = await newChat(s);
+    const sent = api(s, 'POST', `/api/chats/${c.id}/messages`, { text: 'slow start' });
+    for (let i = 0; i < 100 && !started; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal((await api(s, 'POST', `/api/chats/${c.id}/stop`)).status, 202);
+    const last = sse((await sent).text).pop();
+    assert.equal(last[0], 'done');
+    assert.equal(last[1].cancelled, true);
+    assert.ok(!fs.existsSync(path.join(home, 'argv.jsonl')), 'claude was never started');
+  } finally {
+    await s.stop();
+    await gw.close();
+    process.env.HOME = prev;
+    for (const d of [dataDir, ws, home]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
