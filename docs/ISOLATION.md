@@ -77,7 +77,7 @@ Sources for the flags, all public Claude Code documentation at code.claude.com/d
 
 ## Per-agent profiles
 
-Seven agents run through the hub besides the pilot, each as `claude --agent <id>` with the access its agent file already gives it. **Nothing is added to what an agent can do; two things are taken away on the web (see "Health data" below).** Mercury is not in the table and Apollo is never proxied.
+Seven agents run through the hub besides the pilot, each as `claude --agent <id>` with the access its agent file already gives it. **Nothing is added to what an agent can do; some things are taken away on the web (see "Health data" below).** Mercury is not in the table and Apollo is never proxied.
 
 | Agent      | Runs as                    | Tools (from its agent file)                                                                                      | Reaches                                                                                | Approvals that stay the agent's own                                           |
 | ---------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -99,7 +99,20 @@ All run in permission mode `auto` with `--permission-prompts none`, the same as 
 - **Drift check.** At the start of every run the gateway reads the first lines of the agent file in the workspace and compares only the keys that change what the agent can do: the `tools` line must equal the table (or be absent for the four agents that inherit every tool), and `disallowedTools`, `permissionMode`, `mcpServers` and `hooks` must not appear. A missing or unreadable file, a widened list or one of those keys answers `profile_mismatch`: nothing is started and the audit log records the rejection. The text of the agent file never matters. Changing an agent's tools on purpose therefore means changing the table, this page and the test in one change.
 - The model comes from the agent file unless the operator sets `GATEWAY_MODEL`, which then overrides it for every run.
 
-**Health data.** Apollo never runs here and no other agent gets health data. The host's own isolation hook only fences runs of the Apollo agent, so an all-tools agent could otherwise call the health connectors or start Apollo through the Agent tool. Every web profile, the pilot included, therefore passes `--disallowedTools` with `Agent(apollo)` (built in, cannot be removed) and the connector patterns from `HUB_DENY_TOOLS` in the gateway's environment file (real connector names stay out of this repository). While that list is empty no profile starts (`not_configured`), and an entry of any other shape stops the gateway at start. **This narrows the pilot compared with a terminal session**, on the owner's decision. It is a deny rule, not a sandbox: the same caveats as for the rest of the permission rules apply.
+**Health data.** The aim is that Apollo never runs here and no other agent gets health data. Two layers work towards it, and only the first is enforced by the gateway:
+
+1. **The deny list (gateway).** The host's own isolation hook only fences runs of the Apollo agent, so an all-tools agent could otherwise call the health connectors or start Apollo through the Agent tool. Every web profile, the pilot included, therefore passes `--disallowedTools` with `Agent(apollo)` (built in, cannot be removed) and the connector patterns from `HUB_DENY_TOOLS` in the gateway's environment file (real connector names stay out of this repository). **This blocks the health connectors and starting Apollo as an agent, and nothing more.** While the list is empty no profile starts (`not_configured`), and an entry of any other shape stops the gateway at start. This narrows the pilot compared with a terminal session, on the owner's decision.
+2. **The host guard hook (not in this repository).** Every agent except Themis and Janus keeps the shell and file tools, and Themis and Janus keep Bash and Read, so a web run could still read the Apollo memory folders directly or start a nested `claude` process that does not carry the deny flags. **The deny list does not close that.** It is closed only by the host's web-run guard hook, which must carry a group that, when `HUB_CHAT_RUN=1`, refuses access to the Apollo memory folders and refuses any `claude` invocation from the shell. **That group is a heuristic, not a sandbox**: like the other guard groups it matches names and common write forms and cannot see every encoded, indirect or piecewise command. Treat health separation on the web as reduced and best effort, not as a guarantee.
+
+### Host prerequisites for health separation
+
+Before enabling any agent in web chat the host must have, and the owner must confirm in the smoke test (`docs/DEPLOY.md`):
+
+- `HUB_DENY_TOOLS` set in the gateway environment file, one entry per health connector.
+- The web-run guard hook group described above, registered at user level, failing closed, and active only when `HUB_CHAT_RUN=1`: reading or searching the Apollo memory folders from a web run is refused, and so is launching `claude` from the shell.
+- Agent files unchanged from the documented tool lists (the drift check refuses a run otherwise).
+
+Without the hook group the deny list still holds, but the residual reach above is open.
 
 ### Profile of the other agents (machine-checked)
 
