@@ -125,15 +125,27 @@ const AGENT_FORBIDDEN_KEYS = Object.freeze([
   'tools',
 ]);
 
-/** The top-level `key: value` lines of a `---` frontmatter block (one line each; list items are skipped). */
+/**
+ * The frontmatter of an agent file as `{ key: value }`, or null when it is anything but plain. Only these lines are
+ * accepted: blank lines, `key: value` with the key spelled as plain letters, digits, `_` or `-` and the colon right
+ * after it, and `- item` list lines (indented or not). A duplicate key, a quoted or spaced key (`"tools": x`,
+ * `tools : x`), a flow or multi-line form, or a key that is one of the profile-affecting names in another case makes
+ * the whole block "not plain", so a form this parser reads differently from Claude Code's YAML parser can never pass.
+ */
 function parseFrontmatter(text) {
   const lines = String(text).split(/\r?\n/);
   if (lines[0] !== '---') return null;
   const out = {};
+  const sensitive = new Set(AGENT_FORBIDDEN_KEYS.map((k) => k.toLowerCase()));
   for (let i = 1; i < lines.length; i++) {
-    if (lines[i] === '---') return out;
-    const m = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$/.exec(lines[i]);
-    if (m && !Object.hasOwn(out, m[1])) out[m[1]] = m[2].trim();
+    const line = lines[i];
+    if (line === '---') return out;
+    if (line.trim() === '' || /^\s*-(\s.*)?$/.test(line)) continue;
+    const m = /^([A-Za-z][A-Za-z0-9_-]*):(?:[ \t]+(.*))?$/.exec(line);
+    if (!m) return null;
+    if (Object.hasOwn(out, m[1])) return null;
+    if (sensitive.has(m[1].toLowerCase()) && !AGENT_FORBIDDEN_KEYS.includes(m[1])) return null;
+    out[m[1]] = (m[2] || '').trim();
   }
   return null; // never closed
 }
