@@ -313,12 +313,14 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       );
       // last resort: never leave the row 'streaming' (it would read as running until a restart); keep the text if possible
       if (!saved)
-        persist(() => store.updateMessage(asstId, { text: finalText, status: 'error', errorCode: 'failed' }));
+        persist(() =>
+          store.updateMessage(asstId, { text: finalText, status: 'error', errorCode: 'unsaved' }),
+        );
       const unsaved = saved ? {} : { unsaved: true };
       if (statusName === 'done') emit('done', { message_id: asstId, text: finalText, ...unsaved });
       else if (statusName === 'cancelled')
         emit('done', { message_id: asstId, text: finalText, cancelled: true, ...unsaved });
-      else emit('error', { code: errorCode, message_id: asstId });
+      else emit('error', { code: errorCode, message_id: asstId, ...unsaved });
     } catch {
       // a store or stream failure: generic answer, and the slot is always released below
       if (!started) h.json(res, 500, { error: 'internal error' });
