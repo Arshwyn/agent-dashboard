@@ -19,7 +19,7 @@ const need = [
 const bad = need.filter((f) => !argv.includes(f));
 const val = (f) => argv[argv.indexOf(f) + 1];
 // the pilot runs in auto mode with prompts off; any bypass flag or mode is a failure
-const allowed = new Set([...need, '--model', '--session-id', '--resume']);
+const allowed = new Set([...need, '--agent', '--model', '--session-id', '--resume']);
 const unknownFlag = argv.some((a) => a.startsWith('-') && !allowed.has(a));
 const unsafe = unknownFlag || argv.some((a) => /bypass|dangerously|skip-permissions/i.test(a));
 if (
