@@ -599,3 +599,67 @@ test('the gateway refuses any permission mode or flag that could skip permission
     if (p.enabled) assert.ok(['default', 'auto', 'dontAsk'].includes(p.permissionMode), name);
   }
 });
+
+test('listen() removes only a stale socket and never a file or directory at that path', async () => {
+  const sockDir = tmp('gw-sock-');
+  try {
+    for (const make of [
+      (f) => fs.writeFileSync(f, 'precious'),
+      (f) => fs.mkdirSync(f),
+      (f) => fs.symlinkSync('/nonexistent-target', f),
+    ]) {
+      const env = mkEnv({ GATEWAY_SOCKET: path.join(sockDir, 'g.sock') });
+      const f = env.GATEWAY_SOCKET;
+      make(f);
+      const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+      await assert.rejects(gw.listen(), /not a socket/);
+      assert.ok(fs.lstatSync(f), 'the path is untouched');
+      fs.rmSync(f, { recursive: true, force: true });
+      cleanup(env);
+    }
+    // a real stale socket is replaced
+    const env = mkEnv({ GATEWAY_SOCKET: path.join(sockDir, 'g.sock') });
+    const stale = net.createServer();
+    await new Promise((r) => stale.listen(env.GATEWAY_SOCKET, r)); // a socket file left by an earlier process
+    const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+    await gw.listen();
+    assert.ok(fs.lstatSync(env.GATEWAY_SOCKET).isSocket());
+    await gw.close();
+    await new Promise((r) => stale.close(r));
+    cleanup(env);
+  } finally {
+    fs.rmSync(sockDir, { recursive: true, force: true });
+  }
+});
+
+test('listen() refuses a data directory that is a file, and leaves modes of foreign paths alone', async () => {
+  const base = tmp('gw-dd-');
+  try {
+    const file = path.join(base, 'afile');
+    fs.writeFileSync(file, 'x');
+    fs.chmodSync(file, 0o644);
+    const env = mkEnv({ GATEWAY_DATA_DIR: file });
+    const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+    await assert.rejects(gw.listen());
+    assert.equal(fs.statSync(file).mode & 0o777, 0o644, 'the file mode was not changed');
+    cleanup({ ...env, GATEWAY_DATA_DIR: tmp('gw-unused-') });
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a separate socket directory is created private; the data directory holds audit and kill switch', async () => {
+  const sockDir = path.join(tmp('gw-sd-'), 'sock');
+  const env = mkEnv({ GATEWAY_SOCKET: path.join(sockDir, 'g.sock') });
+  const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+  try {
+    await gw.listen();
+    assert.equal(fs.statSync(sockDir).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(env.GATEWAY_DATA_DIR).mode & 0o777, 0o700);
+    assert.ok(!fs.existsSync(path.join(env.GATEWAY_DATA_DIR, 'gateway.sock')));
+  } finally {
+    await gw.close();
+    cleanup(env);
+    fs.rmSync(path.dirname(sockDir), { recursive: true, force: true });
+  }
+});
