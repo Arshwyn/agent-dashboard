@@ -37,22 +37,69 @@ const REQUEST_KEYS = new Set(['agent', 'conversation_id', 'resume', 'prompt', 'r
 // interactive session uses): the classifier reviews each action, and anything that would still fall back to a prompt
 // is denied because --permission-prompts none leaves nobody to approve it. No permission-bypass flag appears
 // anywhere (assertSafeArgv refuses one), and no --allowedTools.
-// The seven other agents are listed so the answer is a clear "not enabled yet"; `apollo` is deliberately absent
-// (it has its own chat app and its own health-data isolation, and is never proxied here).
+// The seven other hub agents run as `claude --agent <id>`: Claude Code applies the agent file's tool list and model
+// to the main session (sub-agents page, "Run the whole session as a subagent"), and the same workspace settings,
+// rules and hooks apply. The profile never passes `--tools` or `--allowedTools`; the tool list stays in the agent
+// file, and the drift check (checkAgentFile) refuses a run when that file no longer matches the table below.
+// `apollo` is deliberately absent (it has its own chat app and its own health-data isolation, and is never proxied
+// here); Mercury is not in the table.
+const SETTING_SOURCES = Object.freeze(['user', 'project', 'local']);
+const THEMIS_TOOLS = [
+  'Bash',
+  'Read',
+  'Grep',
+  'Glob',
+  ...[
+    'navigate',
+    'navigate_back',
+    'snapshot',
+    'take_screenshot',
+    'resize',
+    'click',
+    'hover',
+    'type',
+    'fill_form',
+    'press_key',
+    'select_option',
+    'wait_for',
+    'console_messages',
+    'network_requests',
+    'emulate_media',
+    'find',
+    'tabs',
+    'handle_dialog',
+    'close',
+  ].map((t) => `mcp__plugin_playwright_playwright__browser_${t}`),
+];
+/** `expectedTools: null` means the agent file has no `tools` line, so the agent inherits every tool of the session. */
+function agentProfile(id, expectedTools) {
+  return Object.freeze({
+    enabled: true,
+    kind: 'agent',
+    agent: id,
+    name: `agent-${id}`,
+    maxTurns: 40,
+    permissionMode: 'auto',
+    settingSources: SETTING_SOURCES,
+    expectedTools: expectedTools === null ? null : Object.freeze([...expectedTools]),
+  });
+}
 const PROFILES = Object.freeze({
   arshwyn: Object.freeze({
     enabled: true,
+    kind: 'main',
+    name: 'main-session',
     maxTurns: 40,
     permissionMode: 'auto',
-    settingSources: Object.freeze(['user', 'project', 'local']),
+    settingSources: SETTING_SOURCES,
   }),
-  hephaestus: Object.freeze({ enabled: false }),
-  themis: Object.freeze({ enabled: false }),
-  janus: Object.freeze({ enabled: false }),
-  atlas: Object.freeze({ enabled: false }),
-  plutus: Object.freeze({ enabled: false }),
-  iris: Object.freeze({ enabled: false }),
-  dionysus: Object.freeze({ enabled: false }),
+  hephaestus: agentProfile('hephaestus', null),
+  themis: agentProfile('themis', THEMIS_TOOLS),
+  janus: agentProfile('janus', ['Bash', 'Read', 'Grep', 'Glob', 'WebFetch']),
+  atlas: agentProfile('atlas', ['Bash', 'Read', 'Grep', 'Glob', 'Edit', 'Write', 'WebFetch']),
+  plutus: agentProfile('plutus', null),
+  iris: agentProfile('iris', null),
+  dionysus: agentProfile('dionysus', null),
 });
 
 function loadGatewayConfig(env = process.env) {
@@ -129,6 +176,7 @@ function buildArgv(cfg, { agent, conversationId, resume }) {
     '--max-turns',
     String(p.maxTurns),
   ];
+  if (p.kind === 'agent') argv.push('--agent', p.agent);
   if (cfg.model) argv.push('--model', cfg.model);
   argv.push(resume ? '--resume' : '--session-id', conversationId);
   assertSafeArgv(argv);
@@ -146,12 +194,13 @@ const ALLOWED_FLAGS = Object.freeze([
   '--permission-prompts',
   '--setting-sources',
   '--max-turns',
+  '--agent',
   '--model',
   '--session-id',
   '--resume',
 ]);
 const REQUIRED_FLAGS = Object.freeze(
-  ALLOWED_FLAGS.filter((f) => f !== '--model' && f !== '--session-id' && f !== '--resume'),
+  ALLOWED_FLAGS.filter((f) => f !== '--agent' && f !== '--model' && f !== '--session-id' && f !== '--resume'),
 );
 
 /** Last line of defence: a command line that could skip permission checks or widen access is never started. */

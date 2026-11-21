@@ -85,15 +85,21 @@ const req = (over = {}) => ({
   ...over,
 });
 
-test('only the pilot is enabled; apollo is not in the table at all', () => {
+const HUB_AGENT_IDS = ['arshwyn', 'hephaestus', 'themis', 'janus', 'atlas', 'plutus', 'iris', 'dionysus'];
+const OTHER_AGENT_IDS = HUB_AGENT_IDS.slice(1);
+
+test('the eight hub agents are enabled; apollo and mercury are not in the table at all', () => {
   const enabled = Object.keys(PROFILES).filter((k) => PROFILES[k].enabled);
-  assert.deepEqual(enabled, ['arshwyn']);
+  assert.deepEqual(enabled, HUB_AGENT_IDS);
+  assert.deepEqual(Object.keys(PROFILES), HUB_AGENT_IDS);
   assert.ok(!Object.hasOwn(PROFILES, 'apollo'));
-  assert.ok(
-    Object.isFrozen(PROFILES) &&
-      Object.isFrozen(PROFILES.arshwyn) &&
-      Object.isFrozen(PROFILES.arshwyn.settingSources),
-  );
+  assert.ok(!Object.hasOwn(PROFILES, 'mercury'));
+  assert.ok(Object.isFrozen(PROFILES));
+  for (const id of HUB_AGENT_IDS) {
+    assert.ok(Object.isFrozen(PROFILES[id]) && Object.isFrozen(PROFILES[id].settingSources), id);
+    assert.equal(PROFILES[id].kind, id === 'arshwyn' ? 'main' : 'agent', id);
+    if (id !== 'arshwyn') assert.equal(PROFILES[id].agent, id);
+  }
 });
 
 test('validation rejects unknown agents, apollo, other agents, bad ids, bad types and extra fields', () => {
@@ -110,8 +116,9 @@ test('validation rejects unknown agents, apollo, other agents, bad ids, bad type
   assert.equal(code(req({ agent: 'nobody' })), 'not_proxied');
   assert.equal(code(req({ agent: '__proto__' })), 'invalid');
   assert.equal(code(req({ agent: 'constructor' })), 'not_proxied');
-  for (const a of ['hephaestus', 'themis', 'janus', 'atlas', 'plutus', 'iris', 'dionysus']) {
-    assert.equal(code(req({ agent: a })), 'not_enabled', a);
+  for (const a of OTHER_AGENT_IDS) assert.equal(code(req({ agent: a })), 'ok', a);
+  for (const a of ['mercury', 'Apollo', 'APOLLO', 'apollo ', '../apollo', 'a'.repeat(40)]) {
+    assert.ok(['invalid', 'not_proxied'].includes(code(req({ agent: a }))), a);
   }
   assert.equal(code(req({ conversation_id: 'not-a-uuid' })), 'invalid');
   assert.equal(code(req({ conversation_id: CONV.toUpperCase() })), 'invalid');
@@ -154,6 +161,20 @@ test('argv comes from the fixed profile; only the session uuid and the resume ch
   // the prompt never reaches the argv
   assert.ok(!first.join(' ').includes('hi'));
   assert.deepEqual(buildArgv({ model: 'sonnet' }, validateRun(req())).slice(-4, -2), ['--model', 'sonnet']);
+});
+
+test('each other agent runs as exactly one --agent with its own id; the pilot has none', () => {
+  for (const id of OTHER_AGENT_IDS) {
+    const argv = buildArgv({ model: null }, validateRun(req({ agent: id })));
+    assert.equal(argv.filter((a) => a === '--agent').length, 1, id);
+    assert.equal(argv[argv.indexOf('--agent') + 1], id);
+    assert.equal(argv[argv.indexOf('--permission-mode') + 1], 'auto');
+    assert.equal(argv[argv.indexOf('--permission-prompts') + 1], 'none');
+    assert.ok(
+      !argv.some((a) => /bypass|dangerously|--tools|allowedtools/i.test(a.replace('--disallowedTools', ''))),
+    );
+    assert.deepEqual(argv.slice(-2), ['--session-id', CONV]);
+  }
 });
 
 test('the documented profile matches the argv exactly', () => {
@@ -234,7 +255,6 @@ test('requests with bad fields get a generic error and never start a process', a
       g.client.run(req({ agent: 'apollo' })),
       (e) => e instanceof GatewayError && e.code === 'not_proxied',
     );
-    await assert.rejects(g.client.run(req({ agent: 'themis' })), (e) => e.code === 'not_enabled');
     await assert.rejects(g.client.run({ ...req(), cwd: '/' }), (e) => e.code === 'invalid');
     await assert.rejects(g.client.run(req({ prompt: 'x'.repeat(20000) })), (e) => e.code === 'too_large');
     assert.equal(g.argvLog().length, 0);
