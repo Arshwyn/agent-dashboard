@@ -10,10 +10,10 @@
 // Protocol: newline-delimited JSON, one request per connection.
 //   run:    {"agent":"arshwyn","conversation_id":"<uuid>","resume":false,"prompt":"...","run_id":"..."}
 //   cancel: {"cancel":"<run_id>"}
-//   status: {"op":"status"}  -> {"type":"status","enabled":true,"busy":false,"agents":["arshwyn"]}
+//   status: {"op":"status"}  -> {"type":"status","enabled":true,"busy":false,"configured":true,"agents":["arshwyn",...]}
 // Responses: {"type":"line","data":"<raw stream-json line>"} ..., then
 //   {"type":"exit","code":0,"signal":null,"timedOut":false,"cancelled":false,"switchedOff":false,"outBytes":123}
-//   or {"type":"error","code":"invalid|not_enabled|not_proxied|disabled|busy|too_large|spawn"} (generic codes only).
+//   or {"type":"error","code":"invalid|not_enabled|not_proxied|not_configured|disabled|busy|too_large|spawn"} (generic codes only).
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
@@ -423,6 +423,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       );
     }
     if (isDisabled(cfg)) return reject(sock, 'disabled', run.agent);
+    if (cfg.denyTools.length === 0) return reject(sock, 'not_configured', run.agent);
     if (active.size >= 1 || busyAgents.has(run.agent)) return reject(sock, 'busy', run.agent);
     if (active.has(run.runId)) return reject(sock, 'invalid', run.agent);
     if (takePrecancel(run.runId)) {
@@ -612,7 +613,9 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
         type: 'status',
         enabled: !isDisabled(cfg),
         busy: active.size >= 1,
-        agents: Object.keys(PROFILES).filter((k) => PROFILES[k].enabled),
+        configured: cfg.denyTools.length > 0,
+        // without a connector deny list no profile may run (fail closed), so none is offered
+        agents: cfg.denyTools.length > 0 ? Object.keys(PROFILES).filter((k) => PROFILES[k].enabled) : [],
       });
       return sock.end();
     }
