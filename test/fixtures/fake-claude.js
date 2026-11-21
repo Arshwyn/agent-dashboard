@@ -18,7 +18,15 @@ const need = [
 ];
 const bad = need.filter((f) => !argv.includes(f));
 const val = (f) => argv[argv.indexOf(f) + 1];
-if (bad.length || val('--output-format') !== 'stream-json') {
+// the pilot runs in auto mode with prompts off; any bypass flag or mode is a failure
+const unsafe = argv.some((a) => /bypass|dangerously|skip-permissions/i.test(a));
+if (
+  bad.length ||
+  unsafe ||
+  val('--output-format') !== 'stream-json' ||
+  val('--permission-mode') !== 'auto' ||
+  val('--permission-prompts') !== 'none'
+) {
   process.stderr.write('fake-claude: bad flags\n');
   process.exit(2);
 }

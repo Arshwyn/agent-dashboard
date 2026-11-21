@@ -11,6 +11,7 @@ const {
   loadGatewayConfig,
   validateRun,
   buildArgv,
+  assertSafeArgv,
   buildEnv,
   createGateway,
 } = require('../gateway/gateway');
@@ -145,7 +146,7 @@ test('argv comes from the fixed profile; only the session uuid and the resume ch
   ]) {
     assert.ok(!first.includes(banned), banned);
   }
-  assert.equal(first[first.indexOf('--permission-mode') + 1], 'default');
+  assert.equal(first[first.indexOf('--permission-mode') + 1], 'auto');
   assert.equal(first[first.indexOf('--permission-prompts') + 1], 'none');
   assert.ok(!first.some((a) => /bypass/i.test(a)));
   // the prompt never reaches the argv
@@ -573,5 +574,28 @@ test('raw socket garbage is rejected without a crash', async () => {
     assert.equal((await g.client.status()).enabled, true);
   } finally {
     await g.stop();
+  }
+});
+
+test('the gateway refuses any permission mode or flag that could skip permission checks', () => {
+  const ok = ['-p', '--permission-mode', 'auto', '--permission-prompts', 'none'];
+  assert.doesNotThrow(() => assertSafeArgv(ok));
+  assert.doesNotThrow(() => assertSafeArgv(['--permission-mode', 'default']));
+  for (const bad of [
+    ['--permission-mode', 'bypassPermissions'],
+    ['--permission-mode', 'acceptEdits'],
+    ['--permission-mode', 'plan'],
+    ['-p'],
+    [...ok, '--dangerously-skip-permissions'],
+    [...ok, '--allow-dangerously-skip-permissions'],
+    [...ok, '--permission-mode=bypassPermissions'],
+    [...ok, '--allowedTools', 'Bash'],
+    [...ok, '--add-dir', '/'],
+    [...ok, '--mcp-config', 'x'],
+  ]) {
+    assert.throws(() => assertSafeArgv(bad), undefined, bad.join(' '));
+  }
+  for (const [name, p] of Object.entries(PROFILES)) {
+    if (p.enabled) assert.ok(['default', 'auto', 'dontAsk'].includes(p.permissionMode), name);
   }
 });

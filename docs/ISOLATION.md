@@ -30,7 +30,7 @@ This is the exact flag list the gateway passes for the pilot, in order. A test c
 --output-format stream-json
 --verbose
 --include-partial-messages
---permission-mode default
+--permission-mode auto
 --permission-prompts none
 --setting-sources user,project,local
 --max-turns 40
