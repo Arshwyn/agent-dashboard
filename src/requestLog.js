@@ -71,11 +71,16 @@ function createRequestLogger(
       return origEnd(chunk, enc, cb);
     };
     res.once('close', () => {
-      const ms = Number((hrtime() - t0) / 1_000_000n);
-      const method = /^[A-Z]{1,10}$/.test(String(req.method)) ? req.method : 'OTHER';
-      write(
-        `${new Date(clock()).toISOString()} ${method} ${routePattern(req.url)} ${res.statusCode} ${ms}ms ${bytes}b`,
-      );
+      // logging must never take the request, or the process, down: a failing sink or clock is ignored
+      try {
+        const ms = Number((hrtime() - t0) / 1_000_000n);
+        const method = /^[A-Z]{1,10}$/.test(String(req.method)) ? req.method : 'OTHER';
+        write(
+          `${new Date(clock()).toISOString()} ${method} ${routePattern(req.url)} ${res.statusCode} ${ms}ms ${bytes}b`,
+        );
+      } catch {
+        // dropped
+      }
     });
   };
 }
