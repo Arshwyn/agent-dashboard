@@ -518,12 +518,14 @@
           .then(function (both) {
             // checked again after the responses: a send or a switch since then must not be wiped
             if (!stopChain.valid(ticket) || token !== chat_.token || chat_.busy) return;
-            var data = window.HubStreamState.refreshData(both[0], both[1]);
+            var data = window.HubStreamState.refreshData(both[0], both[1], id);
             if (!data) {
-              // an error body (for example the chat was deleted in another tab): keep the view, drop a stale notice
+              // an error body or a bad shape (for example the chat was deleted in another tab, or a transient
+              // server error): keep the view, drop a stale notice and try again within the same budget
               say('');
               var stale = log.querySelector('.msg-notice');
               if (stale) stale.remove();
+              if (++tries < 8) stopTimer = window.setTimeout(refresh, 1000);
               return;
             }
             chat_.convs = data.conversations;
@@ -533,7 +535,11 @@
             lock(false);
             if (chat_.conv.running && ++tries < 8) stopTimer = window.setTimeout(refresh, 1000);
           })
-          .catch(function () {});
+          .catch(function () {
+            // a network failure is retried like an error response
+            if (stopChain.valid(ticket) && token === chat_.token && ++tries < 8)
+              stopTimer = window.setTimeout(refresh, 1000);
+          });
       }
       api('POST', '/api/chats/' + id + '/stop')
         .then(refresh)
