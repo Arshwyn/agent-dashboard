@@ -80,6 +80,20 @@
     };
   }
 
+  /**
+   * Validates the two responses of a Stop refresh (the list, then the conversation). Each is {ok, body}. Returns
+   * {conversations, conversation, messages} or null when either is not ok or lacks the expected shape (for example
+   * a JSON error body because the conversation was deleted in another tab), so the caller keeps the current view.
+   */
+  function refreshData(list, conv) {
+    if (!list || !conv || !list.ok || !conv.ok) return null;
+    var l = list.body;
+    var c = conv.body;
+    if (!l || !c || !Array.isArray(l.conversations)) return null;
+    if (!c.conversation || typeof c.conversation !== 'object' || !Array.isArray(c.messages)) return null;
+    return { conversations: l.conversations, conversation: c.conversation, messages: c.messages };
+  }
+
   /** What to draw for a stored message row; a reply that is still running says so instead of a bare "...". */
   function rowText(m) {
     if (m.text) return m.text;
@@ -153,6 +167,7 @@
     rowText: rowText,
     noticeForView: noticeForView,
     createChain: createChain,
+    refreshData: refreshData,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HubStreamState = api;

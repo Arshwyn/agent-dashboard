@@ -9,6 +9,7 @@ const {
   rowText,
   noticeForView,
   createChain,
+  refreshData,
 } = require('../public/js/streamstate');
 
 test('deltas accumulate, the first one starts speaking, done returns to idle', () => {
@@ -144,4 +145,21 @@ test('Stop clicked again, or a conversation switch, invalidates the running refr
   c.cancel(); // another conversation opened
   assert.equal(c.valid(second), false);
   assert.equal(c.valid(c.begin()), true);
+});
+
+test('a Stop refresh only replaces the view with ok responses of the expected shape', () => {
+  const list = { ok: true, body: { conversations: [{ id: 'a' }] } };
+  const conv = { ok: true, body: { conversation: { id: 'a', running: false }, messages: [] } };
+  const good = refreshData(list, conv);
+  assert.deepEqual(good.conversations, [{ id: 'a' }]);
+  assert.equal(good.conversation.id, 'a');
+  assert.deepEqual(good.messages, []);
+  // the conversation was deleted in another tab: a JSON error body must not blank the view
+  assert.equal(refreshData(list, { ok: false, body: { error: 'not_found' } }), null);
+  assert.equal(refreshData(list, { ok: true, body: { error: 'not_found' } }), null);
+  assert.equal(refreshData({ ok: true, body: { error: 'x' } }, conv), null);
+  assert.equal(refreshData({ ok: true, body: { conversations: {} } }, conv), null);
+  assert.equal(refreshData(list, { ok: true, body: { conversation: null, messages: [] } }), null);
+  assert.equal(refreshData(list, { ok: true, body: null }), null);
+  assert.equal(refreshData(null, conv), null);
 });
