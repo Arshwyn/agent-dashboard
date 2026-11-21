@@ -197,6 +197,34 @@ a {
   box-shadow: 0 0 12px color-mix(in srgb, var(--a) 55%, transparent);
 }
 
+/* the agent that holds the one running reply: text plus a ring shape, never colour alone */
+.rail .run-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 var(--s-1);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.rail .run-mark::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.access-note {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) 0;
+  color: var(--muted);
+  font-size: var(--fs-0);
+}
+
 /* ---------- stage ---------- */
 
 .main {
