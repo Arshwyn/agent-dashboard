@@ -24,20 +24,24 @@ const RUN_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_PROMPT_CHARS = 16000;
+// Permission modes a profile may use. `bypassPermissions` (and the dangerous-skip flags) are never allowed.
+const ALLOWED_PERMISSION_MODES = Object.freeze(['default', 'auto', 'dontAsk']);
 const REQUEST_KEYS = new Set(['agent', 'conversation_id', 'resume', 'prompt', 'run_id']);
 
 // The profile table is the safety control. Each enabled profile is a fixed command line: the browser, the hub and
 // the request can choose none of it. `arshwyn` is the orchestrator's MAIN session (no --agent flag): the working
 // directory is the orchestrator workspace, so the workspace's own CLAUDE.md, settings, permission rules and hooks
-// apply exactly as in an interactive session. No permission-bypass flag appears anywhere, and no --allowedTools:
-// what needs approval is denied because --permission-prompts none leaves nobody to approve it.
+// apply exactly as in an interactive session. The permission mode is `auto` (the classifier-based mode the
+// interactive session uses): the classifier reviews each action, and anything that would still fall back to a prompt
+// is denied because --permission-prompts none leaves nobody to approve it. No permission-bypass flag appears
+// anywhere (assertSafeArgv refuses one), and no --allowedTools.
 // The seven other agents are listed so the answer is a clear "not enabled yet"; `apollo` is deliberately absent
 // (it has its own chat app and its own health-data isolation, and is never proxied here).
 const PROFILES = Object.freeze({
   arshwyn: Object.freeze({
     enabled: true,
     maxTurns: 40,
-    permissionMode: 'default',
+    permissionMode: 'auto',
     settingSources: Object.freeze(['user', 'project', 'local']),
   }),
   hephaestus: Object.freeze({ enabled: false }),
@@ -125,7 +129,17 @@ function buildArgv(cfg, { agent, conversationId, resume }) {
   ];
   if (cfg.model) argv.push('--model', cfg.model);
   argv.push(resume ? '--resume' : '--session-id', conversationId);
+  assertSafeArgv(argv);
   return argv;
+}
+
+/** Last line of defence: a command line that could skip permission checks is never started. */
+function assertSafeArgv(argv) {
+  const i = argv.indexOf('--permission-mode');
+  if (i < 0 || !ALLOWED_PERMISSION_MODES.includes(argv[i + 1]))
+    throw new Error('permission mode is not allowed');
+  if (argv.some((a) => /bypass|dangerously|skip-permissions|allowedtools|add-dir|mcp-config/i.test(a)))
+    throw new Error('a flag that widens access is not allowed');
 }
 
 /** A minimal environment: no secrets from the gateway's own environment reach the child beyond what login needs. */
@@ -448,6 +462,8 @@ module.exports = {
   loadGatewayConfig,
   validateRun,
   buildArgv,
+  assertSafeArgv,
+  ALLOWED_PERMISSION_MODES,
   buildEnv,
   isDisabled,
   createGateway,
