@@ -135,8 +135,38 @@ function buildArgv(cfg, { agent, conversationId, resume }) {
   return argv;
 }
 
-/** Last line of defence: a command line that could skip permission checks is never started. */
+// The only flags a run may carry. Anything else (--settings, --plugin-dir, --tools, --add-dir, ...) could widen
+// what the run can do, so a command line with another flag is never started.
+const ALLOWED_FLAGS = Object.freeze([
+  '-p',
+  '--output-format',
+  '--verbose',
+  '--include-partial-messages',
+  '--permission-mode',
+  '--permission-prompts',
+  '--setting-sources',
+  '--max-turns',
+  '--model',
+  '--session-id',
+  '--resume',
+]);
+const REQUIRED_FLAGS = Object.freeze(
+  ALLOWED_FLAGS.filter((f) => f !== '--model' && f !== '--session-id' && f !== '--resume'),
+);
+
+/** Last line of defence: a command line that could skip permission checks or widen access is never started. */
 function assertSafeArgv(argv) {
+  for (const a of argv) {
+    if (a.startsWith('-') && !ALLOWED_FLAGS.includes(a))
+      throw new Error('a flag that is not on the allowed list');
+  }
+  for (const f of REQUIRED_FLAGS) {
+    if (!argv.includes(f)) throw new Error('a required flag is missing');
+  }
+  if (argv.filter((a) => a === '--session-id' || a === '--resume').length !== 1)
+    throw new Error('exactly one of --session-id and --resume is required');
+  if (new Set(argv.filter((a) => a.startsWith('-'))).size !== argv.filter((a) => a.startsWith('-')).length)
+    throw new Error('a flag is repeated');
   const i = argv.indexOf('--permission-mode');
   if (i < 0 || !ALLOWED_PERMISSION_MODES.includes(argv[i + 1]))
     throw new Error('permission mode is not allowed');
@@ -172,8 +202,25 @@ function secureDir(dir) {
   fs.chmodSync(dir, 0o700);
 }
 
-/** Removes a leftover socket from an earlier run. A regular file, directory or link at that path is never touched. */
-function removeStaleSocket(file) {
+/** True when something accepts connections on the socket path (another gateway is running there). */
+function socketIsLive(file) {
+  return new Promise((resolve) => {
+    const c = net.createConnection(file);
+    const done = (live) => {
+      c.destroy();
+      resolve(live);
+    };
+    c.once('connect', () => done(true));
+    c.once('error', () => done(false));
+    setTimeout(() => done(false), 1000).unref();
+  });
+}
+
+/**
+ * Removes a leftover socket from an earlier run. A regular file, directory or link at that path is never touched,
+ * and neither is a socket that something still answers on (another gateway): that is a clear error, not an unlink.
+ */
+async function removeStaleSocket(file) {
   let st;
   try {
     st = fs.lstatSync(file);
@@ -182,6 +229,7 @@ function removeStaleSocket(file) {
     throw e;
   }
   if (!st.isSocket()) throw new Error('the socket path exists and is not a socket; refusing to remove it');
+  if (await socketIsLive(file)) throw new Error('another gateway is already listening on the socket path');
   fs.unlinkSync(file);
 }
 
@@ -507,7 +555,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     async listen() {
       secureDir(cfg.dataDir);
       if (path.dirname(cfg.socketPath) !== cfg.dataDir) secureDir(path.dirname(cfg.socketPath));
-      removeStaleSocket(cfg.socketPath);
+      await removeStaleSocket(cfg.socketPath);
       await new Promise((resolve, reject2) => {
         server.once('error', reject2);
         server.listen(cfg.socketPath, resolve);

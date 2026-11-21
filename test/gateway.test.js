@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const net = require('node:net');
+const { spawn } = require('node:child_process');
 const os = require('node:os');
 const path = require('node:path');
 const {
@@ -578,20 +579,27 @@ test('raw socket garbage is rejected without a crash', async () => {
 });
 
 test('the gateway refuses any permission mode or flag that could skip permission checks', () => {
-  const ok = ['-p', '--permission-mode', 'auto', '--permission-prompts', 'none'];
+  const ok = buildArgv({ model: null }, validateRun(req()));
   assert.doesNotThrow(() => assertSafeArgv(ok));
-  assert.doesNotThrow(() => assertSafeArgv(['--permission-mode', 'default']));
+  const withMode = (m) => ok.map((a, i) => (ok[i - 1] === '--permission-mode' ? m : a));
+  assert.doesNotThrow(() => assertSafeArgv(withMode('default')));
   for (const bad of [
-    ['--permission-mode', 'bypassPermissions'],
-    ['--permission-mode', 'acceptEdits'],
-    ['--permission-mode', 'plan'],
+    withMode('bypassPermissions'),
+    withMode('acceptEdits'),
+    withMode('plan'),
     ['-p'],
+    ok.filter((a) => a !== '--verbose'),
+    [...ok, '--resume', CONV],
+    [...ok, '--verbose'],
     [...ok, '--dangerously-skip-permissions'],
     [...ok, '--allow-dangerously-skip-permissions'],
     [...ok, '--permission-mode=bypassPermissions'],
     [...ok, '--allowedTools', 'Bash'],
     [...ok, '--add-dir', '/'],
     [...ok, '--mcp-config', 'x'],
+    [...ok, '--settings', 'x.json'],
+    [...ok, '--plugin-dir', '/x'],
+    [...ok, '--tools', 'Bash'],
   ]) {
     assert.throws(() => assertSafeArgv(bad), undefined, bad.join(' '));
   }
@@ -619,13 +627,19 @@ test('listen() removes only a stale socket and never a file or directory at that
     }
     // a real stale socket is replaced
     const env = mkEnv({ GATEWAY_SOCKET: path.join(sockDir, 'g.sock') });
-    const stale = net.createServer();
-    await new Promise((r) => stale.listen(env.GATEWAY_SOCKET, r)); // a socket file left by an earlier process
+    // a socket file left by a process that died: made by a child that is killed without cleaning up
+    const kid = spawn(process.execPath, [
+      '-e',
+      `require('net').createServer().listen(${JSON.stringify(env.GATEWAY_SOCKET)}, () => console.log('up'))`,
+    ]);
+    await new Promise((r) => kid.stdout.once('data', r));
+    kid.kill('SIGKILL');
+    await new Promise((r) => kid.once('exit', r));
+    assert.ok(fs.lstatSync(env.GATEWAY_SOCKET).isSocket(), 'the dead process left its socket file');
     const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
     await gw.listen();
     assert.ok(fs.lstatSync(env.GATEWAY_SOCKET).isSocket());
     await gw.close();
-    await new Promise((r) => stale.close(r));
     cleanup(env);
   } finally {
     fs.rmSync(sockDir, { recursive: true, force: true });
@@ -685,5 +699,47 @@ test('a cancel that arrives before its run is registered cancels the run when it
     assert.equal((await g.client.status()).busy, false);
   } finally {
     await g.stop();
+  }
+});
+
+test('listen() refuses to start over a socket that something still answers on', async () => {
+  const sockDir = tmp('gw-live-');
+  const env = mkEnv({ GATEWAY_SOCKET: path.join(sockDir, 'g.sock') });
+  const live = net.createServer((c) => c.end());
+  try {
+    await new Promise((r) => live.listen(env.GATEWAY_SOCKET, r));
+    const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+    await assert.rejects(gw.listen(), /already listening/);
+    // the live listener still works: its socket file was not unlinked
+    await new Promise((resolve, reject) => {
+      const c = net.connect(env.GATEWAY_SOCKET, resolve);
+      c.on('error', reject);
+      c.on('close', () => {});
+    });
+  } finally {
+    await new Promise((r) => live.close(r));
+    cleanup(env);
+    fs.rmSync(sockDir, { recursive: true, force: true });
+  }
+});
+
+test('a symlinked data directory is refused', async () => {
+  const base = tmp('gw-sl-');
+  try {
+    const real = path.join(base, 'real');
+    fs.mkdirSync(real);
+    const link = path.join(base, 'link');
+    fs.symlinkSync(real, link);
+    const ws = path.join(base, 'ws');
+    fs.mkdirSync(ws);
+    const gw = createGateway(
+      loadGatewayConfig({ GATEWAY_DATA_DIR: link, WORKSPACE_DIR: ws, CLAUDE_BIN: FAKE }),
+      {
+        log: () => {},
+      },
+    );
+    await assert.rejects(gw.listen(), /not a directory/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
   }
 });
