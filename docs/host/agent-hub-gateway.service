@@ -5,6 +5,8 @@
 # ~/.config/systemd/user/ and is managed with `systemctl --user`. The service user must have lingering enabled
 # (`loginctl enable-linger <service-user>`, once, by an administrator), otherwise the unit stops at logout and does
 # not start at boot. The user that runs it must own the Claude Code login and be able to read the workspace.
+# Note: UMask below applies to files this service creates. A deploy checkout made under a strict umask (for example
+# 077) can leave the app's tree unreadable to the container user (EACCES crash loop): check modes after checkout.
 [Unit]
 Description=agent hub chat gateway (launches the orchestrator's main session for the hub)
 
@@ -17,7 +19,12 @@ Restart=on-failure
 RestartSec=2
 # Files the gateway creates (socket, audit log) are private to the service user.
 UMask=0077
-# Optional hardening is deliberately NOT set here (NoNewPrivileges, PrivateTmp, ProtectSystem, ...): none of it has
+# Recommended resource limits for a small host: a runaway run cannot take all memory or fork without bound. Raise
+# them if legitimate runs hit them.
+MemoryMax=1500M
+TasksMax=512
+# Optional hardening is deliberately NOT set here (NoNewPrivileges, which would block sudo and other setuid helpers
+# the orchestrator's tools may need; also PrivateTmp, ProtectSystem, ...): none of it has
 # been verified with Claude Code and the orchestrator's tools, and some of it would take away access the interactive
 # session has. See "Optional systemd hardening (unverified)" in docs/ISOLATION.md.
 StandardOutput=journal
