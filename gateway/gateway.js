@@ -26,6 +26,8 @@ const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_PROMPT_CHARS = 16000;
 // Permission modes a profile may use. `bypassPermissions` (and the dangerous-skip flags) are never allowed.
 const ALLOWED_PERMISSION_MODES = Object.freeze(['default', 'auto', 'dontAsk']);
+const PRECANCEL_TTL_MS = 15_000;
+const PRECANCEL_MAX = 32;
 const REQUEST_KEYS = new Set(['agent', 'conversation_id', 'resume', 'prompt', 'run_id']);
 
 // The profile table is the safety control. Each enabled profile is a fixed command line: the browser, the hub and
@@ -186,6 +188,25 @@ function removeStaleSocket(file) {
 function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o) + '\n') } = {}) {
   const active = new Map(); // runId -> { agent, child, cancelled }
   const busyAgents = new Set();
+  // A cancel can arrive before its run is registered (Stop pressed right after Send). It is remembered for a short
+  // time, and the run it names is then not started: the answer to the cancel is honest either way.
+  const precancel = new Map(); // runId -> expiry (ms)
+  function notePrecancel(runId) {
+    const t = Date.now();
+    for (const [k, exp] of precancel) if (exp <= t) precancel.delete(k);
+    while (precancel.size >= PRECANCEL_MAX) precancel.delete(precancel.keys().next().value);
+    precancel.set(runId, t + PRECANCEL_TTL_MS);
+  }
+  const finished = new Set(); // recently finished run ids: a late cancel for one of them is refused, not remembered
+  function noteFinished(runId) {
+    while (finished.size >= 64) finished.delete(finished.values().next().value);
+    finished.add(runId);
+  }
+  function takePrecancel(runId) {
+    const exp = precancel.get(runId);
+    precancel.delete(runId);
+    return exp !== undefined && exp > Date.now();
+  }
 
   function audit(obj) {
     const line = { t: new Date().toISOString(), ...obj };
@@ -252,6 +273,22 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
     if (isDisabled(cfg)) return reject(sock, 'disabled', run.agent);
     if (active.size >= 1 || busyAgents.has(run.agent)) return reject(sock, 'busy', run.agent);
     if (active.has(run.runId)) return reject(sock, 'invalid', run.agent);
+    if (takePrecancel(run.runId)) {
+      // cancelled before it started: nothing is spawned
+      send(sock, {
+        type: 'exit',
+        code: null,
+        signal: null,
+        timedOut: false,
+        cancelled: true,
+        tooBig: false,
+        switchedOff: false,
+        outBytes: 0,
+      });
+      sock.end();
+      audit({ event: 'run', agent: run.agent, run_id: run.runId, cancelled: true, not_started: true });
+      return;
+    }
 
     const started = Date.now();
     let child;
@@ -345,6 +382,7 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
       clearInterval(watch);
       if (buf && !state.tooBig) send(sock, { type: 'line', data: buf });
       active.delete(run.runId);
+      noteFinished(run.runId);
       busyAgents.delete(run.agent);
       const ms = Date.now() - started;
       send(sock, {
@@ -396,12 +434,16 @@ function createGateway(cfg, { log = (o) => process.stdout.write(JSON.stringify(o
   function handle(sock, req) {
     if (req && typeof req === 'object' && !Array.isArray(req) && 'cancel' in req) {
       const keys = Object.keys(req);
-      const found = keys.length === 1 && typeof req.cancel === 'string' ? active.get(req.cancel) : null;
+      const id = keys.length === 1 && typeof req.cancel === 'string' ? req.cancel : null;
+      const found = id ? active.get(id) : null;
       const st = found && !found.exited ? found : null; // nothing to cancel once the process has exited
       if (st) {
         st.cancelled = true;
         st.kill(cfg.killGraceMs);
         send(sock, { type: 'cancelled' });
+      } else if (id && !found && !finished.has(id) && RUN_ID.test(id)) {
+        notePrecancel(id);
+        send(sock, { type: 'cancelled', pending: true });
       } else {
         send(sock, { type: 'error', code: 'invalid' });
       }

@@ -278,7 +278,7 @@ test('only one run at a time: the second is refused as busy, and the first can b
       ),
       (e) => e.code === 'busy',
     );
-    assert.equal(await g.client.cancel('does-not-exist'), false);
+    assert.equal(await g.client.cancel('bad id!'), false);
     assert.equal(await g.client.cancel(RUN), true);
     const exit = await first;
     assert.equal(exit.cancelled, true);
@@ -661,5 +661,26 @@ test('a separate socket directory is created private; the data directory holds a
     await gw.close();
     cleanup(env);
     fs.rmSync(path.dirname(sockDir), { recursive: true, force: true });
+  }
+});
+
+test('a cancel that arrives before its run is registered cancels the run when it arrives', async () => {
+  const g = await startGateway();
+  try {
+    assert.equal(await g.client.cancel('early_run_01'), true);
+    const exit = await g.client.run(req({ run_id: 'early_run_01', prompt: 'slow' }));
+    assert.equal(exit.cancelled, true);
+    assert.equal(g.argvLog().length, 0, 'nothing was started');
+    assert.equal((await g.client.status()).busy, false);
+    // the early cancel is used once: the same id is not remembered afterwards
+    assert.equal(await g.client.cancel('early_run_01'), true);
+    // a cancel for a run that already finished is refused, not remembered
+    await g.client.run(req({ run_id: 'done_run_001' }));
+    assert.equal(await g.client.cancel('done_run_001'), false);
+    // the remembered ids are bounded
+    for (let i = 0; i < 100; i++) await g.client.cancel('flood_' + String(i).padStart(4, '0'));
+    assert.equal((await g.client.status()).busy, false);
+  } finally {
+    await g.stop();
   }
 });
