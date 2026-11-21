@@ -501,21 +501,35 @@
       // list until it no longer says running, so the view does not stay on "Reply in progress..." with Stop shown.
       function refresh() {
         if (!stopChain.valid(ticket) || token !== chat_.token || chat_.busy) return;
+        function read(r) {
+          return r
+            .json()
+            .catch(function () {
+              return null;
+            })
+            .then(function (body) {
+              return { ok: r.ok, body: body };
+            });
+        }
         return Promise.all([
-          api('GET', '/api/chats?agent=' + encodeURIComponent(a.id)).then(function (r) {
-            return r.json();
-          }),
-          api('GET', '/api/chats/' + id).then(function (r) {
-            return r.json();
-          }),
+          api('GET', '/api/chats?agent=' + encodeURIComponent(a.id)).then(read),
+          api('GET', '/api/chats/' + id).then(read),
         ])
           .then(function (both) {
             // checked again after the responses: a send or a switch since then must not be wiped
             if (!stopChain.valid(ticket) || token !== chat_.token || chat_.busy) return;
-            chat_.convs = both[0].conversations;
-            chat_.conv = both[1].conversation;
+            var data = window.HubStreamState.refreshData(both[0], both[1]);
+            if (!data) {
+              // an error body (for example the chat was deleted in another tab): keep the view, drop a stale notice
+              say('');
+              var stale = log.querySelector('.msg-notice');
+              if (stale) stale.remove();
+              return;
+            }
+            chat_.convs = data.conversations;
+            chat_.conv = data.conversation;
             fillSelect();
-            drawMessages(both[1].messages);
+            drawMessages(data.messages);
             lock(false);
             if (chat_.conv.running && ++tries < 8) stopTimer = window.setTimeout(refresh, 1000);
           })
