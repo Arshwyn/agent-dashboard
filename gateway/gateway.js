@@ -174,6 +174,8 @@ function checkAgentFile(cfg, profile) {
   if (profile.expectedTools === null) return !Object.hasOwn(fm, 'tools');
   if (!Object.hasOwn(fm, 'tools') || fm.tools === '') return false;
   const got = fm.tools.split(',').map((t) => t.trim());
+  // an empty or repeated entry could stand in for a missing tool, so the list must be exactly the expected set
+  if (got.some((t) => t === '') || new Set(got).size !== got.length) return false;
   return got.length === profile.expectedTools.length && profile.expectedTools.every((t) => got.includes(t));
 }
 
