@@ -743,3 +743,34 @@ test('a symlinked data directory is refused', async () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('a live gateway that is busy and not accepting is never taken for a dead one', async () => {
+  const sockDir = tmp('gw-busy-');
+  const env = mkEnv({ GATEWAY_SOCKET: path.join(sockDir, 'g.sock') });
+  // a listener with a backlog of 1 whose event loop is blocked, so connections pile up unaccepted
+  const kid = spawn(process.execPath, [
+    '-e',
+    `const s = require('net').createServer();
+     s.listen(${JSON.stringify(env.GATEWAY_SOCKET)}, 1, () => { console.log('up'); setTimeout(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15000), 50); });`,
+  ]);
+  const socks = [];
+  try {
+    await new Promise((r) => kid.stdout.once('data', r));
+    await new Promise((r) => setTimeout(r, 200));
+    for (let i = 0; i < 10; i++) {
+      const c = net.connect(env.GATEWAY_SOCKET);
+      c.on('error', () => {});
+      socks.push(c);
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    const gw = createGateway(loadGatewayConfig(env), { log: () => {} });
+    await assert.rejects(gw.listen(), /already listening/);
+    assert.ok(fs.lstatSync(env.GATEWAY_SOCKET).isSocket(), 'the live socket file was not unlinked');
+  } finally {
+    for (const c of socks) c.destroy();
+    kid.kill('SIGKILL');
+    await new Promise((r) => kid.once('exit', r));
+    cleanup(env);
+    fs.rmSync(sockDir, { recursive: true, force: true });
+  }
+});
