@@ -10,6 +10,7 @@ const path = require('node:path');
 const {
   PROFILES,
   loadGatewayConfig,
+  parseDenyTools,
   validateRun,
   buildArgv,
   assertSafeArgv,
@@ -688,6 +689,52 @@ test('assertSafeArgv checks --agent against the profile and requires the denied 
   for (const [argv, id] of bad)
     assert.throws(() => assertSafeArgv(argv, id), undefined, `${id}: ${argv.join(' ')}`);
   assert.throws(() => buildArgv({ model: null, denyTools: [] }, validateRun(req())), /connector deny/);
+});
+
+test('without HUB_DENY_TOOLS no profile runs (fail closed), and a bad entry stops the start', async () => {
+  const env = mkEnv({ HUB_DENY_TOOLS: '' });
+  try {
+    assert.deepEqual(parseDenyTools(' mcp__a, mcp__b*,mcp__a'), ['mcp__a', 'mcp__b*']);
+    for (const bad of ['Bash', 'mcp__a b', 'mcp__', '*', 'mcp__a;rm', 'Agent(Apollo)', 'Read(x)']) {
+      assert.throws(() => loadGatewayConfig({ ...env, HUB_DENY_TOOLS: bad }), /HUB_DENY_TOOLS/, bad);
+    }
+    assert.deepEqual(loadGatewayConfig(env).denyTools, []);
+  } finally {
+    cleanup(env);
+  }
+  const g = await startGateway({ HUB_DENY_TOOLS: '' });
+  try {
+    for (const agent of HUB_AGENT_IDS) {
+      await assert.rejects(g.client.run(req({ agent })), (e) => e.code === 'not_configured', agent);
+    }
+    assert.equal(g.argvLog().length, 0);
+    const st = await g.client.status();
+    assert.deepEqual(st.agents, []);
+    assert.equal(st.configured, false);
+  } finally {
+    await g.stop();
+  }
+});
+
+test('with HUB_DENY_TOOLS every hub agent starts with the deny list and Agent(apollo)', async () => {
+  const g = await startGateway();
+  try {
+    let n = 0;
+    for (const agent of HUB_AGENT_IDS) {
+      const exit = await g.client.run(req({ agent, run_id: `run_agent${n++}aaaa` }), {});
+      assert.equal(exit.code, 0, agent);
+    }
+    const calls = g.argvLog();
+    assert.equal(calls.length, HUB_AGENT_IDS.length);
+    calls.forEach((c, i) => {
+      const at = c.argv.indexOf('--disallowedTools');
+      const got = [];
+      for (let j = at + 1; !c.argv[j].startsWith('-'); j++) got.push(c.argv[j]);
+      assert.deepEqual(got, ['Agent(apollo)', ...DENY], HUB_AGENT_IDS[i]);
+    });
+  } finally {
+    await g.stop();
+  }
 });
 
 test('listen() removes only a stale socket and never a file or directory at that path', async () => {
