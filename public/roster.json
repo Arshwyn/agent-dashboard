@@ -7,7 +7,7 @@
       "palette": ["#c9d4e5", "#8aa0c8", "#ffffff"],
       "motif": "the workspace main session",
       "chat": "hub",
-      "access": "Full orchestrator access: every tool, server and connector the workspace has, except health data."
+      "access": "Full orchestrator access: every tool, server and connector the workspace has; health connectors denied."
     },
     {
       "id": "hephaestus",
@@ -16,7 +16,7 @@
       "palette": ["#ff9a1f", "#ff5a1f", "#ffd08a"],
       "motif": "anvil and hammer",
       "chat": "hub",
-      "access": "Builds and fixes code in the project repos; every tool except health data."
+      "access": "Builds and fixes code in the project repos; every tool, health connectors denied."
     },
     {
       "id": "themis",
@@ -52,7 +52,7 @@
       "palette": ["#3fbf7a", "#d6a82a", "#eaffd8"],
       "motif": "cornucopia",
       "chat": "hub",
-      "access": "Finance questions; every tool except health data."
+      "access": "Finance questions; every tool, health connectors denied."
     },
     {
       "id": "apollo",
@@ -69,7 +69,7 @@
       "palette": ["#ff7ac8", "#5ad1ff", "#ffe27a"],
       "motif": "wings, staff and pitcher",
       "chat": "hub",
-      "access": "Mail, calendar and documents; every tool except health data."
+      "access": "Mail, calendar and documents; every tool, health connectors denied."
     },
     {
       "id": "dionysus",
@@ -78,7 +78,7 @@
       "palette": ["#b04ad6", "#e0456a", "#f0d0ff"],
       "motif": "thyrsus and cup",
       "chat": "hub",
-      "access": "Travel and food planning; every tool except health data."
+      "access": "Travel and food planning; every tool, health connectors denied."
     }
   ]
 }
