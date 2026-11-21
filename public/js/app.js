@@ -48,6 +48,31 @@
     });
   }
 
+  // The one running reply (only one run exists at a time) is marked on its rail entry with text and a shape, so
+  // colour is not the only signal. The page asks the server every few seconds while it is visible.
+  function setRunning(id) {
+    rail.querySelectorAll('a').forEach(function (l) {
+      var on = !!id && l.getAttribute('data-agent') === id;
+      var mark = l.querySelector('.run-mark');
+      if (on && !mark) l.appendChild(el('span', { class: 'run-mark' }, 'running'));
+      if (!on && mark) mark.remove();
+      if (on) l.setAttribute('data-running', '');
+      else l.removeAttribute('data-running');
+    });
+  }
+
+  function pollRunning() {
+    if (document.hidden) return;
+    api('GET', '/api/chat/status')
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (st) {
+        if (st) setRunning(st.running_agent || null);
+      })
+      .catch(function () {});
+  }
+
   // ---------- chat panel ----------
   var MAX_CHARS = 8000;
   var chat_ = {
@@ -88,6 +113,7 @@
     head.appendChild(el('strong', {}, a.name));
     head.appendChild(el('span', { class: 'status', 'data-status': '', 'data-now': 'idle' }, 'Idle'));
     chat.appendChild(head);
+    drawAccess(a);
     var body = el('div', { class: 'transcript' }, 'Checking the chat service...');
     chat.appendChild(body);
     var token = chat_.token;
@@ -104,6 +130,11 @@
         if (token !== chat_.token) return;
         drawBlocked(a, 'The chat service is not reachable.', true);
       });
+  }
+
+  // One line from the roster saying what this agent can do, so the owner sees its reach before sending.
+  function drawAccess(a) {
+    if (a.access) chat.appendChild(el('p', { class: 'access-note' }, 'Access: ' + a.access));
   }
 
   function drawLink(a) {
@@ -133,6 +164,7 @@
     head.appendChild(el('strong', {}, a.name));
     head.appendChild(el('span', { class: 'status', 'data-status': '', 'data-now': 'idle' }, 'Idle'));
     chat.appendChild(head);
+    drawAccess(a);
     var body = el('div', { class: 'transcript' });
     body.appendChild(el('span', { class: 'notice', role: 'status' }, message));
     if (retry) {
@@ -158,6 +190,7 @@
     if (!st.available) return drawBlocked(a, 'The chat service is offline.', true);
     chat.textContent = '';
     var token = chat_.token;
+    setRunning(st.running_agent || null);
 
     var head = el('div', { class: 'chat-head' });
     var select = el('select', { 'aria-label': 'Conversation' });
@@ -169,6 +202,7 @@
       head.appendChild(n);
     });
     chat.appendChild(head);
+    drawAccess(a);
 
     var notice = el('div', { class: 'notice-bar', role: 'status', 'aria-live': 'polite' });
     chat.appendChild(notice);
@@ -214,7 +248,17 @@
     }
     if (!st.enabled)
       say('Web chat is switched off (' + (st.disabled_by === 'app' ? 'by the app' : 'on the host') + ').');
-    else if (st.busy) say('The agent is busy with another run.');
+    else if (st.busy) {
+      var other = st.running_agent && st.running_agent !== a.id ? byId(st.running_agent) : null;
+      say(
+        other
+          ? other.name +
+              ' is replying. Only one reply runs at a time: wait for it, or open ' +
+              other.name +
+              ' and press Stop.'
+          : 'The agent is busy with another run.',
+      );
+    }
 
     function lock(on) {
       chat_.busy = on;
@@ -422,6 +466,7 @@
       if (!text.trim() || chat_.busy) return;
       if (text.length > MAX_CHARS) return say('That message is too long.');
       say('');
+      setRunning(a.id);
       var oldNotice = log.querySelector('.msg-notice');
       if (oldNotice) oldNotice.remove();
       lock(true);
@@ -543,7 +588,8 @@
       }
       api('POST', '/api/chats/' + id + '/stop')
         .then(refresh)
-        .catch(function () {});
+        .catch(function () {})
+        .then(pollRunning);
     });
     input.addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
@@ -589,6 +635,8 @@
       });
     });
   });
+
+  window.setInterval(pollRunning, 5000);
 
   window.addEventListener('popstate', function () {
     show(idFromPath());
