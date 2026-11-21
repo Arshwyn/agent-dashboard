@@ -8,6 +8,7 @@
 # Note: UMask below applies to files this service creates. A deploy checkout made under a strict umask (for example
 # 077) can leave the app's tree unreadable to the container user (EACCES crash loop): check modes after checkout.
 [Unit]
+After=network.target
 Description=agent hub chat gateway (launches the orchestrator's main session for the hub)
 
 [Service]
