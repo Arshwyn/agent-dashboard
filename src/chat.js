@@ -65,12 +65,13 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       disabled_by: config.chatDisabled ? 'app' : null,
       available: false,
       busy: false,
+      running_agent: [...running.keys()][0] || null,
     };
     if (!gateway) return h.json(res, 200, { ...out, enabled: false, available: false });
     try {
       const s = await gateway.status();
       out.available = true;
-      out.busy = s.busy === true;
+      out.busy = s.busy === true || running.size > 0;
       if (s.enabled === false) {
         out.enabled = false;
         out.disabled_by = out.disabled_by || 'gateway';
@@ -168,7 +169,8 @@ function createChat({ config, store, gateway, now = () => Date.now(), keepaliveM
       if (!HUB_AGENTS.includes(c.agent)) return h.json(res, 409, { error: 'not_enabled' });
       if (config.chatDisabled) return h.json(res, 503, { error: 'disabled' });
       if (!gateway) return h.json(res, 503, { error: 'unavailable' });
-      if (running.has(c.agent)) return h.json(res, 409, { error: 'busy' });
+      // one run at a time across all agents: the gateway enforces it too, this answers before it is asked
+      if (running.size > 0) return h.json(res, 409, { error: 'busy' });
       const wait = rateWait();
       if (wait) return h.json(res, 429, { error: 'rate limited' }, { 'Retry-After': String(wait) });
       return stream(req, res, c, text).catch(() => {});
