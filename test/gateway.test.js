@@ -15,6 +15,7 @@ const {
   assertSafeArgv,
   buildEnv,
   createGateway,
+  socketIsLive,
 } = require('../gateway/gateway');
 const { createGatewayClient, GatewayError } = require('../src/gatewayClient');
 
@@ -773,4 +774,35 @@ test('a live gateway that is busy and not accepting is never taken for a dead on
     cleanup(env);
     fs.rmSync(sockDir, { recursive: true, force: true });
   }
+});
+
+test('the socket probe timer does not keep the process alive and is cleared when the probe ends', async () => {
+  const sockDir = tmp('gw-probe-');
+  const file = path.join(sockDir, 'p.sock');
+  const server = net.createServer((c) => c.end());
+  await new Promise((r) => server.listen(file, r));
+  const realSet = global.setTimeout;
+  const realClear = global.clearTimeout;
+  const made = [];
+  const cleared = [];
+  global.setTimeout = (...a) => {
+    const t = realSet(...a);
+    if (a[1] === 1000) made.push(t);
+    return t;
+  };
+  global.clearTimeout = (t) => {
+    cleared.push(t);
+    return realClear(t);
+  };
+  try {
+    assert.equal(await socketIsLive(file), true);
+  } finally {
+    global.setTimeout = realSet;
+    global.clearTimeout = realClear;
+    await new Promise((r) => server.close(r));
+    fs.rmSync(sockDir, { recursive: true, force: true });
+  }
+  assert.equal(made.length, 1);
+  assert.equal(made[0].hasRef(), false, 'the probe timer is unref()ed');
+  assert.ok(cleared.includes(made[0]), 'the probe timer is cleared in done()');
 });
