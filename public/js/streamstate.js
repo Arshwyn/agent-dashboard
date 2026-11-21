@@ -61,6 +61,25 @@
     return text === ERROR_TEXT.busy && !openRunning ? BUSY_ELSEWHERE : text;
   }
 
+  /**
+   * One refresh chain at a time: `begin()` returns a ticket and invalidates every earlier one, `cancel()` invalidates
+   * them all (a conversation switch). A timer-driven refresh asks `valid(ticket)` before it touches the page.
+   */
+  function createChain() {
+    var current = 0;
+    return {
+      begin: function () {
+        return ++current;
+      },
+      cancel: function () {
+        current++;
+      },
+      valid: function (ticket) {
+        return ticket === current;
+      },
+    };
+  }
+
   /** What to draw for a stored message row; a reply that is still running says so instead of a bare "...". */
   function rowText(m) {
     if (m.text) return m.text;
@@ -133,6 +152,7 @@
     refusalNotice: refusalNotice,
     rowText: rowText,
     noticeForView: noticeForView,
+    createChain: createChain,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HubStreamState = api;
