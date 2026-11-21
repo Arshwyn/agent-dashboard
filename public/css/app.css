@@ -496,6 +496,21 @@ a {
   font-size: var(--fs-0);
 }
 
+.msg.is-pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.msg-notice {
+  align-self: center;
+  max-width: 85%;
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--stage-b);
+  border-radius: var(--radius);
+  font-size: var(--fs-0);
+  text-align: center;
+}
+
 .msg.is-error {
   border-color: var(--stage-b);
 }
