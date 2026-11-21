@@ -781,6 +781,23 @@ test('the agent file must match its profile: a widened tools line, extra keys, a
     assert.equal(checkAgentFile(cfg, PROFILES.atlas), true, 'same set in another order');
     edit('atlas', (t) => t.replace(/tools: .*\n/, ''));
     assert.equal(checkAgentFile(cfg, PROFILES.atlas), false, 'tools line removed');
+    // a repeated or empty entry never passes, even when the count matches (it could stand in for a missing tool)
+    writeAgentFiles(ws);
+    edit('janus', (t) =>
+      t.replace('tools: Bash, Read, Grep, Glob, WebFetch', 'tools: Bash, Read, Read, Glob, WebFetch'),
+    );
+    assert.equal(checkAgentFile(cfg, PROFILES.janus), false, 'duplicate entry replacing Grep');
+    writeAgentFiles(ws);
+    edit('janus', (t) =>
+      t.replace('tools: Bash, Read, Grep, Glob, WebFetch', 'tools: Bash, Read, Grep, Glob, WebFetch, Bash'),
+    );
+    assert.equal(checkAgentFile(cfg, PROFILES.janus), false, 'duplicate entry added');
+    writeAgentFiles(ws);
+    edit('janus', (t) =>
+      t.replace('tools: Bash, Read, Grep, Glob, WebFetch', 'tools: Bash, Read, Grep, Glob, WebFetch,'),
+    );
+    assert.equal(checkAgentFile(cfg, PROFILES.janus), false, 'trailing empty entry');
+    writeAgentFiles(ws);
     // an agent that inherits everything must not gain a tools line
     edit('iris', (t) => t.replace('model: sonnet', 'model: sonnet\ntools: Read'));
     assert.equal(checkAgentFile(cfg, PROFILES.iris), false, 'tools line added');
