@@ -802,7 +802,61 @@ test('the agent file must match its profile: a widened tools line, extra keys, a
     fs.rmSync(file('hephaestus'));
     assert.equal(checkAgentFile(cfg, PROFILES.hephaestus), false, 'missing file');
     assert.equal(checkAgentFile({ workspaceDir: path.join(ws, 'nope') }, PROFILES.janus), false);
-    assert.equal(parseFrontmatter('---\na: 1\na: 2\n---\n').a, '1', 'the first key wins');
+    assert.equal(parseFrontmatter('---\na: 1\na: 2\n---\n'), null, 'a duplicate key is not plain');
+    assert.deepEqual(parseFrontmatter('---\na: 1\nb:\n  - x\n- y\n\n---\n'), { a: '1', b: '' });
+  } finally {
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test('frontmatter forms that another YAML reader could see differently never pass', () => {
+  const ws = tmp('gw-ws-');
+  try {
+    writeAgentFiles(ws);
+    const file = (id) => path.join(ws, '.claude', 'agents', `${id}.md`);
+    const base = (extra) => `---\nname: iris\nmodel: sonnet\n${extra}\n---\nbody`;
+    const forms = [
+      'tools : Read',
+      '"tools": Read',
+      "'tools': Read",
+      'Tools: Read',
+      'TOOLS: Read',
+      '? tools\n: Read',
+      'mcpServers : {}',
+      '"mcpServers": {}',
+      'MCPSERVERS: {}',
+      'permissionmode: bypassPermissions',
+      'permissionMode : bypassPermissions',
+      '"permissionMode": bypassPermissions',
+      'hooks : x',
+      'disallowedtools: Bash',
+      '"disallowedTools": Bash',
+      'tools: Read\ntools: Bash',
+      'description: a\ndescription: b',
+      '{tools: Read}',
+      '  tools: Read',
+      'name: x\n\ttools: Read',
+      'a: |\n  b',
+      'tools:Read',
+    ];
+    for (const extra of forms) {
+      fs.writeFileSync(file('iris'), base(extra));
+      assert.equal(checkAgentFile({ workspaceDir: ws }, PROFILES.iris), false, extra);
+    }
+    // a profile with a tools line is not fooled by a second or oddly spelled one either
+    for (const extra of ['tools: Read', '"tools": Read', 'tools : Read']) {
+      const t = PROFILES.janus.expectedTools.join(', ');
+      fs.writeFileSync(file('janus'), `---\nname: janus\ntools: ${t}\n${extra}\n---\n`);
+      assert.equal(checkAgentFile({ workspaceDir: ws }, PROFILES.janus), false, `janus + ${extra}`);
+    }
+    // plain content that merely mentions the words in values or in a list stays fine
+    fs.writeFileSync(
+      file('iris'),
+      base(
+        'description: Uses tools and hooks, sets permissionMode: no, mcpServers: no\nskills:\n  - tools\n  - hooks',
+      ),
+    );
+    assert.equal(checkAgentFile({ workspaceDir: ws }, PROFILES.iris), true);
   } finally {
     fs.rmSync(ws, { recursive: true, force: true });
   }
