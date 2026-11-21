@@ -50,7 +50,15 @@
 
   // ---------- chat panel ----------
   var MAX_CHARS = 8000;
-  var chat_ = { agent: null, conv: null, convs: [], busy: false, token: 0 };
+  var chat_ = {
+    agent: null,
+    conv: null,
+    convs: [],
+    busy: false,
+    token: 0,
+    keepLog: false,
+    pendingNotice: '',
+  };
 
   function api(method, path, body) {
     var opts = { method: method, headers: { Accept: 'application/json', 'X-Hub-Request': '1' } };
@@ -65,17 +73,7 @@
     stage.setAttribute('data-state', st);
   }
 
-  var ERROR_TEXT = {
-    failed: 'The run failed. Try again.',
-    timeout: 'The run took too long and was stopped.',
-    too_large: 'The reply was too large and was stopped.',
-    disabled: 'Web chat is switched off.',
-    switched_off: 'Web chat was switched off during this reply, so it was stopped.',
-    busy: 'Another run is in progress. Try again when it finishes.',
-    not_enabled: 'Chat is not enabled for this agent yet.',
-    unavailable: 'The chat service is not reachable.',
-    interrupted: 'The app restarted before this reply finished.',
-  };
+  var errorText = window.HubStreamState.errorText;
 
   function drawChat(a) {
     chat.textContent = '';
@@ -220,7 +218,8 @@
       log.setAttribute('aria-busy', on ? 'true' : 'false');
       bSend.disabled = on || !st.enabled;
       input.disabled = !st.enabled;
-      bStop.hidden = !on;
+      // Stop is also offered when this conversation has a reply running that this page did not start (another tab)
+      bStop.hidden = !(on || (chat_.conv && chat_.conv.running));
       select.disabled = on;
       bNew.disabled = on;
       bRen.disabled = on || !chat_.conv;
@@ -249,10 +248,17 @@
         );
       }
       msgs.forEach(function (m) {
-        var cls = m.status === 'error' ? 'is-error' : m.status === 'cancelled' ? 'is-cancelled' : '';
-        var node = addMsg(m.role, m.text || (m.status === 'streaming' ? '...' : ''), cls);
-        if (m.status === 'error')
-          node.appendChild(el('small', { class: 'err' }, ERROR_TEXT[m.error_code] || ERROR_TEXT.failed));
+        var shown = window.HubStreamState.rowText(m);
+        var cls =
+          m.status === 'error'
+            ? 'is-error'
+            : m.status === 'cancelled'
+              ? 'is-cancelled'
+              : m.status === 'streaming' && !m.text
+                ? 'is-pending'
+                : '';
+        var node = addMsg(m.role, shown, cls);
+        if (m.status === 'error') node.appendChild(el('small', { class: 'err' }, errorText(m.error_code)));
         if (m.status === 'cancelled') node.appendChild(el('small', { class: 'err' }, 'Stopped.'));
       });
       log.scrollTop = log.scrollHeight;
@@ -262,7 +268,7 @@
       select.textContent = '';
       if (!chat_.convs.length) select.appendChild(el('option', { value: '' }, 'No conversations'));
       chat_.convs.forEach(function (c) {
-        var o = el('option', { value: c.id }, c.title);
+        var o = el('option', { value: c.id }, c.running ? c.title + ' (running)' : c.title);
         if (chat_.conv && chat_.conv.id === c.id) o.selected = true;
         select.appendChild(o);
       });
@@ -332,12 +338,22 @@
       });
     });
 
-    function readStream(r, live, tool) {
+    // A refused send is shown as a plain notice at the end of the log (and read out), never as a reply bubble.
+    function showNotice(text) {
+      var old = log.querySelector('.msg-notice');
+      if (old) old.remove();
+      log.appendChild(el('div', { class: 'msg-notice', role: 'status' }, text));
+      log.scrollTop = log.scrollHeight;
+      announce(text);
+    }
+
+    function readStream(r, live, tool, sent) {
       var reader = r.body.getReader();
       var dec = new TextDecoder();
       var buf = '';
       var ss = window.HubStreamState.create();
       chat_.keepLog = false;
+      chat_.pendingNotice = '';
       function handle(ev, data) {
         var o = ss.apply(ev, data);
         chat_.keepLog = ss.keepLog();
@@ -348,8 +364,14 @@
           live.appendChild(el('small', { class: 'err' }, n));
         });
         if (o.removeTool) tool.remove();
-        if (o.errorCode) {
-          var msg = ERROR_TEXT[o.errorCode] || ERROR_TEXT.failed;
+        if (o.refused) {
+          // nothing started and nothing was stored: take the whole send back and keep the text for another try
+          live.remove();
+          sent.bubble.remove();
+          if (!input.value) input.value = sent.text;
+          chat_.pendingNotice = o.notice;
+        } else if (o.errorCode) {
+          var msg = errorText(o.errorCode);
           live.appendChild(el('small', { class: 'err' }, msg));
           live.classList.add('is-error');
           announce(msg);
@@ -387,7 +409,10 @@
       if (!text.trim() || chat_.busy) return;
       if (text.length > MAX_CHARS) return say('That message is too long.');
       say('');
+      var oldNotice = log.querySelector('.msg-notice');
+      if (oldNotice) oldNotice.remove();
       lock(true);
+      input.readOnly = true; // the text stays in the box until the server has accepted the send
       var ensure = chat_.conv
         ? Promise.resolve(chat_.conv)
         : api('POST', '/api/chats', { agent: a.id })
@@ -402,40 +427,52 @@
             });
       ensure
         .then(function (c) {
-          if (log.querySelector('.empty')) log.textContent = '';
-          addMsg('user', text);
-          var live = addMsg('assistant', '');
-          var tool = el('div', { class: 'tool' });
-          log.appendChild(tool);
-          input.value = '';
-          setStageState('thinking');
           return api('POST', '/api/chats/' + c.id + '/messages', { text: text }).then(function (r) {
-            if (r.status === 200) {
-              return readStream(r, live, tool);
+            input.readOnly = false;
+            if (r.status !== 200) {
+              // refused before anything was stored or started: a notice, no bubbles, the text stays in the box
+              return r
+                .json()
+                .catch(function () {
+                  return null;
+                })
+                .then(function (body) {
+                  setStageState('idle');
+                  chat_.pendingNotice = window.HubStreamState.refusalNotice(
+                    r.status,
+                    body,
+                    r.headers.get('Retry-After'),
+                  );
+                });
             }
-            live.remove();
-            tool.remove();
-            setStageState('idle');
-            if (r.status === 429)
-              return say(
-                'Too many messages. Wait ' + (r.headers.get('Retry-After') || 'a few') + ' seconds.',
-              );
-            if (r.status === 409) return say('The agent is busy with another run.');
-            if (r.status === 503) return say('Web chat is switched off or the service is not reachable.');
-            if (r.status === 413) return say('That message is too long.');
-            return say('The message was not accepted.');
+            if (log.querySelector('.empty')) log.textContent = '';
+            var bubble = addMsg('user', text);
+            var live = addMsg('assistant', '');
+            var tool = el('div', { class: 'tool' });
+            log.appendChild(tool);
+            input.value = '';
+            setStageState('thinking');
+            return readStream(r, live, tool, { text: text, bubble: bubble });
           });
         })
         .catch(function () {
+          input.readOnly = false;
           setStageState('error');
           say('The connection was lost. The reply may still finish; reload to see it.');
         })
         .then(function () {
+          input.readOnly = false;
           if (token !== chat_.token) return;
-          // an unsaved reply exists only on screen: refresh the list but keep the log as it is
+          // an unsaved reply (or a refused send's notice) exists only on screen: refresh the list, keep the log
           var keep = chat_.keepLog;
+          var pending = chat_.pendingNotice;
           chat_.keepLog = false;
-          return loadList(chat_.conv && chat_.conv.id, keep);
+          chat_.pendingNotice = '';
+          // the history is reloaded so it shows what is really stored (for instance the other reply that is running),
+          // and the notice is put back at the end of it
+          return loadList(chat_.conv && chat_.conv.id, keep).then(function () {
+            if (pending && token === chat_.token) showNotice(pending);
+          });
         });
     }
 
