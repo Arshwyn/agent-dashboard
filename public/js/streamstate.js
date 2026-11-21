@@ -80,17 +80,28 @@
     };
   }
 
+  function isObject(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+  }
+
   /**
-   * Validates the two responses of a Stop refresh (the list, then the conversation). Each is {ok, body}. Returns
-   * {conversations, conversation, messages} or null when either is not ok or lacks the expected shape (for example
-   * a JSON error body because the conversation was deleted in another tab), so the caller keeps the current view.
+   * Validates the two responses of a Stop refresh (the list, then the conversation named by `id`). Each is
+   * {ok, body}. Returns {conversations, conversation, messages} or null when either is not ok or lacks the expected
+   * shape (for example a JSON error body because the conversation was deleted in another tab, or another
+   * conversation's data), so the caller keeps the current view.
    */
-  function refreshData(list, conv) {
+  function refreshData(list, conv, id) {
     if (!list || !conv || !list.ok || !conv.ok) return null;
     var l = list.body;
     var c = conv.body;
-    if (!l || !c || !Array.isArray(l.conversations)) return null;
-    if (!c.conversation || typeof c.conversation !== 'object' || !Array.isArray(c.messages)) return null;
+    if (!isObject(l) || !isObject(c) || !Array.isArray(l.conversations)) return null;
+    if (
+      !l.conversations.every(function (x) {
+        return isObject(x) && typeof x.id === 'string';
+      })
+    )
+      return null;
+    if (!isObject(c.conversation) || c.conversation.id !== id || !Array.isArray(c.messages)) return null;
     return { conversations: l.conversations, conversation: c.conversation, messages: c.messages };
   }
 
