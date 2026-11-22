@@ -21,7 +21,7 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/plain; charset=utf-8',
 };
-const SECURITY_HEADERS = {
+const BASE_SECURITY_HEADERS = {
   'Content-Security-Policy':
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
@@ -32,6 +32,17 @@ const SECURITY_HEADERS = {
   'CDN-Cache-Control': 'no-store',
   'Cloudflare-CDN-Cache-Control': 'no-store',
 };
+// The page may frame exactly one origin, and only when the Apollo embed is on; otherwise the policy is the
+// strict default (frame-src falls back to default-src 'none'). Framing of the hub itself stays refused.
+function securityHeaders(config) {
+  if (!config.apolloEmbed || !config.apolloOrigin) return BASE_SECURITY_HEADERS;
+  const csp = BASE_SECURITY_HEADERS['Content-Security-Policy'].replace(
+    "connect-src 'self';",
+    `connect-src 'self'; frame-src ${config.apolloOrigin};`,
+  );
+  return { ...BASE_SECURITY_HEADERS, 'Content-Security-Policy': csp };
+}
+
 const ROSTER = JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR, 'roster.json'), 'utf8')).agents;
 const AGENT_IDS = new Set(ROSTER.map((a) => a.id));
 const STATIC_OK = /^\/(roster\.json|css\/[\w.-]+|js\/[\w.-]+|vendor\/[\w.-]+|models\/[\w.-]+)$/;
@@ -46,6 +57,7 @@ function createApp(config, opts = {}) {
         fetchJson: opts.fetchJson,
         now: opts.now,
       });
+  const SECURITY_HEADERS = securityHeaders(config);
   const hsts = config.production ? { 'Strict-Transport-Security': 'max-age=31536000' } : {};
 
   function send(res, status, body, headers = {}) {
@@ -156,6 +168,7 @@ function createApp(config, opts = {}) {
     return ROSTER.map((a) => ({
       ...a,
       link: a.chat === 'link' && config.apolloChatUrl ? config.apolloChatUrl : null,
+      ...(a.chat === 'link' && config.apolloChatUrl && config.apolloEmbed ? { embed: true } : {}),
     }));
   }
 

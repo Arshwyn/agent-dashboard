@@ -239,3 +239,41 @@ test('odd request targets cannot be routed as another host, and auth still comes
     await s.stop();
   }
 });
+
+test('the hub CSP is byte-identical without the embed and gains one exact frame-src with it', async () => {
+  const off = await startApp({ APOLLO_CHAT_URL: 'https://chat.example.com/app/' });
+  let base;
+  try {
+    base = (await get(off.base, '/api/roster', H())).headers.get('content-security-policy');
+    assert.equal(
+      base,
+      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+    const a = (await get(off.base, '/api/roster', H())).json.agents.find((x) => x.id === 'apollo');
+    assert.equal('embed' in a, false);
+  } finally {
+    await off.stop();
+  }
+  const on = await startApp({ APOLLO_CHAT_URL: 'https://chat.example.com/app/', APOLLO_EMBED: '1' });
+  try {
+    for (const p of ['/api/roster', '/', '/js/app.js', '/healthz']) {
+      const r = await get(on.base, p, p === '/healthz' ? {} : H());
+      const csp = r.headers.get('content-security-policy');
+      assert.equal(
+        csp,
+        base.replace("connect-src 'self';", "connect-src 'self'; frame-src https://chat.example.com;"),
+        p,
+      );
+      assert.equal(r.headers.get('x-frame-options'), 'DENY', p);
+      assert.match(csp, /frame-ancestors 'none'/, p);
+      assert.doesNotMatch(csp, /\*/, p);
+      assert.equal(r.headers.get('cross-origin-opener-policy'), 'same-origin', p);
+    }
+    const a = (await get(on.base, '/api/roster', H())).json.agents;
+    assert.equal(a.find((x) => x.id === 'apollo').embed, true);
+    assert.equal(a.find((x) => x.id === 'apollo').link, 'https://chat.example.com/app/');
+    assert.ok(a.filter((x) => x.id !== 'apollo').every((x) => !('embed' in x)));
+  } finally {
+    await on.stop();
+  }
+});
