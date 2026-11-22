@@ -118,3 +118,7 @@ test('offline and expired sessions disable Send with the reason, and nothing is 
   // no retry loop on an expired session: the only action is the Reload button
   assert.equal(/setInterval\([^)]*expired/.test(app), false);
 });
+
+test('on narrow screens the chat keeps room for the log and composer so the page scrolls instead of clipping', () => {
+  assert.match(css, /@media \(max-width: 899px\) \{\s*\.chat \{\s*min-height: 420px;/);
+});

@@ -821,3 +821,10 @@ a {
     outline: 2px solid Highlight;
   }
 }
+
+/* narrow screens: the chat keeps room for its log and composer even with notices open; the page scrolls instead */
+@media (max-width: 899px) {
+  .chat {
+    min-height: 420px;
+  }
+}
