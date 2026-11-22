@@ -15,6 +15,7 @@ services:
       ACCESS_AUD: ${ACCESS_AUD:?set ACCESS_AUD in .env}
       OWNER_EMAIL: ${OWNER_EMAIL:?set OWNER_EMAIL in .env}
       APOLLO_CHAT_URL: ${APOLLO_CHAT_URL:-}
+      APOLLO_EMBED: ${APOLLO_EMBED:-0}
       GATEWAY_SOCKET: /gateway/gateway.sock
       DB_PATH: /data/hub.db
       CHAT_DISABLED: ${CHAT_DISABLED:-0}
