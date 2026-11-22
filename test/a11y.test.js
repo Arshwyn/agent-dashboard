@@ -91,12 +91,13 @@ const { STATES, showing, newReply, noMessages } = require('../public/js/hubstate
 
 test('every page-level state has plain words and, where one exists, a named next step', () => {
   const need = { rosterFailed: 'Retry', expired: 'Reload' };
-  assert.deepEqual(
-    Object.keys(STATES).sort(),
-    ['expired', 'noConversations', 'offline', 'online', 'rosterFailed', 'unused'].filter(
-      (k) => k !== 'unused',
-    ),
-  );
+  assert.deepEqual(Object.keys(STATES).sort(), [
+    'expired',
+    'noConversations',
+    'offline',
+    'online',
+    'rosterFailed',
+  ]);
   for (const [k, v] of Object.entries(STATES)) {
     assert.ok(v.text.length > 10 && /[.]$/.test(v.text) && !/[<>{}]/.test(v.text), k);
     assert.equal(v.next, need[k] || '', k);
