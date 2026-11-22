@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="/css/app.css" />
   </head>
   <body>
+    <a class="skip-link" href="#rail" data-skip="rail">Skip to agents</a>
+    <a class="skip-link" href="#chat" data-skip="chat">Skip to chat</a>
     <header class="bar">
       <h1>Agent hub</h1>
       <div class="seg" role="group" aria-label="Theme">
@@ -18,7 +20,7 @@
       </div>
     </header>
     <div class="shell">
-      <nav class="rail" id="rail" aria-label="Agents"></nav>
+      <nav class="rail" id="rail" tabindex="-1" aria-label="Agents"></nav>
       <main class="main">
         <div
           class="stage"
@@ -40,7 +42,7 @@
           <p class="perf" id="perf"></p>
           <p class="hint" id="hint">Click the orb to expand</p>
         </div>
-        <section class="chat" id="chat" aria-label="Chat"></section>
+        <section class="chat" id="chat" tabindex="-1" aria-label="Chat"></section>
       </main>
     </div>
     <script src="/vendor/three.min.js"></script>

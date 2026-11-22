@@ -107,6 +107,29 @@ a {
   outline-offset: 2px;
 }
 
+/* skip links: first in the tab order, shown only while focused */
+.skip-link {
+  position: absolute;
+  top: var(--s-2);
+  left: var(--s-2);
+  z-index: 10;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+#rail:focus,
+#chat:focus {
+  outline: none;
+}
+
 .bar {
   display: flex;
   align-items: center;
