@@ -675,3 +675,50 @@ a {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ---------- Apollo frame ---------- */
+
+.apollo-pane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.apollo-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--surface);
+}
+
+.apollo-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface);
+  pointer-events: none;
+}
+
+.apollo-notice .link-button {
+  pointer-events: auto;
+}
+
+.apollo-notice[hidden] {
+  display: none;
+}
+
+.plain-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--accent);
+}

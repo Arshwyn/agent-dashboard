@@ -106,6 +106,7 @@
   var errorText = window.HubStreamState.errorText;
 
   function drawChat(a) {
+    teardownApollo();
     chat.textContent = '';
     chat_.token++;
     chat_.agent = a;
@@ -113,7 +114,7 @@
     chat_.convs = [];
     chat_.busy = false;
     setStageState('idle');
-    if (a.chat === 'link') return drawLink(a);
+    if (a.chat === 'link') return a.embed && a.link ? drawApolloFrame(a) : drawLink(a);
     var head = el('div', { class: 'chat-head' });
     head.appendChild(el('strong', {}, a.name));
     head.appendChild(el('span', { class: 'status', 'data-status': '', 'data-now': 'idle' }, 'Idle'));
@@ -161,6 +162,104 @@
       body.appendChild(el('span', { class: 'notice' }, 'The chat link is not configured.'));
     }
     chat.appendChild(body);
+  }
+
+  // ---------- Apollo in a frame ----------
+  // The hub only hosts the frame. The app inside is another origin with its own sign-in; this page cannot read
+  // it, passes it nothing (the address is exactly the configured one) and keeps nothing from it. The only thing
+  // taken from the frame is the content-free ready/state message, checked for origin and source.
+  var FRAME_TIMEOUT_MS = 8000;
+  var apollo = null;
+
+  function teardownApollo() {
+    if (!apollo) return;
+    window.removeEventListener('message', apollo.onMessage);
+    clearTimeout(apollo.timer);
+    apollo = null;
+  }
+
+  function drawApolloFrame(a) {
+    var origin;
+    try {
+      origin = new URL(a.link).origin;
+    } catch {
+      return drawLink(a);
+    }
+    var head = el('div', { class: 'chat-head' });
+    head.appendChild(el('strong', {}, a.name));
+    head.appendChild(el('span', { class: 'status', 'data-status': '', 'data-now': 'idle' }, 'Idle'));
+    head.appendChild(
+      el(
+        'a',
+        { class: 'plain-link', href: a.link, target: '_blank', rel: 'noopener noreferrer' },
+        'Open in a new tab',
+      ),
+    );
+    chat.appendChild(head);
+    var wrap = el('div', { class: 'apollo-pane' });
+    var notice = el('div', { class: 'apollo-notice', role: 'status' });
+    wrap.appendChild(notice);
+    chat.appendChild(wrap);
+
+    function showWaiting() {
+      notice.textContent = 'Loading Apollo...';
+      notice.hidden = false;
+    }
+    function showFailed() {
+      notice.textContent = '';
+      notice.appendChild(
+        el(
+          'p',
+          {},
+          'Apollo did not load here. If you are signed out, open it in its own tab, sign in, then reload this view.',
+        ),
+      );
+      var open = el(
+        'a',
+        { class: 'link-button', href: a.link, target: '_blank', rel: 'noopener noreferrer' },
+        'Open ' + a.name,
+      );
+      var again = el('button', { type: 'button', class: 'link-button' }, 'Reload this view');
+      again.addEventListener('click', function () {
+        mount();
+      });
+      notice.appendChild(open);
+      notice.appendChild(again);
+      notice.hidden = false;
+    }
+    function mount() {
+      var old = wrap.querySelector('iframe');
+      if (old) old.remove();
+      clearTimeout(apollo.timer);
+      setStageState('idle');
+      showWaiting();
+      var frame = el('iframe', {
+        class: 'apollo-frame',
+        title: a.name + ' chat',
+        src: a.link,
+        sandbox: 'allow-scripts allow-same-origin allow-forms allow-downloads allow-modals',
+        referrerpolicy: 'no-referrer',
+        allow: 'clipboard-write',
+      });
+      apollo.frame = frame;
+      wrap.appendChild(frame);
+      apollo.timer = setTimeout(showFailed, FRAME_TIMEOUT_MS);
+    }
+    apollo = {
+      frame: null,
+      timer: 0,
+      onMessage: function (ev) {
+        var m =
+          apollo && window.HubApolloState.accept(ev, origin, apollo.frame && apollo.frame.contentWindow);
+        if (!m) return;
+        if (m.kind === 'ready') {
+          clearTimeout(apollo.timer);
+          notice.hidden = true;
+        } else setStageState(m.state);
+      },
+    };
+    window.addEventListener('message', apollo.onMessage);
+    mount();
   }
 
   function drawBlocked(a, message, retry) {
