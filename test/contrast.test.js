@@ -98,3 +98,20 @@ test('control borders use the control token, decorative dividers keep the quiet 
     assert.match(m[0], /border: 1px solid var\(--control-line\)/, sel);
   }
 });
+
+test('reduced motion removes every CSS animation and transition, and forced colors keep the shapes', () => {
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion: reduce\) \{\s*\*,\s*\*::before,\s*\*::after \{\s*animation: none !important;\s*transition: none !important;/,
+  );
+  // every keyframe animation and transition is declared only inside the no-preference query or is removed above
+  assert.match(css, /@media \(forced-colors: active\)/);
+  for (const sel of [
+    "\\.rail a\\[aria-current='page'\\]",
+    '\\.rail \\.new-mark',
+    '\\.rail \\.run-mark',
+    '\\.skip-link',
+  ]) {
+    assert.match(css.slice(css.indexOf('forced-colors: active')), new RegExp(sel));
+  }
+});

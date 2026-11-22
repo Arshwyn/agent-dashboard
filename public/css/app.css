@@ -789,3 +789,35 @@ a {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ---------- forced colors (Windows high contrast): shapes must survive the colour override ---------- */
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .rail a[aria-current='page'] {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+
+  .seg button[aria-pressed='true'] {
+    outline: 2px solid CanvasText;
+    outline-offset: -4px;
+    text-decoration: underline;
+  }
+
+  .rail .new-mark,
+  .rail .run-mark,
+  .skip-link,
+  .net-bar button,
+  .composer button,
+  .link-button {
+    border: 1px solid ButtonText;
+  }
+
+  .stage:focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
