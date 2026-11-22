@@ -11,24 +11,29 @@ A private web hub for talking with a small set of AI agents. Each agent is a glo
 - The hub and the gateway must run on the same host (a unix socket cannot cross hosts); the gateway is a systemd user unit, see `docs/DEPLOY.md`.
 - Default port: **8787**.
 
+## Apollo in the hub view
+
+Apollo is never run or proxied by the hub. With `APOLLO_EMBED=1` the Apollo pane shows the separate Apollo chat app in an iframe, next to Apollo's orb; with it off (default) the pane is a link-out button. The app inside the frame is another origin with its own Access sign-in, history and runs, so this page cannot read it and never fetches, stores or logs anything from it. The frame is sandboxed, sends no referrer and is created only while Apollo is selected. The Apollo app sends two content-free messages (ready, and idle/thinking/speaking) that move the orb; they are accepted only from the configured origin and the frame's own window and kept in memory. If no ready message arrives within 8 seconds (signed out, or framing not allowed by the Apollo app), the pane shows a sign-in hint with a link that opens Apollo in its own tab. Sign in there first; the frame works while that session lasts. See `docs/ISOLATION.md` ("Apollo in the hub view").
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill it in (it is gitignored).
 
-| Variable             | Required | Meaning                                                                        |
-| -------------------- | -------- | ------------------------------------------------------------------------------ |
-| `ACCESS_TEAM_DOMAIN` | yes      | Hostname of the Cloudflare Access team, no scheme                              |
-| `ACCESS_AUD`         | yes      | Audience tag of the Access application in front of this app                    |
-| `OWNER_EMAIL`        | yes      | The single allowed email                                                       |
-| `PORT`               | no       | Listen port (default 8787)                                                     |
-| `HOST`               | no       | Bind address (default 127.0.0.1; the image sets 0.0.0.0)                       |
-| `BIND_ADDR`          | no       | Address compose publishes the port on (default 127.0.0.1)                      |
-| `APOLLO_CHAT_URL`    | no       | https link-out for the Apollo card (no credentials in the URL); empty hides it |
-| `DEV_AUTH_BYPASS`    | no       | `1` skips Access for local development only                                    |
-| `GATEWAY_SOCKET`     | no       | Absolute path of the chat gateway's unix socket; unset means chat is offline   |
-| `DB_PATH`            | no       | Chat history database (default `./data/hub.db`)                                |
-| `CHAT_DISABLED`      | no       | `1` is the app-side kill switch for web chat                                   |
-| `CHAT_MAX_PER_MIN`   | no       | Messages per minute across all chats (default 6)                               |
+| Variable             | Required | Meaning                                                                                            |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `ACCESS_TEAM_DOMAIN` | yes      | Hostname of the Cloudflare Access team, no scheme                                                  |
+| `ACCESS_AUD`         | yes      | Audience tag of the Access application in front of this app                                        |
+| `OWNER_EMAIL`        | yes      | The single allowed email                                                                           |
+| `PORT`               | no       | Listen port (default 8787)                                                                         |
+| `HOST`               | no       | Bind address (default 127.0.0.1; the image sets 0.0.0.0)                                           |
+| `BIND_ADDR`          | no       | Address compose publishes the port on (default 127.0.0.1)                                          |
+| `APOLLO_CHAT_URL`    | no       | https link-out for the Apollo card (no credentials in the URL); empty hides it                     |
+| `APOLLO_EMBED`       | no       | `1` shows the Apollo chat app in a frame in the Apollo pane (needs `APOLLO_CHAT_URL`; default off) |
+| `DEV_AUTH_BYPASS`    | no       | `1` skips Access for local development only                                                        |
+| `GATEWAY_SOCKET`     | no       | Absolute path of the chat gateway's unix socket; unset means chat is offline                       |
+| `DB_PATH`            | no       | Chat history database (default `./data/hub.db`)                                                    |
+| `CHAT_DISABLED`      | no       | `1` is the app-side kill switch for web chat                                                       |
+| `CHAT_MAX_PER_MIN`   | no       | Messages per minute across all chats (default 6)                                                   |
 
 `DEV_AUTH_BYPASS=1` is accepted only when `NODE_ENV` is explicitly `development` or `test` (case and spaces ignored; unset or anything else is refused) and `HOST` is a loopback address; otherwise the server refuses to start. With it on, only requests from the local machine are served (a request carrying `X-Forwarded-For`, `Forwarded` or any `Cf-*` header is refused, as it came through a proxy or tunnel) and a warning is logged at startup. Never set it on a deployment.
 
@@ -50,7 +55,7 @@ Add `?perf` to the page URL to show the frame-time readout on the stage; `?yaw=`
 
 - `src/` server, config, the Access verifier, the chat API (`chat.js`), the CSRF check, the gateway client, the stream mapper (the only code that decides what reaches the browser) and the history store.
 - `gateway/gateway.js` the host-side chat gateway (dependency-free): fixed profile table for eight agents (the pilot as the main session, seven as `--agent`), fixed command line (permission mode `auto`, never a bypass), a drift check of each agent file, denied health connectors and Apollo sub-agent (`HUB_DENY_TOOLS` in the gateway environment, see `docs/DEPLOY.md`), one run at a time, kill switch, audit log. `docs/host/` holds its systemd unit and environment sample.
-- `public/` the app: `index.html`, `css/app.css`, `js/app.js` (shell and routing), `js/hub.js` (the 3D viewer), `roster.json` (the one roster file), `models/` (the eight generated figures) and `vendor/` (a three.js subset bundle with its licence and rebuild notes).
+- `public/` the app: `index.html`, `css/app.css`, `js/app.js` (shell and routing), `js/hub.js` (the 3D viewer), `js/apollostate.js` (the filter for the framed Apollo app's state messages), `roster.json` (the one roster file), `models/` (the eight generated figures) and `vendor/` (a three.js subset bundle with its licence and rebuild notes).
 - `docs/DESIGN.md` the design identity. `docs/DEPLOY.md` how to run the app and the gateway. `docs/ISOLATION.md` what web chat can do, the threat model and the kill switch. `ASSET-LICENSE` lists every asset and its licence.
 - `scripts/hook.js` a no-op kept so existing hook entries on the host keep working.
 
