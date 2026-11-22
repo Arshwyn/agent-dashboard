@@ -18,6 +18,15 @@
     return n;
   }
 
+  // Skip links move focus without a fragment navigation (which would fire popstate and redraw the chat).
+  document.querySelectorAll('[data-skip]').forEach(function (l) {
+    l.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var t = document.getElementById(l.getAttribute('data-skip'));
+      if (t) t.focus();
+    });
+  });
+
   function idFromPath() {
     var m = /^\/agent\/([a-z]+)\/?$/.exec(window.location.pathname);
     return m ? m[1] : null;
@@ -105,6 +114,21 @@
 
   var errorText = window.HubStreamState.errorText;
 
+  // After a control the person was using disappears or is disabled (Send during a reply, Stop, a Retry button), focus
+  // would fall back to the page; it goes to the composer, or to the first control of a redrawn state.
+  var focusAfterRetry = 0;
+  function focusFirstControl() {
+    var t = chat.querySelector(
+      'button:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]',
+    );
+    (t || chat).focus();
+  }
+  function settleFocus() {
+    if (!focusAfterRetry || focusAfterRetry !== chat_.token) return;
+    focusAfterRetry = 0;
+    focusFirstControl();
+  }
+
   function drawChat(a) {
     teardownApollo();
     chat.textContent = '';
@@ -173,6 +197,11 @@
 
   function teardownApollo() {
     if (!apollo) return;
+    // focus inside the frame is lost when it is removed: put it back on the selected agent's rail link
+    if (apollo.frame && document.activeElement === apollo.frame) {
+      var cur = rail.querySelector('a[aria-current]');
+      if (cur) cur.focus();
+    }
     window.removeEventListener('message', apollo.onMessage);
     clearTimeout(apollo.timer);
     apollo = null;
@@ -275,6 +304,7 @@
       var b = el('button', { type: 'button', class: 'link-button' }, 'Try again');
       b.addEventListener('click', function () {
         drawChat(a);
+        focusAfterRetry = chat_.token;
       });
       body.appendChild(b);
     }
@@ -285,6 +315,7 @@
     );
     composer.appendChild(el('button', { type: 'button', disabled: '' }, 'Send'));
     chat.appendChild(composer);
+    settleFocus();
   }
 
   function drawReal(a, st) {
@@ -363,6 +394,13 @@
               ' and press Stop.'
           : 'The agent is busy with another run.',
       );
+    }
+
+    // Send is disabled during a reply and Stop disappears afterwards: focus returns to the composer, but only if
+    // it would otherwise be lost (never taken from something else the person moved to).
+    function restoreFocus() {
+      var f = document.activeElement;
+      if (!f || f === document.body || f === bSend || f === bStop) input.focus();
     }
 
     function lock(on) {
@@ -636,6 +674,7 @@
           return loadList(chat_.conv && chat_.conv.id, keep).then(function () {
             if (pending && token === chat_.token)
               showNotice(window.HubStreamState.noticeForView(pending, !!(chat_.conv && chat_.conv.running)));
+            if (token === chat_.token) restoreFocus();
           });
         });
     }
@@ -694,7 +733,10 @@
       api('POST', '/api/chats/' + id + '/stop')
         .then(refresh)
         .catch(function () {})
-        .then(pollRunning);
+        .then(pollRunning)
+        .then(function () {
+          if (token === chat_.token) restoreFocus();
+        });
     });
     input.addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
@@ -704,6 +746,7 @@
     });
     lock(false);
     loadList();
+    settleFocus();
   }
 
   function show(id) {
