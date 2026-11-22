@@ -1177,7 +1177,14 @@
   window.addEventListener('pagehide', dispose);
 
   ready = true;
-  window.HubViewer = { select: selectGod };
+  // stats() is a read-only count of GPU resources, for the performance checks in docs/DESIGN.md
+  window.HubViewer = {
+    select: selectGod,
+    stats: function () {
+      var m = renderer.info.memory;
+      return { geometries: m.geometries, textures: m.textures, draws: renderer.info.render.calls };
+    },
+  };
   var startState = params.get('state');
   setActivity(stateOk(startState) ? startState : 'idle');
   resize();
