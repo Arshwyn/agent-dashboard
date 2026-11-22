@@ -74,28 +74,54 @@
   // colour is not the only signal. The page asks the server every few seconds while it is visible.
   // A poll that was already in flight when this page changed the marker itself (a send) must not undo it: every local
   // change bumps the epoch, and a poll result is applied only if the epoch is the one it started with.
-  var runningEpoch = 0;
-  function setRunning(id, local) {
-    if (local) runningEpoch++;
+  var tracker = window.HubState.createRunning();
+  function selectedId() {
+    return chat_.agent ? chat_.agent.id : null;
+  }
+  function renderRail() {
+    var id = tracker.running();
     rail.querySelectorAll('a').forEach(function (l) {
-      var on = !!id && l.getAttribute('data-agent') === id;
+      var who = l.getAttribute('data-agent');
+      var on = !!id && who === id;
       var mark = l.querySelector('.run-mark');
       if (on && !mark) l.appendChild(el('span', { class: 'run-mark' }, 'running'));
       if (!on && mark) mark.remove();
       if (on) l.setAttribute('data-running', '');
       else l.removeAttribute('data-running');
+      var fresh = tracker.has(who);
+      var nm = l.querySelector('.new-mark');
+      if (fresh && !nm) l.appendChild(el('span', { class: 'new-mark' }, 'new reply'));
+      if (!fresh && nm) nm.remove();
+    });
+  }
+  function setRunning(id, local) {
+    var res;
+    if (local) tracker.local(id);
+    else res = tracker.apply(undefined, id, selectedId());
+    renderRail();
+    if (res) announceNew(res.marked);
+  }
+  function announceNew(ids) {
+    ids.forEach(function (who) {
+      var a = byId(who);
+      if (a) announce(window.HubState.newReply(a.name));
     });
   }
 
   function pollRunning() {
     if (document.hidden) return;
-    var epoch = runningEpoch;
+    var epoch = tracker.begin();
     api('GET', '/api/chat/status')
       .then(function (r) {
         return r.ok ? r.json() : null;
       })
       .then(function (st) {
-        if (st && epoch === runningEpoch) setRunning(st.running_agent || null);
+        if (!st) return;
+        var res = tracker.apply(epoch, st.running_agent || null, selectedId());
+        if (res.applied) {
+          renderRail();
+          announceNew(res.marked);
+        }
       })
       .catch(function () {});
   }
@@ -806,6 +832,8 @@
       if (l.getAttribute('data-agent') === a.id) l.setAttribute('aria-current', 'page');
       else l.removeAttribute('aria-current');
     });
+    tracker.select(a.id);
+    renderRail();
     document.title = a.name + ' - Agent hub';
     document.querySelectorAll('[data-agent-name]').forEach(function (n) {
       n.textContent = a.name;
@@ -821,7 +849,7 @@
   function go(id, push) {
     if (push) window.history.pushState({}, '', '/agent/' + id);
     show(id);
-    announce('Showing ' + (byId(id) || roster[0]).name);
+    announce(window.HubState.showing((byId(id) || roster[0]).name));
   }
 
   document.querySelectorAll('[data-theme-set]').forEach(function (b) {
@@ -840,7 +868,7 @@
   window.addEventListener('popstate', function () {
     show(idFromPath());
     var a = byId(idFromPath()) || roster[0];
-    if (a) announce('Showing ' + a.name);
+    if (a) announce(window.HubState.showing(a.name));
   });
 
   function startViewer() {

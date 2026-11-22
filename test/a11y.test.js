@@ -73,7 +73,7 @@ test('one polite status region serves the whole page and the message log is neve
   );
   assert.match(app, /role: 'log',[\s\S]*'aria-live': 'off'/);
   assert.match(app, /log\.setAttribute\('aria-busy'/);
-  assert.match(app, /announce\('Showing ' \+/);
+  assert.match(app, /announce\(window\.HubState\.showing\(/);
   // the reply result is announced once, at the event, never from a redraw
   assert.equal((app.match(/Reply from ' \+ a\.name \+ ' complete/g) || []).length, 1);
 });
