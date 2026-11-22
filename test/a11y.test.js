@@ -63,3 +63,26 @@ test('focus returns to the composer after Send and Stop and moves to the first c
   assert.match(app, /focusAfterRetry = chat_\.token/);
   assert.match(app, /function teardownApollo\(\)[\s\S]*document\.activeElement === apollo\.frame/);
 });
+
+test('one polite status region serves the whole page and the message log is never live', () => {
+  assert.equal((html.match(/id="announcer"/g) || []).length, 1);
+  assert.match(html, /id="announcer" role="status" aria-live="polite"/);
+  assert.equal(
+    /role: 'status', 'aria-live': 'polite' \}\);\s*chat\.appendChild\(announcer\)/.test(app),
+    false,
+  );
+  assert.match(app, /role: 'log',[\s\S]*'aria-live': 'off'/);
+  assert.match(app, /log\.setAttribute\('aria-busy'/);
+  assert.match(app, /announce\('Showing ' \+/);
+  // the reply result is announced once, at the event, never from a redraw
+  assert.equal((app.match(/Reply from ' \+ a\.name \+ ' complete/g) || []).length, 1);
+});
+
+test('every created control has an accessible name', () => {
+  // each button/select/textarea/input built in app.js carries text, an aria-label or a title
+  for (const m of app.matchAll(/el\(\s*'(select|textarea|input)',\s*{([^}]*)}/g)) {
+    assert.match(m[2], /'aria-label'/, `${m[1]} has aria-label`);
+  }
+  assert.equal(/<button[^>]*><\/button>/.test(html), false);
+  assert.match(html, /<div class="seg" role="group" aria-label="Theme">/);
+});

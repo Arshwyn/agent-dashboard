@@ -27,6 +27,19 @@
     });
   });
 
+  // The one polite live region for the whole page: agent changes, reply results, offline and new-reply notices.
+  // It is cleared first so the same sentence can be announced twice.
+  var announcerEl = document.getElementById('announcer');
+  var announceTimer = 0;
+  function announce(text) {
+    announcerEl.textContent = '';
+    window.clearTimeout(announceTimer);
+    if (!text) return;
+    announceTimer = window.setTimeout(function () {
+      announcerEl.textContent = text;
+    }, 50);
+  }
+
   function idFromPath() {
     var m = /^\/agent\/([a-z]+)\/?$/.exec(window.location.pathname);
     return m ? m[1] : null;
@@ -345,19 +358,11 @@
     var log = el('div', {
       class: 'messages',
       role: 'log',
-      // streamed text is not announced word by word; the announcer below says when a reply is complete
+      // streamed text is not announced word by word; the page status region says when a reply is complete
       'aria-live': 'off',
       'aria-label': 'Messages',
     });
     chat.appendChild(log);
-    var announcer = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
-    chat.appendChild(announcer);
-    function announce(text) {
-      announcer.textContent = '';
-      window.setTimeout(function () {
-        announcer.textContent = text;
-      }, 50);
-    }
     var composer = el('div', { class: 'composer' });
     var input = el('textarea', {
       'aria-label': 'Message',
@@ -504,7 +509,7 @@
       stopChain.cancel();
       window.clearTimeout(stopTimer);
       say('');
-      announcer.textContent = '';
+      announce('');
     }
 
     select.addEventListener('change', function () {
@@ -771,6 +776,7 @@
   function go(id, push) {
     if (push) window.history.pushState({}, '', '/agent/' + id);
     show(id);
+    announce('Showing ' + (byId(id) || roster[0]).name);
   }
 
   document.querySelectorAll('[data-theme-set]').forEach(function (b) {
@@ -788,6 +794,8 @@
 
   window.addEventListener('popstate', function () {
     show(idFromPath());
+    var a = byId(idFromPath()) || roster[0];
+    if (a) announce('Showing ' + a.name);
   });
 
   function startViewer() {
