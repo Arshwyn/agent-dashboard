@@ -11,6 +11,10 @@ A private web hub for talking with a small set of AI agents. Each agent is a glo
 - The hub and the gateway must run on the same host (a unix socket cannot cross hosts); the gateway is a systemd user unit, see `docs/DEPLOY.md`.
 - Default port: **8787**.
 
+## Using the hub
+
+Everything works from the keyboard: two skip links come first ("Skip to agents", "Skip to chat"), the agents are real links (Tab and Enter), Space or Enter expands the figure and Esc collapses it. Page changes, reply results, the offline state and new replies are announced through one polite status region; streamed text is not read word by word. A small "new reply" badge on a rail entry means that agent finished a reply while another agent was open; it clears when you open that agent and is kept in memory only (a reload clears it; the history is the record). The page shows plain states for a failed agent list (with Retry), no conversations, being offline (Send is disabled with the reason) and an expired sign-in (with Reload). There is no install support, no service worker, no manifest, no notification and no client-side storage of chat text, by decision (see `docs/ISOLATION.md`).
+
 ## Apollo in the hub view
 
 Apollo is never run or proxied by the hub. With `APOLLO_EMBED=1` the Apollo pane shows the separate Apollo chat app in an iframe, next to Apollo's orb; with it off (default) the pane is a link-out button. The app inside the frame is another origin with its own Access sign-in, history and runs, so this page cannot read it and never fetches, stores or logs anything from it. The frame is sandboxed, sends no referrer and is created only while Apollo is selected. The Apollo app sends two content-free messages (ready, and idle/thinking/speaking) that move the orb; they are accepted only from the configured origin and the frame's own window and kept in memory. If no ready message arrives within 8 seconds (signed out, or framing not allowed by the Apollo app), the pane shows a sign-in hint with a link that opens Apollo in its own tab. Sign in there first; the frame works while that session lasts. See `docs/ISOLATION.md` ("Apollo in the hub view").
@@ -55,7 +59,7 @@ Add `?perf` to the page URL to show the frame-time readout on the stage; `?yaw=`
 
 - `src/` server, config, the Access verifier, the chat API (`chat.js`), the CSRF check, the gateway client, the stream mapper (the only code that decides what reaches the browser) and the history store.
 - `gateway/gateway.js` the host-side chat gateway (dependency-free): fixed profile table for eight agents (the pilot as the main session, seven as `--agent`), fixed command line (permission mode `auto`, never a bypass), a drift check of each agent file, denied health connectors and Apollo sub-agent (`HUB_DENY_TOOLS` in the gateway environment, see `docs/DEPLOY.md`), one run at a time, kill switch, audit log. `docs/host/` holds its systemd unit and environment sample.
-- `public/` the app: `index.html`, `css/app.css`, `js/app.js` (shell and routing), `js/hub.js` (the 3D viewer), `js/apollostate.js` (the filter for the framed Apollo app's state messages), `roster.json` (the one roster file), `models/` (the eight generated figures) and `vendor/` (a three.js subset bundle with its licence and rebuild notes).
+- `public/` the app: `index.html`, `css/app.css`, `js/app.js` (shell and routing), `js/hub.js` (the 3D viewer), `js/hubstate.js` (page-level words and the running/new-reply logic, DOM-free), `js/apollostate.js` (the filter for the framed Apollo app's state messages), `roster.json` (the one roster file), `models/` (the eight generated figures) and `vendor/` (a three.js subset bundle with its licence and rebuild notes).
 - `docs/DESIGN.md` the design identity. `docs/DEPLOY.md` how to run the app and the gateway. `docs/ISOLATION.md` what web chat can do, the threat model and the kill switch. `ASSET-LICENSE` lists every asset and its licence.
 - `scripts/hook.js` a no-op kept so existing hook entries on the host keep working.
 
@@ -66,7 +70,7 @@ npm test        # node:test, no network
 npm run lint    # eslint and prettier --check
 ```
 
-The tests cover config validation, the Access verifier (signature, issuer, audience, expiry, email, key caching, fail closed), the routes and headers, the roster, the `/event` stub and the removal of the old dashboard, and for chat: the gateway's validation, fixed command line, kill switch, one-run limit, timeouts and audit log (against a fake `claude` script, no model), the stream mapping, the page's DOM-free stream logic (including the notice for every refused send), request logging, CSRF, input limits, rate limit and history. The history tests that load `better-sqlite3` need Node 22 or later and are skipped on older Node; the rest use an in-memory store with the same contract.
+The tests cover config validation, the Access verifier (signature, issuer, audience, expiry, email, key caching, fail closed), the routes and headers, the roster, the `/event` stub and the removal of the old dashboard, and for chat: the gateway's validation, fixed command line, kill switch, one-run limit, timeouts and audit log (against a fake `claude` script, no model), the stream mapping, the page's DOM-free stream and marker logic (including the notice for every refused send and the race between a status poll and a local send), the accessibility structure (skip links, landmarks, names, focus rules), the contrast of both themes against WCAG 2.2 AA, request logging, CSRF, input limits, rate limit and history. The history tests that load `better-sqlite3` need Node 22 or later and are skipped on older Node; the rest use an in-memory store with the same contract.
 
 ## Licence
 

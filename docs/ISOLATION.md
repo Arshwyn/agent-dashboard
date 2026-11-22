@@ -268,6 +268,10 @@ What it does and does not do:
 
 Tests: `test/server.test.js` (exact CSP in both modes, no route or request to the Apollo origin, no other source file uses the setting), `test/apollostate.test.js` (message filter, one frame with the fixed attributes, no storage or network in the Apollo code), `test/config.test.js`.
 
+## Browser storage and install support
+
+The page keeps nothing in the browser: no `localStorage`, `sessionStorage`, IndexedDB, Cache API, service worker or web app manifest, no notifications and no sound. The new-reply marker and every other page state live in memory and are lost on reload. Install support (a manifest or a service worker) was considered and declined by the owner: a service worker sits between the browser and authenticated pages, could cache private chat responses and breaks when Access expires the session. `test/tracker.test.js` checks the shipped scripts and `index.html` for these APIs.
+
 ## Mitigations you operate
 
 - **Kill switch.** Create the file `DISABLED` in the gateway data directory (or set `GATEWAY_DISABLED=1` and restart) to refuse every new web run immediately; the gateway checks it on each request, so no restart is needed for the file. The app has its own switch, `CHAT_DISABLED=1`. The page shows a notice when either is on. **The gateway also watches the flag while a run is in progress** (every second, `KILL_POLL_MS`): a run in progress is ended with SIGINT, then SIGTERM, then SIGKILL on its whole process group, and the page shows "switched off during this reply". The app-side `CHAT_DISABLED` only refuses new sends; to end a running reply use the gateway flag or Stop.
