@@ -87,3 +87,11 @@ test('the shipped scripts use no storage, notification, sound or service worker'
   const marks = app.slice(app.indexOf('function renderRail'), app.indexOf('function announceNew'));
   assert.equal(/document\.title|rel="icon"|favicon/.test(marks), false);
 });
+
+test('a rail link with a mark gets one spoken name that spells the marks out', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  assert.match(app, /a\.name \+ \(on \? ', running' : ''\) \+ \(fresh \? ', new reply' : ''\)/);
+  assert.match(app, /l\.removeAttribute\('aria-label'\)/);
+});

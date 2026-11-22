@@ -92,6 +92,11 @@
       var nm = l.querySelector('.new-mark');
       if (fresh && !nm) l.appendChild(el('span', { class: 'new-mark' }, 'new reply'));
       if (!fresh && nm) nm.remove();
+      // one spoken name with the marks spelled out, so a screen reader does not run the words together
+      var a = byId(who);
+      if (a && (on || fresh))
+        l.setAttribute('aria-label', a.name + (on ? ', running' : '') + (fresh ? ', new reply' : ''));
+      else l.removeAttribute('aria-label');
     });
   }
   function setRunning(id, local) {
