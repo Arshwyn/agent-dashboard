@@ -277,3 +277,52 @@ test('the hub CSP is byte-identical without the embed and gains one exact frame-
     await on.stop();
   }
 });
+
+test('the hub never proxies, fetches or stores anything from the Apollo origin', async () => {
+  const http = require('node:http');
+  let hits = 0;
+  const upstream = http.createServer((req, res) => {
+    hits++;
+    res.end('x');
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  const port = upstream.address().port;
+  const s = await startApp({ APOLLO_CHAT_URL: `http://127.0.0.1:${port}/`, APOLLO_EMBED: '1' });
+  try {
+    for (const p of [
+      '/apollo',
+      '/apollo/',
+      '/api/apollo',
+      '/api/apollo/me',
+      '/proxy',
+      '/api/proxy',
+      '/apollo-chat/',
+    ]) {
+      const r = await get(s.base, p, H());
+      assert.ok([404, 405].includes(r.status), `${p} -> ${r.status}`);
+    }
+    await get(s.base, '/api/roster', H());
+    await get(s.base, '/', H());
+    await get(s.base, '/agent/apollo', H());
+    assert.equal(hits, 0, 'the hub never contacted the Apollo origin');
+  } finally {
+    await s.stop();
+    await new Promise((r) => upstream.close(r));
+  }
+  // The Apollo URL and origin are read by the config and by two places in the server only (the roster fields
+  // and the frame-src); no other source file touches them.
+  const src = path.join(__dirname, '..', 'src');
+  for (const f of fs.readdirSync(src)) {
+    const text = fs.readFileSync(path.join(src, f), 'utf8');
+    if (['config.js', 'server.js'].includes(f)) continue;
+    assert.equal(
+      /apolloChatUrl|apolloOrigin|apolloEmbed|APOLLO_/.test(text.replace(/\/\/.*$/gm, '')),
+      false,
+      f,
+    );
+  }
+  const server = fs.readFileSync(path.join(src, 'server.js'), 'utf8');
+  const uses = server.split('\n').filter((l) => /apolloChatUrl|apolloOrigin|apolloEmbed/.test(l));
+  assert.ok(uses.length <= 6, uses.join('\n'));
+  assert.equal(/fetch\(|http\.request|https\.request|\.get\(config\.apollo/.test(server), false);
+});
