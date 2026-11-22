@@ -241,6 +241,21 @@ a {
   background: var(--accent);
 }
 
+/* an agent whose reply finished while another one was open: text plus a square badge shape (the running mark is a
+   ring with a dot), never colour alone */
+.rail .new-mark {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--s-1);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .access-note {
   margin: 0;
   padding: var(--s-2) var(--s-4) 0;
