@@ -60,3 +60,16 @@ test('APOLLO_CHAT_URL must be https (or loopback http) and is optional', () => {
   );
   assert.throws(() => loadConfig(baseEnv({ APOLLO_CHAT_URL: 'ftp://chat.example.com/' })), /APOLLO_CHAT_URL/);
 });
+
+test('APOLLO_EMBED is off by default, takes 1 or 0 and needs the Apollo URL', () => {
+  const url = 'https://chat.example.com/app/';
+  const off = loadConfig(baseEnv({ APOLLO_CHAT_URL: url }));
+  assert.equal(off.apolloEmbed, false);
+  assert.equal(off.apolloOrigin, 'https://chat.example.com');
+  assert.equal(loadConfig(baseEnv({ APOLLO_CHAT_URL: url, APOLLO_EMBED: '0' })).apolloEmbed, false);
+  const on = loadConfig(baseEnv({ APOLLO_CHAT_URL: url, APOLLO_EMBED: '1' }));
+  assert.equal(on.apolloEmbed, true);
+  assert.equal(on.apolloOrigin, 'https://chat.example.com');
+  assert.throws(() => loadConfig(baseEnv({ APOLLO_EMBED: '1' })), /APOLLO_CHAT_URL/);
+  assert.throws(() => loadConfig(baseEnv({ APOLLO_CHAT_URL: url, APOLLO_EMBED: 'yes' })), /APOLLO_EMBED/);
+});

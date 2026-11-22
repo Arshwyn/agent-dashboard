@@ -14,6 +14,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   OWNER_EMAIL         the single allowed identity
  *   DEV_AUTH_BYPASS     "1" turns Access off for local development; needs NODE_ENV=development (or test)
  *                       and a loopback HOST, otherwise the server refuses to start
+ *   APOLLO_EMBED        optional 1: show the Apollo chat app in a frame in the Apollo pane (needs APOLLO_CHAT_URL)
  *   APOLLO_CHAT_URL     optional https link-out for the Apollo card; empty hides it
  *   GATEWAY_SOCKET      absolute path of the chat gateway's unix socket; unset means chat is offline
  *   DB_PATH             SQLite file for the chat history (default ./data/hub.db)
@@ -58,6 +59,7 @@ function loadConfig(env) {
   }
 
   let apolloChatUrl = '';
+  let apolloOrigin = '';
   if (env.APOLLO_CHAT_URL) {
     let u;
     try {
@@ -70,7 +72,13 @@ function loadConfig(env) {
       throw new Error('APOLLO_CHAT_URL must be an absolute https URL');
     }
     apolloChatUrl = u.href;
+    apolloOrigin = u.origin;
   }
+  if (env.APOLLO_EMBED && env.APOLLO_EMBED !== '1' && env.APOLLO_EMBED !== '0') {
+    throw new Error('APOLLO_EMBED must be 1 or 0');
+  }
+  const apolloEmbed = env.APOLLO_EMBED === '1';
+  if (apolloEmbed && !apolloChatUrl) throw new Error('APOLLO_EMBED=1 needs APOLLO_CHAT_URL');
 
   let gatewaySocket = '';
   if (env.GATEWAY_SOCKET) {
@@ -96,6 +104,8 @@ function loadConfig(env) {
     accessAud: aud,
     ownerEmail: owner,
     apolloChatUrl,
+    apolloOrigin,
+    apolloEmbed,
     gatewaySocket,
     dbPath: env.DB_PATH || './data/hub.db',
     chatDisabled: env.CHAT_DISABLED === '1',
