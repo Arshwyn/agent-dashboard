@@ -49,6 +49,10 @@ Each agent has three tones: a main tone (rim, rings, panels), a second tone (inn
 - Rounded, soft shapes: a large radius on the stage, rail and chat, pill shaped controls and hints.
 - Mobile first. Touch targets are at least 44 px, nothing scrolls sideways, the main task (pick an agent, read, type) works one-handed on a phone.
 
+## The Apollo pane
+
+Apollo's chat pane is a frame onto the separate Apollo app, filling the chat area under the orb, with an "Open in a new tab" link in the pane header. While it loads, and if it does not report ready within 8 seconds, a centred notice (muted text on the surface colour, same tokens as other notices) replaces it with a sign-in hint plus "Open Apollo" and "Reload this view" buttons. The orb follows the app's idle, thinking and speaking messages like any other agent; with no messages it stays idle. The frame is text-only; nothing about the pane needs more than the existing WebGL2 requirement.
+
 ## Motion
 
 Only transform and opacity animate in CSS; the stage animates through WebGL. `prefers-reduced-motion` is respected: CSS animation and transitions are off, the 3D scene draws a single static frame per state (still WebGL, never flat art), expanding snaps between the orb and the figure, and parallax and idle drift stop. The orb and figure remain clearly different without motion. The loop also pauses when the tab is hidden or the stage is off screen.

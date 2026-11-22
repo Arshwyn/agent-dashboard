@@ -51,6 +51,10 @@ How the gateway reaches the orchestrator: it starts `claude` with the workspace 
 
 The app container must run with `restart: unless-stopped` (the compose file sets it): if uncaught errors loop (more than 5 in 60 seconds) the app logs the error name and exits non-zero, and the restart policy brings it back.
 
+## Apollo in the hub view (optional)
+
+Set `APOLLO_CHAT_URL` to the Apollo app's address and `APOLLO_EMBED=1`, then rebuild the container. Prerequisites: the Apollo app is deployed with its `EMBED_ANCESTOR` set to this hub's origin (otherwise the frame stays blank and the pane shows the fallback), and the owner has signed in to the Apollo app in this browser (its Access application and session are separate from the hub's and last as long as that application's session duration). Both addresses must be on the same site (sibling subdomains of one registrable domain) so the Access cookie is sent inside the frame; confirm this read-only before enabling. Neither Access application changes. Verify: open Apollo's pane, the orb should follow replies; sign out of the Apollo app and the pane should show the sign-in hint within 8 seconds.
+
 ## Kill switch
 
 - **Instant, no restart:** `touch /path/to/hub-gateway/DISABLED` (the gateway directory, outside the container) refuses every new web run **and ends a run in progress** within about a second (`KILL_POLL_MS`, default 1000; SIGINT, then SIGTERM, then SIGKILL on the run's process group). The page shows a notice and "switched off during this reply". `rm` the file to turn chat back on.
