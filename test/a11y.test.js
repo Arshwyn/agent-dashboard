@@ -86,3 +86,34 @@ test('every created control has an accessible name', () => {
   assert.equal(/<button[^>]*><\/button>/.test(html), false);
   assert.match(html, /<div class="seg" role="group" aria-label="Theme">/);
 });
+
+const { STATES, showing, newReply, noMessages } = require('../public/js/hubstate');
+
+test('every page-level state has plain words and, where one exists, a named next step', () => {
+  const need = { rosterFailed: 'Retry', expired: 'Reload' };
+  assert.deepEqual(
+    Object.keys(STATES).sort(),
+    ['expired', 'noConversations', 'offline', 'online', 'rosterFailed', 'unused'].filter(
+      (k) => k !== 'unused',
+    ),
+  );
+  for (const [k, v] of Object.entries(STATES)) {
+    assert.ok(v.text.length > 10 && /[.]$/.test(v.text) && !/[<>{}]/.test(v.text), k);
+    assert.equal(v.next, need[k] || '', k);
+    if (v.next) assert.match(app + html, new RegExp(v.next), `${k}: the ${v.next} control exists`);
+  }
+  for (const t of [showing('Themis'), newReply('Themis'), noMessages('Themis')]) {
+    assert.ok(t.includes('Themis') && !/[<>{}]/.test(t));
+  }
+});
+
+test('offline and expired sessions disable Send with the reason, and nothing is queued or cached', () => {
+  assert.match(html, /id="netbar" role="status" hidden/);
+  assert.match(app, /bSend\.disabled = on \|\| !st\.enabled \|\| offline \|\| expired/);
+  assert.match(app, /setAttribute\('aria-describedby', 'netbar'\)/);
+  assert.match(app, /addEventListener\('offline'/);
+  assert.match(app, /addEventListener\('online'/);
+  assert.match(app, /if \(r\.status === 401\) setNetBar\('expired'\)/);
+  // no retry loop on an expired session: the only action is the Reload button
+  assert.equal(/setInterval\([^)]*expired/.test(app), false);
+});

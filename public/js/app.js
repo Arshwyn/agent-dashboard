@@ -118,8 +118,49 @@
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-    return fetch(path, opts);
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) setNetBar('expired');
+      return r;
+    });
   }
+
+  // ---------- network and sign-in state (a persistent bar; nothing is queued or cached) ----------
+  var netbar = document.getElementById('netbar');
+  var netText = document.getElementById('netbar-text');
+  var netReload = document.getElementById('netbar-reload');
+  var offline = typeof navigator.onLine === 'boolean' ? !navigator.onLine : false;
+  var expired = false;
+  var netHook = null; // the open chat re-applies its Send state when the network state changes
+
+  function renderNetBar() {
+    var s = expired ? 'expired' : offline ? 'offline' : '';
+    netbar.hidden = !s;
+    netText.textContent = s ? window.HubState.STATES[s].text : '';
+    netReload.hidden = s !== 'expired';
+    if (netHook) netHook();
+  }
+  function setNetBar(kind) {
+    if (kind === 'expired' && !expired) {
+      expired = true;
+      announce(window.HubState.STATES.expired.text);
+    }
+    renderNetBar();
+  }
+  netReload.addEventListener('click', function () {
+    window.location.reload();
+  });
+  window.addEventListener('offline', function () {
+    offline = true;
+    renderNetBar();
+    announce(window.HubState.STATES.offline.text);
+  });
+  window.addEventListener('online', function () {
+    offline = false;
+    renderNetBar();
+    announce(window.HubState.STATES.online.text);
+    pollRunning(); // re-check the service state now instead of waiting for the next poll
+  });
+  renderNetBar();
 
   function setStageState(st) {
     stage.setAttribute('data-state', st);
@@ -143,6 +184,7 @@
   }
 
   function drawChat(a) {
+    netHook = null;
     teardownApollo();
     chat.textContent = '';
     chat_.token++;
@@ -411,7 +453,9 @@
     function lock(on) {
       chat_.busy = on;
       log.setAttribute('aria-busy', on ? 'true' : 'false');
-      bSend.disabled = on || !st.enabled;
+      bSend.disabled = on || !st.enabled || offline || expired;
+      if (offline || expired) bSend.setAttribute('aria-describedby', 'netbar');
+      else bSend.removeAttribute('aria-describedby');
       input.disabled = !st.enabled;
       // Stop is also offered when this conversation has a reply running that this page did not start (another tab)
       bStop.hidden = !(on || (chat_.conv && chat_.conv.running));
@@ -436,9 +480,7 @@
           el(
             'p',
             { class: 'empty' },
-            'No messages yet. Say something to ' +
-              a.name +
-              '. A reply keeps running if you close the page and is saved; use Stop to end it.',
+            chat_.conv ? window.HubState.noMessages(a.name) : window.HubState.STATES.noConversations.text,
           ),
         );
       }
@@ -611,7 +653,7 @@
 
     function send() {
       var text = input.value;
-      if (!text.trim() || chat_.busy) return;
+      if (!text.trim() || chat_.busy || offline || expired) return;
       if (text.length > MAX_CHARS) return say('That message is too long.');
       say('');
       setRunning(a.id, true);
@@ -749,6 +791,9 @@
         send();
       }
     });
+    netHook = function () {
+      lock(chat_.busy);
+    };
     lock(false);
     loadList();
     settleFocus();
@@ -807,21 +852,36 @@
     document.body.appendChild(s);
   }
 
-  fetch('/api/roster', { headers: { Accept: 'application/json' } })
-    .then(function (r) {
-      if (!r.ok) throw new Error('roster');
-      return r.json();
-    })
-    .then(function (data) {
-      roster = data.agents;
-      window.HUB_ROSTER = roster;
-      drawRail();
-      startViewer();
-    })
-    .catch(function () {
-      chat.textContent = '';
-      chat.appendChild(
-        el('div', { class: 'transcript' }, 'The roster could not be loaded. Reload the page to try again.'),
-      );
-    });
+  function loadRoster() {
+    fetch('/api/roster', { headers: { Accept: 'application/json' } })
+      .then(function (r) {
+        if (r.status === 401) setNetBar('expired');
+        if (!r.ok) throw new Error('roster');
+        return r.json();
+      })
+      .then(function (data) {
+        roster = data.agents;
+        window.HUB_ROSTER = roster;
+        drawRail();
+        startViewer();
+      })
+      .catch(function () {
+        chat.textContent = '';
+        var box = el('div', { class: 'transcript', role: 'status' });
+        box.appendChild(el('span', {}, window.HubState.STATES.rosterFailed.text));
+        var again = el(
+          'button',
+          { type: 'button', class: 'link-button' },
+          window.HubState.STATES.rosterFailed.next,
+        );
+        again.addEventListener('click', function () {
+          chat.textContent = '';
+          chat.appendChild(el('div', { class: 'transcript', role: 'status' }, 'Loading...'));
+          loadRoster();
+        });
+        box.appendChild(again);
+        chat.appendChild(box);
+      });
+  }
+  loadRoster();
 })();
